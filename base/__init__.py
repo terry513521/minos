@@ -6,6 +6,7 @@ from .genomics_config import (
     MINER_CONFIG,
     BASE_DIR,
     is_docker_available,
+    require_docker,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "MINER_CONFIG",
     "BASE_DIR",
     "is_docker_available",
+    "require_docker",
 ]

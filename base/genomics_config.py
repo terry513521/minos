@@ -47,12 +47,38 @@ MINER_CONFIG = {
 def is_docker_available() -> bool:
     """Check if Docker is available and daemon is running."""
     try:
-        # Check docker is installed
         result = subprocess.run(["docker", "--version"], capture_output=True, timeout=5)
         if result.returncode != 0:
             return False
-        # Check daemon is running (docker info fails if daemon not running)
         result = subprocess.run(["docker", "info"], capture_output=True, timeout=10)
         return result.returncode == 0
     except (FileNotFoundError, subprocess.SubprocessError, OSError):
         return False
+
+
+def require_docker():
+    """Fail fast if Docker is not available. Call at miner/validator startup."""
+    try:
+        result = subprocess.run(["docker", "--version"], capture_output=True, timeout=5)
+        if result.returncode != 0:
+            raise RuntimeError(
+                "Docker is installed but returned an error. "
+                "Reinstall Docker: https://docs.docker.com/get-docker/"
+            )
+        result = subprocess.run(["docker", "info"], capture_output=True, timeout=10)
+        if result.returncode != 0:
+            raise RuntimeError(
+                "Docker daemon is not running. "
+                "Start Docker and try again."
+            )
+    except FileNotFoundError:
+        raise RuntimeError(
+            "Docker is required but not installed. "
+            "Minos uses Docker to run variant calling tools in reproducible containers. "
+            "Install Docker: https://docs.docker.com/get-docker/"
+        )
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(
+            "Docker is not responding (timed out). "
+            "Restart Docker and try again."
+        )
