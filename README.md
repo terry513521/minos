@@ -99,6 +99,10 @@ minos_subnet/
 │   ├── freebayes.conf
 │   └── bcftools.conf
 ├── docs/                     # Architecture and integration docs
+│   └── tuning_guide.md       # Miner tuning reference (scoring, parameters, strategy)
+├── scripts/                  # Developer tools
+│   ├── verify.sh             # Pre-flight environment check
+│   └── demo.sh               # End-to-end demo runner
 ├── install.sh                # Installer (full setup or update mode)
 ├── setup.py                  # Interactive setup wizard
 ├── start-miner.sh            # Start miner (with inline wallet setup)
@@ -415,7 +419,10 @@ btcli subnet metagraph --netuid 107
 - [neurons/README.md](neurons/README.md) - Detailed miner/validator documentation
 - [utils/README.md](utils/README.md) - Utility modules reference
 - [docs/architecture.md](docs/architecture.md) - System architecture deep dive
+- [docs/tuning_guide.md](docs/tuning_guide.md) - Miner tuning guide (scoring breakdown, parameters, strategy)
 - [docs/hap_py_docker.md](docs/hap_py_docker.md) - hap.py Docker image reference
+- [scripts/verify.sh](scripts/verify.sh) - Pre-flight environment check (`bash scripts/verify.sh --miner`)
+- [scripts/demo.sh](scripts/demo.sh) - Run a single demo round end-to-end (`bash scripts/demo.sh`)
 
 ---
 
