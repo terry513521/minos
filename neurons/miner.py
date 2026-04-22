@@ -28,7 +28,7 @@ if not hasattr(bt, "wallet"):
 if not hasattr(bt, "config"):
     bt.config = bt.Config
 
-from base import GENOMICS_CONFIG, MINER_CONFIG, is_docker_available, BASE_DIR
+from base import GENOMICS_CONFIG, MINER_CONFIG, is_docker_available, require_docker, BASE_DIR
 from utils.file_utils import download_file_verified, download_file_with_fallback
 from utils.platform_client import MinerPlatformClient, PlatformConfig, PlatformClientError
 from utils.config_loader import extract_tool_options, get_tool_version
@@ -60,6 +60,12 @@ class Miner:
         bt.logging.set_trace(self.config.logging.trace)
         bt.logging.set_debug(self.config.logging.debug)
 
+        try:
+            require_docker()
+        except RuntimeError as e:
+            bt.logging.error(str(e))
+            sys.exit(1)
+
         self.wallet = bt.wallet(config=self.config)
         bt.logging.info(f"Wallet loaded: {self.wallet.hotkey.ss58_address}")
 
@@ -80,7 +86,10 @@ class Miner:
                 "Miner not registered on subnet 107. "
                 "Register with: btcli subnets register --netuid 107 --wallet.name miner --wallet.hotkey default"
             )
-            bt.logging.info("Continuing in demo/unregistered mode — variant calling will still run")
+            bt.logging.info(
+                "Running in DEMO MODE — you can test variant calling without registration. "
+                "To participate in live rounds and earn TAO, register first."
+            )
 
         self.setup_variant_caller()
         self.setup_platform_client()
@@ -134,11 +143,7 @@ class Miner:
             sys.exit(1)
 
     def setup_variant_caller(self):
-        """Setup variant caller from MINER_TEMPLATE env var. Docker is required."""
-        if not is_docker_available():
-            bt.logging.error("Docker is required but not available. Please install Docker and try again.")
-            sys.exit(1)
-
+        """Setup variant caller from MINER_TEMPLATE env var."""
         self.variant_caller = os.getenv("MINER_TEMPLATE", "").lower() or MINER_CONFIG.get("default_caller", "gatk")
 
         # Validate template exists
@@ -324,10 +329,19 @@ class Miner:
 
         except PlatformClientError as e:
             bt.logging.warning(f"Round error: {e}")
-            # In demo mode, submission is blocked — don't retry the same round
             if "demo mode" in str(e).lower():
                 self.submitted_rounds.add(round_id)
-                print("   Demo mode — variant calling complete. Submission disabled.", flush=True)
+                print(f"\n{'='*60}", flush=True)
+                print(f"   DEMO COMPLETE", flush=True)
+                print(f"   Variant calling finished successfully!", flush=True)
+                print(f"   Your system is ready to mine on Subnet 107.", flush=True)
+                print(f"", flush=True)
+                print(f"   Submission is disabled because the network is in", flush=True)
+                print(f"   demo mode. When the network goes live, submissions", flush=True)
+                print(f"   will be automatic — no code changes needed.", flush=True)
+                print(f"", flush=True)
+                print(f"   Next: register your hotkey to earn TAO when live.", flush=True)
+                print(f"{'='*60}", flush=True)
             return False
         except Exception as e:
             bt.logging.error(f"Error processing round: {e}")

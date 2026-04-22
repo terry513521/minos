@@ -1,13 +1,13 @@
 """
-Winner-takes-all weight tracking with EMA, participation gating, and score decay.
+EMA-based weight distribution with participation gating and score decay.
 
 Tracks miner performance over time with exponential moving averages.
-The top eligible miner receives 100% of the weight; all others get 0.
+Weight distribution has two phases:
 
-Two phases:
-- Warmup (before any miner reaches min_rounds): reward split 50/30/20 among
-  top 3 scoring active miners (>= 1 round) by EMA score.
-- Normal: winner-takes-all by EMA among eligible miners.
+- Warmup (before any miner reaches min_rounds): positional reward split
+  50/30/20 among the top 3 scoring active miners (>= 1 round) by EMA.
+- Normal (once any miner is eligible): winner-takes-all — the single
+  top-performing eligible miner receives 100% of the weight.
 
 Eligibility requires scoring in at least `min_rounds` of the recent window.
 Tiebreaker: earliest submission timestamp in the most recent round.
@@ -43,7 +43,7 @@ SCORE_EPSILON = 0.005
 
 
 class ScoreTracker:
-    """Track scores with EMA and winner-takes-all weight distribution.
+    """Track scores with EMA and phase-aware weight distribution.
 
     Miners are identified by hotkey (ss58 address) for stability across
     metagraph resyncs. UID mapping happens at weight-setting time.
@@ -214,13 +214,13 @@ class ScoreTracker:
         submission_times: Optional[Dict[str, float]] = None,
     ) -> Dict[str, float]:
         """
-        Compute winner-takes-all weights.
+        Compute weight distribution.
 
         Two modes:
-        - **Warmup** (no miner has min_rounds yet): winner-takes-all by
-          EMA score, among active miners only.
+        - **Warmup** (no miner has min_rounds yet): positional split
+          (50/30/20) among top active miners by EMA score.
           Inactive miners (0 rounds) get zero weight.
-        - **Normal**: winner-takes-all by EMA among eligible miners.
+        - **Normal**: winner-takes-all — single top eligible miner gets 100%.
 
         Tiebreak in both modes: earliest submission timestamp.
 

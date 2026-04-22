@@ -58,7 +58,7 @@ MINER_DOCKER_IMAGES = {
 }
 
 VALIDATOR_DOCKER_IMAGES = [
-    "genonet/hap-py:0.3.15",
+    "genonet/hap-py@sha256:03acabe84bbfba35f5a7234129d524c563f5657e1f21150a2ea2797f8e6d05f2",
     "broadinstitute/gatk:4.5.0.0",
     "google/deepvariant:1.5.0",
     "staphb/freebayes:1.3.7",
