@@ -113,11 +113,11 @@ fi
 echo ""
 echo "Configuration:"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VANET_DIR="$(dirname "$SCRIPT_DIR")"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
-if [ -f "$VANET_DIR/.env" ]; then
+if [ -f "$PROJECT_DIR/.env" ]; then
     pass ".env found"
-elif [ -f "$VANET_DIR/.env.miner.example" ]; then
+elif [ -f "$PROJECT_DIR/.env.miner.example" ]; then
     warn "No .env — copy from .env.${ROLE#--}.example and fill in values"
 else
     warn "No .env file found"

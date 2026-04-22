@@ -50,9 +50,10 @@ Key design choice: **miners submit configs, not VCFs**. Validators independently
 | Reference | GRCh38 FASTA + index + RTG SDF (chr1-chr22) | Public (downloaded by all) |
 | Benchmark BAM | GIAB donors (HG001-HG007) 100-300× per chromosome, downsampled | Public (via platform presigned URL) |
 | Truth VCF | GIAB + HelixForge-inserted synthetic mutations | Validators only (presigned URL, round-scoped) |
-| Confident BED | GIAB high-confidence regions per chromosome | Validators only (per-round) |
+| Mutations-only VCF | Synthetic mutations only (no GIAB variants) | Validators only (primary scoring scope) |
+| Confident BED | GIAB high-confidence regions per chromosome | Validators only (fallback scoring scope) |
 
-Synthetic mutations are injected by the platform using HelixForge into known positions, creating a merged truth (`GIAB ∪ synthetic variants`) that miners cannot pre-compute answers for.
+Synthetic mutations are injected by the platform using HelixForge into known positions. Validators score miner output against the **mutations-only VCF** (synthetic variants only) as the primary evaluation scope. The confident BED path serves as a fallback when the mutations-only VCF is unavailable.
 
 ---
 

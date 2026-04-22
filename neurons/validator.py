@@ -1000,7 +1000,7 @@ class Validator:
             return None
 
     async def _set_weights_after_round(self, round_id: str, submission_times: dict = None):
-        """Compute winner-takes-all weights, set on chain, and POST history to platform.
+        """Compute weight distribution, set on chain, and POST history to platform.
 
         Called after all miners in a round have been scored and EMA updated.
 
@@ -1029,24 +1029,27 @@ class Validator:
                 bt.logging.warning("No miners found for weight setting")
                 return
 
-            # Compute winner-takes-all weights
+            # Compute weight distribution
             weights = self.score_tracker.get_winner_takes_all_weights(
                 miner_hotkeys, submission_times
             )
 
-            # Log weight distribution
+            # Log weight distribution (mode-aware)
             stats = self.score_tracker.get_stats()
-            winner = [hk for hk, w in weights.items() if w > 0]
-            print(f"\n   Weight distribution (winner-takes-all):", flush=True)
+            recipients = [hk for hk, w in weights.items() if w > 0]
+            is_warmup = stats['eligible_count'] == 0
+            mode_label = "warmup split" if is_warmup else "winner-takes-all"
+            print(f"\n   Weight distribution ({mode_label}):", flush=True)
             print(f"   Eligible: {stats['eligible_count']}/{len(miner_hotkeys)} miners "
                   f"(need {stats['min_rounds_required']} rounds)", flush=True)
-            if winner:
-                w_hk = winner[0]
-                w_ema = self.score_tracker.ema_scores.get(w_hk, 0)
-                w_uid = hotkey_to_uid.get(w_hk, "?")
-                print(f"   Winner: UID {w_uid} ({w_hk[:16]}...) EMA={w_ema:.4f}", flush=True)
+            if recipients:
+                for r_hk in recipients:
+                    r_w = weights[r_hk]
+                    r_ema = self.score_tracker.ema_scores.get(r_hk, 0)
+                    r_uid = hotkey_to_uid.get(r_hk, "?")
+                    print(f"   UID {r_uid} ({r_hk[:16]}...) EMA={r_ema:.4f} weight={r_w:.2f}", flush=True)
             else:
-                print(f"   No winner — weights submission skipped (fail-closed)", flush=True)
+                print(f"   No recipients — weights submission skipped (fail-closed)", flush=True)
 
             # Set weights on chain (blocking RPC — run in thread to avoid blocking event loop)
             loop = asyncio.get_running_loop()
@@ -1072,7 +1075,7 @@ class Validator:
             bt.logging.error(traceback.format_exc())
 
     def set_weights(self, weights_by_hotkey: dict = None, hotkey_to_uid: dict = None, retry_count: int = 0):
-        """Set weights on the blockchain using winner-takes-all distribution.
+        """Set weights on the blockchain.
 
         Args:
             weights_by_hotkey: Dict of {hotkey: weight} from ScoreTracker.

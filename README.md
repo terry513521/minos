@@ -348,13 +348,17 @@ The Minos Platform is a hosted service at `https://api.theminos.ai` that handles
 
 ### Key Endpoints
 
-| Endpoint                      | Used by   |               Description                    |
-| ------------------------------|-----------|----------------------------------------------|
-| `POST /v2/round-status`       | Miner     | Poll for active rounds and presigned BAM URL |
-| `POST /v2/submit-config`      | Miner     | Submit variant-calling tool config           |
-| `POST /v2/get-scoring-rounds` | Validator | Fetch rounds ready for scoring               |
-| `POST /v2/get-submissions`    | Validator | Fetch all miner configs for a round          |
-| `POST /v2/submit-score`       | Validator | Submit per-miner scores                      |
+| Endpoint                         | Used by   | Description                                    |
+| ---------------------------------|-----------|------------------------------------------------|
+| `POST /v2/round-status`         | Miner     | Poll for active rounds and presigned BAM URL   |
+| `POST /v2/submit-config`        | Miner     | Submit variant-calling tool config             |
+| `POST /v2/get-scoring-rounds`   | Validator | Fetch rounds ready for scoring                 |
+| `POST /v2/get-submissions`      | Validator | Fetch all miner configs for a round            |
+| `POST /v2/get-assignment`       | Validator | Get primary/secondary miner scoring assignment |
+| `POST /v2/submit-score`         | Validator | Submit per-miner scores                        |
+| `POST /v2/get-backfill-scores`  | Validator | Fetch peer scores after scoring window closes  |
+| `POST /v2/submit-weight-history`| Validator | Submit EMA scores and weights after round      |
+| `POST /v2/get-validator-state`  | Validator | Recover EMA state after validator restart       |
 
 ---
 
@@ -427,7 +431,7 @@ journalctl -u minos-validator -f
 
 ```bash
 # Platform health
-curl <PLATFORM_URL>/health
+curl https://api.theminos.ai/health
 
 # Metagraph status
 btcli subnet metagraph --netuid 107

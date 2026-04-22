@@ -12,7 +12,7 @@
 #   5. This script inspects the output VCF and prints a summary
 #
 # Usage: bash scripts/demo.sh [--template gatk|deepvariant|freebayes|bcftools]
-#        Run from the vanet/ directory.
+#        Run from the minos_subnet/ directory.
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
@@ -29,7 +29,7 @@ NC='\033[0m'
 # Resolve directories
 # ---------------------------------------------------------------------------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VANET_DIR="$(dirname "$SCRIPT_DIR")"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 # ---------------------------------------------------------------------------
 # Parse arguments
@@ -126,30 +126,30 @@ echo ""
 CREATED_TEMP_ENV=false
 ORIGINAL_TEMPLATE=""
 
-if [[ -f "$VANET_DIR/.env" ]]; then
+if [[ -f "$PROJECT_DIR/.env" ]]; then
     echo -e "  ${GREEN}[OK]${NC} .env file found"
 
     # If user specified --template, temporarily override it in the env
     if [[ -n "$TEMPLATE" ]]; then
-        ORIGINAL_TEMPLATE="$(grep -E '^MINER_TEMPLATE=' "$VANET_DIR/.env" 2>/dev/null | cut -d= -f2 || true)"
+        ORIGINAL_TEMPLATE="$(grep -E '^MINER_TEMPLATE=' "$PROJECT_DIR/.env" 2>/dev/null | cut -d= -f2 || true)"
         if [[ "$ORIGINAL_TEMPLATE" != "$TEMPLATE" ]]; then
             # Use a temp copy so we don't modify the user's .env
-            cp "$VANET_DIR/.env" "$VANET_DIR/.env.demo.bak"
-            sed -i.tmp "s/^MINER_TEMPLATE=.*/MINER_TEMPLATE=$TEMPLATE/" "$VANET_DIR/.env"
-            rm -f "$VANET_DIR/.env.tmp"
+            cp "$PROJECT_DIR/.env" "$PROJECT_DIR/.env.demo.bak"
+            sed -i.tmp "s/^MINER_TEMPLATE=.*/MINER_TEMPLATE=$TEMPLATE/" "$PROJECT_DIR/.env"
+            rm -f "$PROJECT_DIR/.env.tmp"
             echo -e "  ${YELLOW}[INFO]${NC} Overriding template: ${ORIGINAL_TEMPLATE:-unset} -> $TEMPLATE"
             CREATED_TEMP_ENV=true
         fi
     fi
 
-    ACTIVE_TEMPLATE="$(grep -E '^MINER_TEMPLATE=' "$VANET_DIR/.env" 2>/dev/null | cut -d= -f2 || echo 'gatk')"
+    ACTIVE_TEMPLATE="$(grep -E '^MINER_TEMPLATE=' "$PROJECT_DIR/.env" 2>/dev/null | cut -d= -f2 || echo 'gatk')"
     echo -e "  ${GREEN}[OK]${NC} Variant caller: ${CYAN}$ACTIVE_TEMPLATE${NC}"
 else
     echo -e "  ${YELLOW}[WARN]${NC} No .env file found — creating a temporary demo config"
 
     ACTIVE_TEMPLATE="${TEMPLATE:-gatk}"
 
-    cat > "$VANET_DIR/.env" <<ENVEOF
+    cat > "$PROJECT_DIR/.env" <<ENVEOF
 # Temporary demo configuration — created by demo.sh
 # Copy .env.miner.example to .env and customize for production use.
 NETUID=107
@@ -172,12 +172,12 @@ echo ""
 # ---------------------------------------------------------------------------
 cleanup() {
     if [[ "$CREATED_TEMP_ENV" == "true" ]]; then
-        if [[ -f "$VANET_DIR/.env.demo.bak" ]]; then
+        if [[ -f "$PROJECT_DIR/.env.demo.bak" ]]; then
             # We modified an existing .env — restore it
-            mv "$VANET_DIR/.env.demo.bak" "$VANET_DIR/.env"
-        elif grep -q "created by demo.sh" "$VANET_DIR/.env" 2>/dev/null; then
+            mv "$PROJECT_DIR/.env.demo.bak" "$PROJECT_DIR/.env"
+        elif grep -q "created by demo.sh" "$PROJECT_DIR/.env" 2>/dev/null; then
             # We created a throwaway .env — remove it
-            rm -f "$VANET_DIR/.env"
+            rm -f "$PROJECT_DIR/.env"
         fi
     fi
 }
@@ -206,7 +206,7 @@ echo ""
 # once we see the "DEMO COMPLETE" or "demo mode" banner, or after
 # a timeout.
 
-DEMO_LOG="$VANET_DIR/.demo_output.log"
+DEMO_LOG="$PROJECT_DIR/.demo_output.log"
 DEMO_TIMEOUT=1800  # 30 minutes max
 DEMO_PID=""
 
@@ -215,13 +215,13 @@ rm -f "$DEMO_LOG"
 
 # Resolve venv Python
 PYTHON="python3"
-if [[ -f "$VANET_DIR/.venv/bin/python3" ]]; then
-    PYTHON="$VANET_DIR/.venv/bin/python3"
+if [[ -f "$PROJECT_DIR/.venv/bin/python3" ]]; then
+    PYTHON="$PROJECT_DIR/.venv/bin/python3"
 fi
 
 # Run the miner in the background, capturing output
 (
-    cd "$VANET_DIR"
+    cd "$PROJECT_DIR"
     $PYTHON -m neurons.miner 2>&1
 ) > "$DEMO_LOG" 2>&1 &
 DEMO_PID=$!
@@ -308,7 +308,7 @@ if [[ $SECONDS_WAITED -ge $DEMO_TIMEOUT ]]; then
     echo ""
     echo -e "  Check the full log: ${CYAN}$DEMO_LOG${NC}"
     echo -e "  Or try running the miner directly:"
-    echo -e "    cd $VANET_DIR && python3 -m neurons.miner"
+    echo -e "    cd $PROJECT_DIR && bash start-miner.sh"
     exit 1
 fi
 
@@ -322,13 +322,13 @@ echo ""
 VCF_FILE=""
 ROUND_DIR=""
 
-# The miner writes output to vanet/datasets/rounds/<round_id>/output.vcf.gz
-if [[ -d "$VANET_DIR/datasets/rounds" ]]; then
+# The miner writes output to output/<round_id>/output.vcf.gz
+if [[ -d "$PROJECT_DIR/output" ]]; then
     # Find the newest output.vcf.gz
-    VCF_FILE=$(find "$VANET_DIR/datasets/rounds" -name "output.vcf.gz" -type f -newer "$DEMO_LOG" 2>/dev/null | head -1 || true)
+    VCF_FILE=$(find "$PROJECT_DIR/output" -name "output.vcf.gz" -type f -newer "$DEMO_LOG" 2>/dev/null | head -1 || true)
     if [[ -z "$VCF_FILE" ]]; then
         # Fallback: find any output.vcf.gz, sorted by time
-        VCF_FILE=$(find "$VANET_DIR/datasets/rounds" -name "output.vcf.gz" -type f 2>/dev/null | xargs ls -t 2>/dev/null | head -1 || true)
+        VCF_FILE=$(find "$PROJECT_DIR/output" -name "output.vcf.gz" -type f 2>/dev/null | xargs ls -t 2>/dev/null | head -1 || true)
     fi
 fi
 
@@ -405,17 +405,21 @@ echo -e "${BOLD}================================================================
 echo ""
 echo -e "  When live rounds are active, validators score your VCF using"
 echo -e "  ${CYAN}hap.py${NC} (Illumina's variant comparison tool) against a truth set."
+echo -e "  The ${CYAN}AdvancedScorer${NC} combines metrics into a 0-100 final score:"
 echo ""
-echo -e "  ${BOLD}Metrics:${NC}"
-echo -e "    F1(SNP)   x 0.7  — how accurate your SNP calls are"
-echo -e "    F1(INDEL) x 0.3  — how accurate your INDEL calls are"
-echo -e "    Final = SNP_score * 0.7 + INDEL_score * 0.3"
+echo -e "  ${BOLD}Score Components:${NC}"
+echo -e "    Core F1        60%  — truth-weighted F1 across SNPs and INDELs"
+echo -e "    Completeness   15%  — recall and coverage"
+echo -e "    FP Rate        15%  — false positive penalty"
+echo -e "    Quality        10%  — Ti/Tv and Het/Hom ratio consistency"
 echo ""
-echo -e "  ${BOLD}Typical score ranges:${NC}"
-echo -e "    0.95 - 1.00  ${GREEN}Excellent${NC}  — competitive for top rewards"
-echo -e "    0.85 - 0.95  ${YELLOW}Good${NC}       — solid but room to optimize"
-echo -e "    0.70 - 0.85  ${YELLOW}Fair${NC}       — basic pipeline working"
-echo -e "    < 0.70       ${RED}Needs work${NC} — check tool parameters"
+echo -e "  The raw score (0-100) is normalized to 0-1 for EMA tracking."
+echo ""
+echo -e "  ${BOLD}Typical score ranges (0-100):${NC}"
+echo -e "    80 - 95+  ${GREEN}Excellent${NC}  — competitive for top rewards"
+echo -e "    60 - 80   ${YELLOW}Good${NC}       — solid but room to optimize"
+echo -e "    40 - 60   ${YELLOW}Fair${NC}       — check tool parameters"
+echo -e "    < 40      ${RED}Needs work${NC} — likely a configuration issue"
 echo ""
 echo -e "  ${BOLD}Tips to improve your score:${NC}"
 echo -e "    - Tune parameters in ${CYAN}configs/$ACTIVE_TEMPLATE.conf${NC}"
@@ -444,14 +448,16 @@ echo -e "     Edit ${CYAN}configs/$ACTIVE_TEMPLATE.conf${NC} to tweak tool-speci
 echo -e "     See templates/${ACTIVE_TEMPLATE}.py for supported parameters."
 echo ""
 echo -e "  ${BOLD}4. Run the miner for real:${NC}"
-echo -e "     cd $VANET_DIR"
-echo -e "     python3 -m neurons.miner"
+echo -e "     cd $PROJECT_DIR"
+echo -e "     bash start-miner.sh          # interactive (recommended first time)"
+echo -e "     bash pm2-miner.sh            # PM2 (auto-restart, background)"
 echo ""
 echo -e "     The miner will poll for rounds every 30 seconds and"
 echo -e "     automatically participate in each 72-minute round cycle."
 echo ""
 echo -e "  ${BOLD}5. Monitor your miner:${NC}"
-echo -e "     python3 -m neurons.status"
+echo -e "     pm2 logs minos-miner         # if using PM2"
+echo -e "     bash scripts/verify.sh       # check environment"
 echo -e "     Dashboard: ${CYAN}https://app.theminos.ai${NC}"
 echo ""
 echo -e "${BOLD}================================================================${NC}"
