@@ -3,6 +3,7 @@
 import sys
 import os
 import gzip
+import math
 import shutil
 import traceback
 import subprocess
@@ -1033,6 +1034,45 @@ class Validator:
         Returns:
             Dict with score_id on success, None on failure.
         """
+        def _json_safe_float(value):
+            try:
+                number = float(value)
+            except (TypeError, ValueError):
+                return None
+            if not math.isfinite(number):
+                return None
+            return number
+
+        def _build_advanced_metrics_payload(
+            source_metrics: dict,
+            advanced_score: float,
+            combined_final: float,
+            snp_final: float,
+            indel_final: float,
+        ) -> dict:
+            payload = {
+                "scorer": "Advanced",
+                "score_schema_version": "0.1.1",
+                "scoring_status": "scored",
+                "advanced_score": advanced_score,
+                "combined_final": combined_final,
+                "snp_final": snp_final,
+                "indel_final": indel_final,
+            }
+
+            for key, value in (source_metrics or {}).items():
+                number = _json_safe_float(value)
+                if number is not None:
+                    payload[key] = number
+
+            # Keep the canonical aliases explicit even if source_metrics had
+            # missing or non-finite values.
+            payload["advanced_score"] = advanced_score
+            payload["combined_final"] = combined_final
+            payload["snp_final"] = snp_final
+            payload["indel_final"] = indel_final
+            return payload
+
         try:
             if metrics is None:
                 # Failed run - submit zeros
@@ -1040,7 +1080,28 @@ class Validator:
                     round_id=round_id,
                     miner_hotkey=miner_hotkey,
                     snp_f1=0.0,
+                    snp_precision=0.0,
+                    snp_recall=0.0,
+                    snp_tp=0,
+                    snp_fp=0,
+                    snp_fn=0,
                     indel_f1=0.0,
+                    indel_precision=0.0,
+                    indel_recall=0.0,
+                    indel_tp=0,
+                    indel_fp=0,
+                    indel_fn=0,
+                    additional_metrics={
+                        "scorer": "Advanced",
+                        "score_schema_version": "0.1.1",
+                        "scoring_status": "failed",
+                        "advanced_score": 0.0,
+                        "combined_final": 0.0,
+                        "snp_final": 0.0,
+                        "indel_final": 0.0,
+                        "weighted_f1": 0.0,
+                        "overcall_penalty": 0.0,
+                    },
                     validation_runtime_seconds=validation_runtime
                 )
             else:
@@ -1069,15 +1130,13 @@ class Validator:
                     indel_fn=metrics.get("fn_indel"),
                     ti_tv_ratio=metrics.get("titv_query_snp"),
                     het_hom_ratio=metrics.get("hethom_query_snp"),
-                    additional_metrics={
-                        "scorer": "Advanced",
-                        "weighted_f1": metrics.get("weighted_f1"),
-                        "frac_na_snp": metrics.get("frac_na_snp"),
-                        "frac_na_indel": metrics.get("frac_na_indel"),
-                        "snp_final": snp_final,
-                        "indel_final": indel_final,
-                        "combined_final": combined_final,
-                    },
+                    additional_metrics=_build_advanced_metrics_payload(
+                        metrics,
+                        advanced_score,
+                        combined_final,
+                        snp_final,
+                        indel_final,
+                    ),
                     validation_runtime_seconds=validation_runtime,
                     output_vcf_s3_key=output_vcf_s3_key,
                     output_vcf_sha256=output_vcf_sha256,
