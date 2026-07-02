@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import random
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -33,6 +35,8 @@ from app.services.control_plane_settings import (
 )
 from app.services.worker_proxy import dispatch_to_worker, fetch_worker_best, stop_worker_optimization
 
+logger = logging.getLogger(__name__)
+
 SelectionReason = Literal["top_score", "most_similar", "best_composite"]
 
 AUTO_ASSIGNMENT_STRATEGY = "score_similarity_composite"
@@ -42,8 +46,8 @@ WORKER_SELECTION_RULES: tuple[tuple[str, SelectionReason], ...] = (
     ("Big", "most_similar"),
     ("Igno", "best_composite"),
 )
-AUTO_ALGORITHM_OPTUNA_WEIGHT = 2
-AUTO_ALGORITHM_RANDOM_WEIGHT = 1
+AUTO_ALGORITHM_POOL: tuple[str, ...] = ("optuna", "gp", "random", "sobol", "lhs")
+AUTO_ALGORITHM_ASSIGNMENT = "random"
 AUTO_FIND_K = 6
 AUTO_SELECT_K = 3
 AUTO_LIMIT_SECONDS = 45 * 60
@@ -95,8 +99,8 @@ def auto_mode_config() -> AutoModeConfig:
         worker_names=list(AUTO_WORKER_NAMES),
         worker_algorithms={},
         assignment_strategy=AUTO_ASSIGNMENT_STRATEGY,
-        algorithm_optuna_ratio=AUTO_ALGORITHM_OPTUNA_WEIGHT,
-        algorithm_random_ratio=AUTO_ALGORITHM_RANDOM_WEIGHT,
+        algorithm_pool=list(AUTO_ALGORITHM_POOL),
+        algorithm_assignment=AUTO_ALGORITHM_ASSIGNMENT,
         limit_seconds=AUTO_LIMIT_SECONDS,
         concurrency=AUTO_CONCURRENCY,
         find_k=AUTO_FIND_K,
@@ -135,13 +139,23 @@ class AutoModeStore:
         if session and session.running:
             elapsed = (datetime.now(timezone.utc) - session.started_at).total_seconds()
             time_remaining_seconds = max(0, int(AUTO_LIMIT_SECONDS - elapsed))
+        config = auto_mode_config()
+        if session and session.selected_candidates:
+            config = config.model_copy(
+                update={
+                    "worker_algorithms": {
+                        slot.worker_name: slot.algorithm
+                        for slot in session.selected_candidates
+                    }
+                }
+            )
         return AutoModeStatus(
             enabled=self.enabled,
             running=bool(session and session.running),
             region=session.region if session else None,
             last_started_region=self.last_started_region,
             started_at=session.started_at if session else None,
-            config=auto_mode_config(),
+            config=config,
             candidates_found=session.candidates_found if session else 0,
             found_candidates=list(session.found_candidates) if session else [],
             time_remaining_seconds=time_remaining_seconds,
@@ -279,19 +293,11 @@ async def find_auto_candidate_pool(
     ]
 
 
-def _algorithm_pool(
-    worker_count: int,
-    *,
-    optuna_weight: int = AUTO_ALGORITHM_OPTUNA_WEIGHT,
-    random_weight: int = AUTO_ALGORITHM_RANDOM_WEIGHT,
-) -> list[str]:
-    """Build a shuffled algorithm list with optuna:random ratio (default 2:1)."""
+def _assign_random_algorithms(worker_count: int) -> list[str]:
+    """Pick one algorithm per worker uniformly at random from the pool."""
     if worker_count <= 0:
         return []
-    total_weight = optuna_weight + random_weight
-    optuna_count = (worker_count * optuna_weight) // total_weight
-    random_count = worker_count - optuna_count
-    return ["optuna"] * optuna_count + ["random"] * random_count
+    return [random.choice(AUTO_ALGORITHM_POOL) for _ in range(worker_count)]
 
 
 def assign_workers_by_metric(
@@ -302,7 +308,7 @@ def assign_workers_by_metric(
     if not candidates or not worker_names:
         return []
 
-    algorithms = _algorithm_pool(len(worker_names))
+    algorithms = _assign_random_algorithms(len(worker_names))
     score_fns: dict[SelectionReason, Callable[[CandidatePreview], float]] = {
         "top_score": candidate_history_score,
         "most_similar": candidate_similarity_score,
@@ -452,6 +458,11 @@ async def start_auto_mode(
     selected_slots = assign_workers_by_metric(find_result_candidates)
     if not selected_slots:
         raise ValueError("No candidates found for region")
+
+    logger.info(
+        "Auto mode algorithm assignment: %s",
+        ", ".join(f"{slot.worker_name}={slot.algorithm}" for slot in selected_slots),
+    )
 
     workers = await resolve_workers_by_name(db, AUTO_WORKER_NAMES)
 

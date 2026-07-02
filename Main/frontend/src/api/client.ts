@@ -194,8 +194,8 @@ export interface AutoModeConfig {
   worker_names: string[];
   worker_algorithms: Record<string, string>;
   assignment_strategy: string;
-  algorithm_optuna_ratio: number;
-  algorithm_random_ratio: number;
+  algorithm_pool: string[];
+  algorithm_assignment: string;
   limit_seconds: number;
   concurrency: number;
   find_k: number;

@@ -1,12 +1,14 @@
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 from app.schemas import AutoDispatchAssignment, CandidatePreview
 from app.services.auto_mode import (
+    AUTO_ALGORITHM_POOL,
     AUTO_SCORE_WEIGHT,
     AUTO_SIMILARITY_WEIGHT,
     AutoModeStore,
     AutoSession,
-    _algorithm_pool,
+    _assign_random_algorithms,
     assign_workers_by_metric,
     build_diverse_candidate_pool,
     candidate_dispatch_window,
@@ -44,10 +46,17 @@ def test_composite_candidate_score():
     assert composite_candidate_score(candidate) == expected
 
 
-def test_algorithm_pool_uses_two_to_one_ratio():
-    assert _algorithm_pool(3) == ["optuna", "optuna", "random"]
-    assert _algorithm_pool(3).count("optuna") == 2
-    assert _algorithm_pool(3).count("random") == 1
+def test_assign_random_algorithms_draws_from_pool():
+    with patch("app.services.auto_mode.random.choice", side_effect=["gp", "sobol", "lhs"]):
+        assert _assign_random_algorithms(3) == ["gp", "sobol", "lhs"]
+
+
+def test_assign_random_algorithms_uses_configured_pool():
+    with patch("app.services.auto_mode.random.choice", wraps=__import__("random").choice) as mock_choice:
+        _assign_random_algorithms(2)
+        assert mock_choice.call_count == 2
+        for call in mock_choice.call_args_list:
+            assert call.args[0] == AUTO_ALGORITHM_POOL
 
 
 def test_build_diverse_candidate_pool_prioritizes_score_similarity_composite():
@@ -111,16 +120,20 @@ def test_assign_workers_by_metric_maps_vm_big_igno():
             history_id="balanced",
         ),
     ]
-    slots = assign_workers_by_metric(candidates)
+    with patch(
+        "app.services.auto_mode._assign_random_algorithms",
+        return_value=["optuna", "gp", "sobol"],
+    ):
+        slots = assign_workers_by_metric(candidates)
     assert [slot.worker_name for slot in slots] == ["VM", "Big", "Igno"]
     assert slots[0].selection_reason == "top_score"
     assert slots[0].candidate.history_id == "high-score"
     assert slots[1].selection_reason == "most_similar"
     assert slots[1].candidate.history_id == "high-sim"
     assert slots[2].selection_reason == "best_composite"
-    assert slots[2].algorithm == "random"
+    assert slots[2].algorithm == "sobol"
     assert slots[0].algorithm == "optuna"
-    assert slots[1].algorithm == "optuna"
+    assert slots[1].algorithm == "gp"
 
 
 def test_disable_auto_mode_keeps_session_running():
