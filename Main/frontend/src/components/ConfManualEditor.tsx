@@ -9,6 +9,7 @@ import {
   setToolOptions,
   toolOptionsToJson,
 } from "../utils/confEdit";
+import { DeferredTextInput } from "./DeferredTextInput";
 
 interface ConfManualEditorProps {
   baseConf: Record<string, unknown>;
@@ -33,7 +34,7 @@ export function ConfManualEditor({ baseConf, tool, onChange }: ConfManualEditorP
     setJsonError(null);
   }, [baseConf, tool, open, mode]);
 
-  function handleFormChange(param: string, raw: string) {
+  function commitFormChange(param: string, raw: string) {
     const value = parseToolOptionValue(tool, param, raw);
     onChange(setToolOption(baseConf, tool, param, value));
   }
@@ -62,7 +63,7 @@ export function ConfManualEditor({ baseConf, tool, onChange }: ConfManualEditorP
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
       >
-        {open ? "Hide manual edit" : "Edit tool config"}
+        {open ? "Hide advanced editor" : "Show advanced editor"}
       </button>
 
       {open && (
@@ -101,10 +102,12 @@ export function ConfManualEditor({ baseConf, tool, onChange }: ConfManualEditorP
                   if (bound?.type === "enum" && bound.allowedValues?.length) {
                     return (
                       <label key={param} className="worker-conf-manual-field">
-                        <span className="worker-conf-manual-label">{param}</span>
+                        <span className="worker-conf-manual-label" title={param}>
+                          {param}
+                        </span>
                         <select
                           value={displayValue}
-                          onChange={(e) => handleFormChange(param, e.target.value)}
+                          onChange={(e) => commitFormChange(param, e.target.value)}
                         >
                           {bound.allowedValues.map((opt) => (
                             <option key={opt} value={opt}>
@@ -119,12 +122,14 @@ export function ConfManualEditor({ baseConf, tool, onChange }: ConfManualEditorP
                   if (bound?.type === "bool") {
                     return (
                       <label key={param} className="worker-conf-manual-field worker-conf-manual-field--bool">
-                        <span className="worker-conf-manual-label">{param}</span>
+                        <span className="worker-conf-manual-label" title={param}>
+                          {param}
+                        </span>
                         <input
                           type="checkbox"
                           checked={displayValue === "true"}
                           onChange={(e) =>
-                            handleFormChange(param, e.target.checked ? "true" : "false")
+                            commitFormChange(param, e.target.checked ? "true" : "false")
                           }
                         />
                       </label>
@@ -133,14 +138,16 @@ export function ConfManualEditor({ baseConf, tool, onChange }: ConfManualEditorP
 
                   return (
                     <label key={param} className="worker-conf-manual-field">
-                      <span className="worker-conf-manual-label">{param}</span>
-                      <input
+                      <span className="worker-conf-manual-label" title={param}>
+                        {param}
+                      </span>
+                      <DeferredTextInput
                         type={bound?.type === "int" || bound?.type === "float" ? "number" : "text"}
                         step={bound?.type === "float" ? "any" : bound?.type === "int" ? 1 : undefined}
                         min={bound?.min}
                         max={bound?.max}
                         value={displayValue}
-                        onChange={(e) => handleFormChange(param, e.target.value)}
+                        onCommit={(next) => commitFormChange(param, next)}
                         spellCheck={false}
                       />
                     </label>

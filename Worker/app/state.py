@@ -6,6 +6,21 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+MAX_TRIAL_HISTORY = 200
+
+
+@dataclass
+class TrialRecord:
+    index: int
+    label: str
+    success: bool
+    score: float | None = None
+    raw_score: float | None = None
+    cached: bool = False
+    is_best: bool = False
+    error: str | None = None
+    completed_at: datetime | None = None
+
 
 @dataclass
 class BestSnapshot:
@@ -18,6 +33,8 @@ class BestSnapshot:
     search_space_size: int = 0
     status: str = "idle"
     message: str | None = None
+    stop_requested: bool = False
+    trials: list[TrialRecord] = field(default_factory=list)
     updated_at: datetime | None = None
 
 
@@ -42,6 +59,8 @@ class BestStateStore:
                 status="optimizing",
                 search_space_size=search_space_size,
                 message="Running base benchmark",
+                stop_requested=False,
+                trials=[],
                 updated_at=datetime.now(timezone.utc),
             )
 
@@ -51,6 +70,47 @@ class BestStateStore:
             if message:
                 self._snapshot.message = message
             self._snapshot.updated_at = datetime.now(timezone.utc)
+
+    def set_stopping(self, *, message: str | None = None) -> None:
+        with self._lock:
+            if self._snapshot.status != "optimizing":
+                return
+            self._snapshot.status = "stopping"
+            self._snapshot.stop_requested = True
+            if message:
+                self._snapshot.message = message
+            self._snapshot.updated_at = datetime.now(timezone.utc)
+
+    def record_trial(
+        self,
+        *,
+        index: int,
+        label: str,
+        success: bool,
+        score: float | None = None,
+        raw_score: float | None = None,
+        cached: bool = False,
+        is_best: bool = False,
+        error: str | None = None,
+    ) -> None:
+        with self._lock:
+            if is_best:
+                for prior in self._snapshot.trials:
+                    prior.is_best = False
+            record = TrialRecord(
+                index=index,
+                label=label,
+                success=success,
+                score=score,
+                raw_score=raw_score,
+                cached=cached,
+                is_best=is_best,
+                error=error,
+                completed_at=datetime.now(timezone.utc),
+            )
+            self._snapshot.trials.append(record)
+            if len(self._snapshot.trials) > MAX_TRIAL_HISTORY:
+                self._snapshot.trials = self._snapshot.trials[-MAX_TRIAL_HISTORY:]
 
     def update_best(
         self,
@@ -73,12 +133,14 @@ class BestStateStore:
     def finish_job(self, *, message: str) -> None:
         with self._lock:
             self._snapshot.status = "ready"
+            self._snapshot.stop_requested = False
             self._snapshot.message = message
             self._snapshot.updated_at = datetime.now(timezone.utc)
 
     def fail_job(self, *, message: str) -> None:
         with self._lock:
             self._snapshot.status = "error"
+            self._snapshot.stop_requested = False
             self._snapshot.message = message
             self._snapshot.updated_at = datetime.now(timezone.utc)
 
@@ -95,6 +157,8 @@ class BestStateStore:
                 search_space_size=snap.search_space_size,
                 status=snap.status,
                 message=snap.message,
+                stop_requested=snap.stop_requested,
+                trials=[TrialRecord(**trial.__dict__) for trial in snap.trials],
                 updated_at=snap.updated_at,
             )
 

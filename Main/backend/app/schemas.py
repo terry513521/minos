@@ -168,6 +168,18 @@ class WorkerHealthCheckResponse(BaseModel):
     error: str | None = None
 
 
+class WorkerTrialRecord(BaseModel):
+    index: int
+    label: str
+    success: bool
+    score: float | None = None
+    raw_score: float | None = None
+    cached: bool = False
+    is_best: bool = False
+    error: str | None = None
+    completed_at: str | None = None
+
+
 class WorkerBestScoreResponse(BaseModel):
     worker_id: str
     ok: bool
@@ -182,6 +194,8 @@ class WorkerBestScoreResponse(BaseModel):
     search_space_size: int = 0
     updated_at: str | None = None
     message: str | None = None
+    stop_requested: bool = False
+    trials: list[WorkerTrialRecord] = Field(default_factory=list)
     error: str | None = None
 
 

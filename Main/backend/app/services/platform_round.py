@@ -2,28 +2,20 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
-from bittensor_wallet import Keypair
-
 from app.config import get_settings
-
-logger = logging.getLogger(__name__)
-
-_REPO_ROOT = Path(__file__).resolve().parents[4]
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
-
-from utils.platform_client import (  # noqa: E402
+from app.services.minos_platform import (
     AuthenticationError,
-    MinerPlatformClient,
     PlatformClientError,
     PlatformConfig,
+    get_round_status,
+    load_keypair,
 )
+
+logger = logging.getLogger(__name__)
 
 POLL_INTERVAL_SECONDS = 10
 
@@ -118,25 +110,6 @@ def _normalize_region(region: str | None) -> tuple[str | None, str | None]:
         return raw, chrom if chrom else None
 
 
-def _load_keypair() -> Keypair:
-    settings = get_settings()
-    if settings.platform_wallet_uri:
-        return Keypair.create_from_uri(settings.platform_wallet_uri)
-    if settings.platform_wallet_name and settings.platform_wallet_hotkey:
-        try:
-            from bittensor_wallet import Wallet
-
-            wallet = Wallet(
-                name=settings.platform_wallet_name,
-                hotkey=settings.platform_wallet_hotkey,
-            )
-            return wallet.hotkey
-        except Exception as exc:
-            raise RuntimeError(f"Failed to load wallet: {exc}") from exc
-    # Default: ephemeral demo keypair (works with /v2/demo/* when demo_mode=true)
-    return Keypair.create_from_uri("//main-platform-poll")
-
-
 class PlatformRoundPoller:
     """Poll Minos platform round-status and keep an in-memory cache."""
 
@@ -181,16 +154,15 @@ class PlatformRoundPoller:
             return snap
 
         try:
-            keypair = _load_keypair()
-            client = MinerPlatformClient(
-                keypair=keypair,
+            keypair = load_keypair(settings.platform_wallet_uri)
+            data = await get_round_status(
                 config=PlatformConfig(
                     base_url=settings.platform_url,
                     timeout=settings.platform_timeout,
                 ),
+                keypair=keypair,
                 demo=settings.platform_demo_mode,
             )
-            data = await client.get_round_status()
             polled_at = datetime.now(timezone.utc)
             submission_end = _iso_field(data, "submission_end_time")
             remaining = data.get("time_remaining_seconds")

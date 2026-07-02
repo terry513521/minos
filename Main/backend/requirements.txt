@@ -6,4 +6,4 @@ pydantic-settings>=2.0.0
 python-dotenv>=1.0.0
 aiosqlite>=0.20.0
 httpx>=0.24.0
-bittensor-wallet>=3.0.0
+substrate-interface>=1.7.0
