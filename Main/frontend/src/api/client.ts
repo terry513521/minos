@@ -187,6 +187,44 @@ export interface PlatformRound {
   hotkey_ss58: string | null;
 }
 
+export interface AutoModeStatus {
+  enabled: boolean;
+  running: boolean;
+  region: string | null;
+  started_at: string | null;
+  assignments: Array<{
+    worker_id: string;
+    worker_name: string;
+    algorithm: string;
+    candidate_index: number;
+    composite_score: number;
+    dispatch_ok: boolean;
+    dispatch_error: string | null;
+    job_id: string | null;
+  }>;
+}
+
+export interface AutoStartResult {
+  ok: boolean;
+  region: string;
+  tool: string;
+  candidates_found: number;
+  candidates_selected: number;
+  workers_dispatched: number;
+  assignments: AutoModeStatus["assignments"];
+  message: string;
+}
+
+export interface AutoBestResult {
+  ok: boolean;
+  best_score: number | null;
+  best_conf: Record<string, unknown>;
+  worker_id: string | null;
+  worker_name: string | null;
+  stopped_workers: Array<Record<string, unknown>>;
+  message: string;
+}
+
 export const api = {
   health: () => request<{ status: string }>("/health"),
   getPlatformRound: () => request<PlatformRound>("/platform/round"),
@@ -232,5 +270,21 @@ export const api = {
   deleteWorker: (workerId: string) =>
     request<{ ok: string; worker_id: string }>(`/workers/${workerId}`, {
       method: "DELETE",
+    }),
+  getAutoMode: () => request<AutoModeStatus>("/auto/mode"),
+  setAutoMode: (enabled: boolean) =>
+    request<AutoModeStatus>("/auto/mode", {
+      method: "PUT",
+      body: JSON.stringify({ enabled }),
+    }),
+  startAutoMode: (region: string, tool = "gatk") =>
+    request<AutoStartResult>("/auto/start", {
+      method: "POST",
+      body: JSON.stringify({ region, tool }),
+    }),
+  fetchAutoBest: () =>
+    request<AutoBestResult>("/auto/best", {
+      method: "POST",
+      body: JSON.stringify({}),
     }),
 };

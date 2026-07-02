@@ -1250,6 +1250,28 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   font-size: 0.82rem;
 }
 
+.topbar-auto-mode {
+  padding: 0.45rem 0.85rem;
+  font-size: 0.82rem;
+  border: 1px solid var(--border);
+}
+
+.topbar-auto-mode.is-on {
+  border-color: rgba(120, 214, 164, 0.55);
+  color: #9be8c3;
+  background: rgba(56, 120, 90, 0.18);
+}
+
+.auto-mode-banner {
+  margin: 0 var(--pad-2);
+  padding: 0.55rem 0.85rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;

@@ -1,5 +1,4 @@
 import secrets
-import uuid
 from datetime import datetime, timezone
 
 import httpx
@@ -19,10 +18,15 @@ from app.schemas import (
     WorkerResponse,
     WorkerStatus,
     WorkerStopResponse,
-    WorkerTrialScore,
     WorkerUpdate,
 )
 from app.serializers import worker_to_response
+from app.services.worker_proxy import (
+    dispatch_to_worker,
+    fetch_worker_best,
+    get_worker,
+    stop_worker_optimization,
+)
 from app.worker_urls import normalize_worker_urls, resolve_worker_base_url
 
 router = APIRouter(prefix="/workers", tags=["workers"])
@@ -158,8 +162,7 @@ async def check_worker_health(
     worker_id: str,
     db: AsyncSession = Depends(get_db),
 ) -> WorkerHealthCheckResponse:
-    result = await db.execute(select(Worker).where(Worker.id == worker_id))
-    worker = result.scalar_one_or_none()
+    worker = await get_worker(db, worker_id)
     if worker is None:
         raise HTTPException(status_code=404, detail="Worker not found")
     if not worker.health_url:
@@ -197,228 +200,25 @@ async def check_worker_health(
 
 
 @router.get("/{worker_id}/best", response_model=WorkerBestScoreResponse)
-async def fetch_worker_best(
+async def fetch_worker_best_endpoint(
     worker_id: str,
     db: AsyncSession = Depends(get_db),
 ) -> WorkerBestScoreResponse:
-    result = await db.execute(select(Worker).where(Worker.id == worker_id))
-    worker = result.scalar_one_or_none()
-    if worker is None:
-        raise HTTPException(status_code=404, detail="Worker not found")
-    if not worker.base_url:
-        return WorkerBestScoreResponse(
-            worker_id=worker_id,
-            ok=False,
-            error="Worker has no base_url configured",
-        )
-
-    base = resolve_worker_base_url(worker.health_url, worker.base_url)
-    if not base:
-        return WorkerBestScoreResponse(
-            worker_id=worker_id,
-            ok=False,
-            error="Worker has no valid base_url configured",
-        )
-
-    url = f"{base.rstrip('/')}/best"
-    try:
-        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-            response = await client.get(url)
-            payload: dict | None = None
-            if response.headers.get("content-type", "").startswith("application/json"):
-                parsed = response.json()
-                if isinstance(parsed, dict):
-                    payload = parsed
-            ok = response.status_code < 400
-            if not ok or payload is None:
-                return WorkerBestScoreResponse(
-                    worker_id=worker_id,
-                    ok=False,
-                    status_code=response.status_code,
-                    error=(payload or {}).get("detail") if payload else response.text[:500] or "Best score fetch failed",
-                )
-            trials_raw = payload.get("trials")
-            trials: list[WorkerTrialScore] = []
-            if isinstance(trials_raw, list):
-                for item in trials_raw:
-                    if not isinstance(item, dict):
-                        continue
-                    try:
-                        trials.append(WorkerTrialScore.model_validate(item))
-                    except Exception:
-                        continue
-            return WorkerBestScoreResponse(
-                worker_id=worker_id,
-                ok=True,
-                status_code=response.status_code,
-                status=str(payload.get("status")) if payload.get("status") is not None else None,
-                job_id=payload.get("job_id"),
-                window=payload.get("window"),
-                tool=payload.get("tool"),
-                best_score=payload.get("best_score"),
-                best_conf=payload.get("best_conf") if isinstance(payload.get("best_conf"), dict) else {},
-                trials_evaluated=int(payload.get("trials_evaluated") or 0),
-                search_space_size=int(payload.get("search_space_size") or 0),
-                updated_at=payload.get("updated_at"),
-                message=payload.get("message"),
-                trials=trials,
-            )
-    except Exception as exc:
-        return WorkerBestScoreResponse(
-            worker_id=worker_id,
-            ok=False,
-            status_code=None,
-            error=str(exc),
-        )
+    return await fetch_worker_best(db, worker_id)
 
 
 @router.post("/{worker_id}/dispatch", response_model=WorkerDispatchResponse)
-async def dispatch_to_worker(
+async def dispatch_to_worker_endpoint(
     worker_id: str,
     body: WorkerDispatchRequest,
     db: AsyncSession = Depends(get_db),
 ) -> WorkerDispatchResponse:
-    result = await db.execute(select(Worker).where(Worker.id == worker_id))
-    worker = result.scalar_one_or_none()
-    if worker is None:
-        raise HTTPException(status_code=404, detail="Worker not found")
-    if not worker.base_url:
-        return WorkerDispatchResponse(
-            worker_id=worker_id,
-            ok=False,
-            error="Worker has no base_url configured",
-        )
-
-    base = resolve_worker_base_url(worker.health_url, worker.base_url)
-    if not base:
-        return WorkerDispatchResponse(
-            worker_id=worker_id,
-            ok=False,
-            error="Worker has no valid base_url configured",
-        )
-
-    optimize_url = f"{base.rstrip('/')}/optimize"
-    job_id = f"main-{worker_id[:8]}-{uuid.uuid4().hex[:8]}"
-    payload = {
-        "job_id": job_id,
-        "window": body.window.strip(),
-        "tool": body.tool.strip(),
-        "concurrency": str(body.concurrency),
-        "algorithm": body.algorithm,
-        "limit": str(body.limit_seconds),
-        "base_conf": body.base_conf,
-        "params": body.params,
-    }
-    if body.param_intervals:
-        payload["param_intervals"] = {
-            name: spec.model_dump(exclude_none=True)
-            for name, spec in body.param_intervals.items()
-            if name in body.params
-        }
-
-    try:
-        timeout = httpx.Timeout(connect=15.0, read=30.0, write=30.0, pool=15.0)
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-            response = await client.post(optimize_url, json=payload)
-            result_body: dict | None = None
-            if response.headers.get("content-type", "").startswith("application/json"):
-                parsed = response.json()
-                if isinstance(parsed, dict):
-                    result_body = parsed
-            ok = response.status_code < 400
-            if ok and result_body:
-                worker_status = str(result_body.get("status") or "").lower()
-                if worker_status not in ("accepted", "completed"):
-                    ok = False
-                    error = result_body.get("message") or f"Unexpected worker status: {worker_status}"
-                else:
-                    error = None
-            elif not ok:
-                detail = result_body.get("detail") if result_body else None
-                if isinstance(detail, list):
-                    error = str(detail)
-                elif detail:
-                    error = str(detail)
-                else:
-                    error = response.text[:500] or f"Worker returned {response.status_code}"
-            else:
-                error = None
-            return WorkerDispatchResponse(
-                worker_id=worker_id,
-                ok=ok,
-                status_code=response.status_code,
-                result=result_body,
-                error=error,
-            )
-    except Exception as exc:
-        return WorkerDispatchResponse(
-            worker_id=worker_id,
-            ok=False,
-            status_code=None,
-            result=None,
-            error=str(exc),
-        )
+    return await dispatch_to_worker(db, worker_id, body)
 
 
 @router.post("/{worker_id}/stop", response_model=WorkerStopResponse)
-async def stop_worker_optimization(
+async def stop_worker_optimization_endpoint(
     worker_id: str,
     db: AsyncSession = Depends(get_db),
 ) -> WorkerStopResponse:
-    result = await db.execute(select(Worker).where(Worker.id == worker_id))
-    worker = result.scalar_one_or_none()
-    if worker is None:
-        raise HTTPException(status_code=404, detail="Worker not found")
-    if not worker.base_url:
-        return WorkerStopResponse(
-            worker_id=worker_id,
-            ok=False,
-            error="Worker has no base_url configured",
-        )
-
-    base = resolve_worker_base_url(worker.health_url, worker.base_url)
-    if not base:
-        return WorkerStopResponse(
-            worker_id=worker_id,
-            ok=False,
-            error="Worker has no valid base_url configured",
-        )
-
-    stop_url = f"{base.rstrip('/')}/stop"
-    try:
-        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-            response = await client.post(stop_url)
-            payload: dict | None = None
-            if response.headers.get("content-type", "").startswith("application/json"):
-                parsed = response.json()
-                if isinstance(parsed, dict):
-                    payload = parsed
-            ok = response.status_code < 400
-            if not ok:
-                detail = payload.get("detail") if payload else None
-                if isinstance(detail, list):
-                    error = str(detail)
-                elif detail:
-                    error = str(detail)
-                else:
-                    error = response.text[:500] or f"Worker returned {response.status_code}"
-                return WorkerStopResponse(
-                    worker_id=worker_id,
-                    ok=False,
-                    status_code=response.status_code,
-                    error=error,
-                )
-            return WorkerStopResponse(
-                worker_id=worker_id,
-                ok=True,
-                status_code=response.status_code,
-                status=str(payload.get("status")) if payload and payload.get("status") is not None else None,
-                message=str(payload.get("message")) if payload and payload.get("message") is not None else None,
-            )
-    except Exception as exc:
-        return WorkerStopResponse(
-            worker_id=worker_id,
-            ok=False,
-            status_code=None,
-            error=str(exc),
-        )
+    return await stop_worker_optimization(db, worker_id)

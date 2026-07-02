@@ -305,3 +305,54 @@ class PlatformRoundResponse(BaseModel):
     has_submitted: bool = False
     demo_mode: bool = False
     hotkey_ss58: str | None = None
+
+
+class AutoModeUpdateRequest(BaseModel):
+    enabled: bool
+
+
+class AutoDispatchAssignment(BaseModel):
+    worker_id: str
+    worker_name: str
+    algorithm: str
+    candidate_index: int
+    composite_score: float
+    history_score: float | None = None
+    similarity: float | None = None
+    dispatch_ok: bool = False
+    dispatch_error: str | None = None
+    job_id: str | None = None
+
+
+class AutoModeStatus(BaseModel):
+    enabled: bool
+    running: bool = False
+    region: str | None = None
+    started_at: datetime | None = None
+    assignments: list[AutoDispatchAssignment] = Field(default_factory=list)
+
+
+class AutoStartRequest(BaseModel):
+    region: str = Field(..., examples=["chr21:35444092-40444092"])
+    tool: str = "gatk"
+
+
+class AutoStartResponse(BaseModel):
+    ok: bool
+    region: str
+    tool: str
+    candidates_found: int
+    candidates_selected: int
+    workers_dispatched: int
+    assignments: list[AutoDispatchAssignment] = Field(default_factory=list)
+    message: str
+
+
+class AutoBestResponse(BaseModel):
+    ok: bool
+    best_score: float | None = None
+    best_conf: dict[str, Any] = Field(default_factory=dict)
+    worker_id: str | None = None
+    worker_name: str | None = None
+    stopped_workers: list[dict[str, Any]] = Field(default_factory=list)
+    message: str

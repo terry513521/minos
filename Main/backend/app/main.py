@@ -7,7 +7,7 @@ from fastapi import APIRouter, FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api import candidates, health, history, jobs, platform_round, policies, runs, workers
+from app.api import auto, candidates, health, history, jobs, platform_round, policies, runs, workers
 from app.config import get_settings
 from app.database import init_db
 from app.services.platform_round import poller
@@ -46,6 +46,7 @@ def create_app() -> FastAPI:
     api.include_router(runs.router)
     api.include_router(jobs.router)
     api.include_router(workers.router)
+    api.include_router(auto.router)
     api.include_router(history.router)
     api.include_router(policies.router)
     api.include_router(platform_round.router)
