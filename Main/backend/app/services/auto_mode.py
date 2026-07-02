@@ -44,6 +44,11 @@ WORKER_SELECTION_RULES: tuple[tuple[str, SelectionReason], ...] = (
 )
 AUTO_ALGORITHM_OPTUNA_WEIGHT = 2
 AUTO_ALGORITHM_RANDOM_WEIGHT = 1
+AUTO_WORKER_ALGORITHMS: dict[str, str] = {
+    "VM": "optuna",
+    "Big": "optuna",
+    "Igno": "random",
+}
 AUTO_FIND_K = 6
 AUTO_SELECT_K = 3
 AUTO_LIMIT_SECONDS = 45 * 60
@@ -93,7 +98,7 @@ def auto_mode_config() -> AutoModeConfig:
         params=list(AUTO_PARAMS),
         param_intervals=dict(AUTO_PARAM_INTERVALS),
         worker_names=list(AUTO_WORKER_NAMES),
-        worker_algorithms={},
+        worker_algorithms=dict(AUTO_WORKER_ALGORITHMS),
         assignment_strategy=AUTO_ASSIGNMENT_STRATEGY,
         algorithm_optuna_ratio=AUTO_ALGORITHM_OPTUNA_WEIGHT,
         algorithm_random_ratio=AUTO_ALGORITHM_RANDOM_WEIGHT,
@@ -279,21 +284,6 @@ async def find_auto_candidate_pool(
     ]
 
 
-def _algorithm_pool(
-    worker_count: int,
-    *,
-    optuna_weight: int = AUTO_ALGORITHM_OPTUNA_WEIGHT,
-    random_weight: int = AUTO_ALGORITHM_RANDOM_WEIGHT,
-) -> list[str]:
-    """Build a shuffled algorithm list with optuna:random ratio (default 2:1)."""
-    if worker_count <= 0:
-        return []
-    total_weight = optuna_weight + random_weight
-    optuna_count = (worker_count * optuna_weight) // total_weight
-    random_count = worker_count - optuna_count
-    return ["optuna"] * optuna_count + ["random"] * random_count
-
-
 def assign_workers_by_metric(
     candidates: list[CandidatePreview],
     worker_names: tuple[str, ...] = AUTO_WORKER_NAMES,
@@ -302,7 +292,6 @@ def assign_workers_by_metric(
     if not candidates or not worker_names:
         return []
 
-    algorithms = _algorithm_pool(len(worker_names))
     score_fns: dict[SelectionReason, Callable[[CandidatePreview], float]] = {
         "top_score": candidate_history_score,
         "most_similar": candidate_similarity_score,
@@ -312,13 +301,10 @@ def assign_workers_by_metric(
     used_indices: set[int] = set()
     slots: list[SelectedCandidateSlot] = []
 
-    for (worker_name, reason), algorithm in zip(
-        WORKER_SELECTION_RULES,
-        algorithms,
-        strict=True,
-    ):
+    for worker_name, reason in WORKER_SELECTION_RULES:
         if worker_name not in worker_names:
             continue
+        algorithm = AUTO_WORKER_ALGORITHMS[worker_name]
         score_fn = score_fns[reason]
         available = [candidate for candidate in candidates if candidate.index not in used_indices]
         if not available:

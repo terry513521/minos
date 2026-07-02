@@ -4,9 +4,9 @@ from app.schemas import AutoDispatchAssignment, CandidatePreview
 from app.services.auto_mode import (
     AUTO_SCORE_WEIGHT,
     AUTO_SIMILARITY_WEIGHT,
+    AUTO_WORKER_ALGORITHMS,
     AutoModeStore,
     AutoSession,
-    _algorithm_pool,
     assign_workers_by_metric,
     build_diverse_candidate_pool,
     candidate_dispatch_window,
@@ -44,10 +44,12 @@ def test_composite_candidate_score():
     assert composite_candidate_score(candidate) == expected
 
 
-def test_algorithm_pool_uses_two_to_one_ratio():
-    assert _algorithm_pool(3) == ["optuna", "optuna", "random"]
-    assert _algorithm_pool(3).count("optuna") == 2
-    assert _algorithm_pool(3).count("random") == 1
+def test_auto_worker_algorithms_are_fixed_per_worker():
+    assert AUTO_WORKER_ALGORITHMS == {
+        "VM": "optuna",
+        "Big": "optuna",
+        "Igno": "random",
+    }
 
 
 def test_build_diverse_candidate_pool_prioritizes_score_similarity_composite():
