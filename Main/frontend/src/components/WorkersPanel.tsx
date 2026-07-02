@@ -1,4 +1,4 @@
-import { DragEvent, useCallback, useEffect, useRef, useState } from "react";
+import { DragEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
   FindCandidatesResponse,
@@ -37,6 +37,10 @@ import {
   loadWorkerPanelState,
   saveWorkerPanelState,
 } from "../utils/workerPanelStorage";
+import {
+  nextActiveWorkerOrder,
+  sortWorkersForDisplay,
+} from "../utils/workerDisplayOrder";
 
 const CONCURRENCY_OPTIONS = [1, 2, 3, 4, 6, 8];
 /** Background poll for worker GET /best — updates every second while workers are registered. */
@@ -169,6 +173,12 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
   const [baseConfByWorker, setBaseConfByWorker] = useState<
     Record<string, Record<string, unknown>>
   >(() => persisted?.baseConfByWorker ?? {});
+  const [activeWorkerOrder, setActiveWorkerOrder] = useState<Record<string, number>>({});
+
+  const displayWorkers = useMemo(
+    () => sortWorkersForDisplay(workers, bestByWorker, assignments, activeWorkerOrder),
+    [workers, bestByWorker, assignments, activeWorkerOrder],
+  );
 
   const refresh = useCallback(() => {
     setLoading(true);
@@ -211,6 +221,13 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
     setBestByWorker((prev) => prune(prev));
     setHealthByWorker((prev) => prune(prev));
   }, [workers]);
+
+  useEffect(() => {
+    setActiveWorkerOrder((current) => {
+      const next = nextActiveWorkerOrder(current, workers, bestByWorker, assignments);
+      return next ?? current;
+    });
+  }, [workers, bestByWorker, assignments]);
 
   function updateAssignment(workerId: string, patch: Partial<WorkerAssignment>) {
     setAssignments((prev) => {
@@ -601,7 +618,7 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
         <p className="empty-state">No workers registered yet.</p>
       ) : (
         <div className="worker-card-grid">
-          {workers.map((worker) => {
+          {displayWorkers.map((worker) => {
             const assignment = assignments[worker.id];
             const health = healthByWorker[worker.id];
             const best = bestByWorker[worker.id];
