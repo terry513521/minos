@@ -337,7 +337,7 @@ def format_optimization_plan(plan: dict[str, Any]) -> str:
         f"window: {plan['window']}",
     ]
     if plan.get("source_window"):
-        lines.append(f"round window: {plan['source_window']} (benchmark uses center crop)")
+        lines.append(f"round window: {plan['source_window']} (benchmark uses random slice)")
     lines.extend([
         f"tool: {plan['tool']}  algorithm: {plan['algorithm']}  limit: {plan['limit_seconds']}s",
         f"mode: {plan['mode']}  concurrency: {plan['concurrency']}",

@@ -47,7 +47,9 @@ def validate_optimize_request(request: OptimizeRequest, settings: Settings | Non
     _parse_concurrency(request.concurrency)
     from app.benchmark import validate_benchmark_assets
 
-    benchmark_window, _ = resolve_benchmark_window(request.window, settings.benchmark_subwindow_mb)
+    benchmark_window, _ = resolve_benchmark_window(
+        request.window, settings.benchmark_subwindow_mb, seed=request.job_id
+    )
     validate_benchmark_assets(benchmark_window, settings)
     intervals = _intervals_payload(request)
     concurrency = _parse_concurrency(request.concurrency)
@@ -313,7 +315,7 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
     worker_name = settings.name
     algorithm = normalize_algorithm(request.algorithm)
     benchmark_window, source_window = resolve_benchmark_window(
-        request.window, settings.benchmark_subwindow_mb
+        request.window, settings.benchmark_subwindow_mb, seed=request.job_id
     )
     job_request = request.model_copy(update={"window": benchmark_window})
     limit_seconds = _parse_limit_seconds(request.limit)
@@ -359,7 +361,7 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
         f"{plan['param_count']} params"
     )
     if source_window and source_window != benchmark_window:
-        progress_msg += f" · benchmark crop {benchmark_window}"
+        progress_msg += f" · benchmark slice {benchmark_window}"
     best_store.set_progress(
         trials_evaluated=0,
         message=progress_msg,

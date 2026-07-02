@@ -243,12 +243,13 @@ def main(argv: list[str] | None = None) -> int:
     benchmark_window, source_window = resolve_benchmark_window(
         args.window.strip(),
         settings.benchmark_subwindow_mb,
+        seed=args.window.strip(),
     )
 
     print("Worker GIAB benchmark compare")
     print(f"  Window:  {benchmark_window}")
     if source_window:
-        print(f"  Source:  {source_window} (cropped via subwindow)")
+        print(f"  Source:  {source_window} (random slice via subwindow)")
     print(f"  Tool:    {args.tool}")
     print(f"  A:       {label_a}  ({args.config_a})")
     print(f"  B:       {label_b}  ({args.config_b})")

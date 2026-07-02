@@ -23,8 +23,8 @@ class Settings(BaseSettings):
     param_split_concurrency: bool = True
     # Max trials after base benchmark for random / optuna search.
     adaptive_max_trials: int = 30
-    # Center-crop job window for faster trials (0 = use full round window).
-    benchmark_subwindow_mb: int = 2
+    # Random N Mb slice inside dispatched window for faster trials (0 = full window).
+    benchmark_subwindow_mb: int = 3
     # Fixed Docker/GATK resources per concurrent trial slot.
     trial_threads: int = 4
     trial_memory_gb: int = 7
