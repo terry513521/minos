@@ -1,6 +1,7 @@
 import { DragEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
+  AutoModeStatus,
   FindCandidatesResponse,
   WorkerBestScoreResult,
   WorkerDispatchResult,
@@ -38,9 +39,14 @@ import {
   saveWorkerPanelState,
 } from "../utils/workerPanelStorage";
 import {
+  assignmentsFromAutoMode,
+  previewAssignmentsFromAutoConfig,
+} from "../utils/autoModeSync";
+import {
   nextActiveWorkerOrder,
   sortWorkersForDisplay,
 } from "../utils/workerDisplayOrder";
+import { AUTO_MODE_CHANGED_EVENT } from "./AutoModePanel";
 
 const CONCURRENCY_OPTIONS = [1, 2, 3, 4, 6, 8];
 /** Background poll for worker GET /best — updates every second while workers are registered. */
@@ -174,6 +180,19 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
     Record<string, Record<string, unknown>>
   >(() => persisted?.baseConfByWorker ?? {});
   const [activeWorkerOrder, setActiveWorkerOrder] = useState<Record<string, number>>({});
+  const [autoModeEnabled, setAutoModeEnabled] = useState(false);
+  const [autoModeStatus, setAutoModeStatus] = useState<AutoModeStatus | null>(null);
+  const [autoAssignmentsByWorker, setAutoAssignmentsByWorker] = useState<
+    Record<string, WorkerAssignment>
+  >({});
+
+  const autoPreviewByWorker = useMemo(
+    () =>
+      autoModeStatus && autoModeEnabled
+        ? previewAssignmentsFromAutoConfig(autoModeStatus, workers)
+        : {},
+    [autoModeStatus, autoModeEnabled, workers],
+  );
 
   const displayWorkers = useMemo(
     () => sortWorkersForDisplay(workers, bestByWorker, assignments, activeWorkerOrder),
@@ -198,6 +217,34 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
     window.addEventListener(WORKERS_CHANGED_EVENT, onChanged);
     return () => window.removeEventListener(WORKERS_CHANGED_EVENT, onChanged);
   }, [refresh]);
+
+  const refreshAutoMode = useCallback(() => {
+    api
+      .getAutoMode()
+      .then((status) => {
+        setAutoModeEnabled(status.enabled);
+        setAutoModeStatus(status);
+        if (status.enabled && status.assignments.length > 0) {
+          setAutoAssignmentsByWorker(assignmentsFromAutoMode(status));
+        } else {
+          setAutoAssignmentsByWorker({});
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    refreshAutoMode();
+    function onAutoChanged() {
+      refreshAutoMode();
+    }
+    window.addEventListener(AUTO_MODE_CHANGED_EVENT, onAutoChanged);
+    const intervalId = window.setInterval(refreshAutoMode, 5000);
+    return () => {
+      window.removeEventListener(AUTO_MODE_CHANGED_EVENT, onAutoChanged);
+      window.clearInterval(intervalId);
+    };
+  }, [refreshAutoMode]);
 
   useEffect(() => {
     saveWorkerPanelState({
@@ -619,7 +666,10 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
       ) : (
         <div className="worker-card-grid">
           {displayWorkers.map((worker) => {
-            const assignment = assignments[worker.id];
+            const autoAssignment =
+              autoAssignmentsByWorker[worker.id] ?? autoPreviewByWorker[worker.id];
+            const assignment = autoAssignment ?? assignments[worker.id];
+            const autoManaged = Boolean(autoAssignment?.autoManaged);
             const health = healthByWorker[worker.id];
             const best = bestByWorker[worker.id];
             const dispatchResult = dispatchByWorker[worker.id];
@@ -653,6 +703,7 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
                 <div className="worker-card-top">
                   <span className="worker-card-name">{worker.name}</span>
                   <div className="worker-card-top-meta">
+                    {autoManaged && <span className="chip chip-ok">Auto</span>}
                     <span className={`badge ${connectionClass(worker.status, health)}`}>
                       {connectionLabel(worker.status, health)}
                     </span>
@@ -851,20 +902,22 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
                   <div className="worker-assignment">
                     <div className="worker-assignment-head">
                       <span className="worker-assignment-title">
-                        Candidate #{assignment.candidate.index + 1}
+                        {autoManaged ? "Auto assignment" : `Candidate #${assignment.candidate.index + 1}`}
                         {score != null && (
                           <span className="worker-assignment-score">
                             {(score * 100).toFixed(1)}%
                           </span>
                         )}
                       </span>
-                      <button
-                        type="button"
-                        className="button ghost worker-assignment-clear"
-                        onClick={() => clearAssignment(worker.id)}
-                      >
-                        Clear
-                      </button>
+                      {!autoManaged && (
+                        <button
+                          type="button"
+                          className="button ghost worker-assignment-clear"
+                          onClick={() => clearAssignment(worker.id)}
+                        >
+                          Clear
+                        </button>
+                      )}
                     </div>
 
                     <ConfParamPicker
@@ -872,19 +925,27 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
                       tool={assignment.tool}
                       selectedParams={assignment.selectedParams}
                       paramIntervals={assignment.paramIntervals}
-                      onToggle={(param) => toggleParam(worker.id, param)}
-                      onIntervalChange={(param, patch) =>
-                        updateParamInterval(worker.id, param, patch)
+                      onToggle={autoManaged ? () => {} : (param) => toggleParam(worker.id, param)}
+                      onIntervalChange={
+                        autoManaged
+                          ? () => {}
+                          : (param, patch) => updateParamInterval(worker.id, param, patch)
                       }
-                      onBaseValueChange={(param, raw) =>
-                        updateBaseParamValue(worker.id, param, raw)
+                      onBaseValueChange={
+                        autoManaged
+                          ? () => {}
+                          : (param, raw) => updateBaseParamValue(worker.id, param, raw)
                       }
                     />
 
                     <ConfManualEditor
                       baseConf={assignment.candidate.base_conf}
                       tool={assignment.tool}
-                      onChange={(nextBaseConf) => updateAssignmentBaseConf(worker.id, nextBaseConf)}
+                      onChange={
+                        autoManaged
+                          ? () => {}
+                          : (nextBaseConf) => updateAssignmentBaseConf(worker.id, nextBaseConf)
+                      }
                     />
 
                     <div className="worker-assignment-options">
@@ -892,6 +953,7 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
                         <span className="worker-assignment-label">Toolkit</span>
                         <select
                           value={assignment.tool}
+                          disabled={autoManaged}
                           onChange={(e) =>
                             updateAssignment(worker.id, {
                               ...assignmentParamsForTool(
@@ -913,6 +975,7 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
                         <span className="worker-assignment-label">Algorithm</span>
                         <select
                           value={assignment.algorithm}
+                          disabled={autoManaged}
                           onChange={(e) =>
                             updateAssignment(worker.id, {
                               algorithm: e.target.value as WorkerAssignment["algorithm"],
@@ -935,6 +998,7 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
                             min={1}
                             max={1440}
                             step={1}
+                            disabled={autoManaged}
                             value={secondsToLimitMinutes(assignment.limitSeconds)}
                             onChange={(e) =>
                               updateAssignment(worker.id, {
@@ -951,6 +1015,7 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
                         <span className="worker-assignment-label">Concurrency</span>
                         <select
                           value={assignment.concurrency}
+                          disabled={autoManaged}
                           onChange={(e) =>
                             updateAssignment(worker.id, { concurrency: Number(e.target.value) })
                           }
@@ -964,29 +1029,39 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
                       </label>
                     </div>
 
-                    <button
-                      type="button"
-                      className="button primary worker-dispatch-btn"
-                      disabled={
-                        assignment.dispatching ||
-                        isOptimizing ||
-                        !worker.base_url ||
-                        assignment.selectedParams.length === 0
-                      }
-                      onClick={() => handleDispatch(worker.id)}
-                    >
-                      {assignment.dispatching
-                        ? "Starting…"
-                        : isOptimizing
-                          ? "Optimizing…"
-                          : "Run optimization"}
-                    </button>
+                    {autoManaged ? (
+                      <div className="worker-dispatch-success">
+                        {assignment.dispatchError
+                          ? `Auto dispatch failed: ${assignment.dispatchError}`
+                          : autoAssignmentsByWorker[worker.id]
+                            ? "Dispatched by auto mode — live scores update above."
+                            : "Waiting for auto start — config shown from auto mode policy."}
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        className="button primary worker-dispatch-btn"
+                        disabled={
+                          assignment.dispatching ||
+                          isOptimizing ||
+                          !worker.base_url ||
+                          assignment.selectedParams.length === 0
+                        }
+                        onClick={() => handleDispatch(worker.id)}
+                      >
+                        {assignment.dispatching
+                          ? "Starting…"
+                          : isOptimizing
+                            ? "Optimizing…"
+                            : "Run optimization"}
+                      </button>
+                    )}
 
-                    {assignment.dispatchError && (
+                    {!autoManaged && assignment.dispatchError && (
                       <div className="alert error worker-dispatch-alert">{assignment.dispatchError}</div>
                     )}
 
-                    {dispatchResult?.ok && (
+                    {!autoManaged && dispatchResult?.ok && (
                       <div className="worker-dispatch-success">
                         Job accepted — use Refresh above for live best score and conf.
                       </div>
@@ -994,7 +1069,7 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
                   </div>
                 )}
 
-                {!assignment && candidateContext && (
+                {!assignment && candidateContext && !autoModeEnabled && (
                   <p className="worker-drop-placeholder">Drop candidate here</p>
                 )}
               </article>

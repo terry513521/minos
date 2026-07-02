@@ -14,7 +14,9 @@ from app.models import Worker
 from app.schemas import (
     AutoBestResponse,
     AutoDispatchAssignment,
+    AutoModeConfig,
     AutoModeStatus,
+    AutoSelectedCandidate,
     AutoStartResponse,
     CandidatePreview,
     ParamIntervalSpec,
@@ -59,7 +61,38 @@ class AutoSession:
     tool: str
     started_at: datetime
     assignments: list[AutoDispatchAssignment] = field(default_factory=list)
+    selected_candidates: list[CandidatePreview] = field(default_factory=list)
+    candidates_found: int = 0
     running: bool = True
+
+
+def auto_mode_config() -> AutoModeConfig:
+    return AutoModeConfig(
+        tool=AUTO_TOOL,
+        params=list(AUTO_PARAMS),
+        param_intervals=dict(AUTO_PARAM_INTERVALS),
+        worker_names=list(AUTO_WORKER_NAMES),
+        worker_algorithms=dict(AUTO_WORKER_ALGORITHMS),
+        limit_seconds=AUTO_LIMIT_SECONDS,
+        concurrency=AUTO_CONCURRENCY,
+        find_k=AUTO_FIND_K,
+        select_k=AUTO_SELECT_K,
+        score_weight=AUTO_SCORE_WEIGHT,
+        similarity_weight=AUTO_SIMILARITY_WEIGHT,
+    )
+
+
+def _selected_candidate_models(candidates: list[CandidatePreview]) -> list[AutoSelectedCandidate]:
+    return [
+        AutoSelectedCandidate(
+            index=candidate.index,
+            composite_score=composite_candidate_score(candidate),
+            history_score=candidate.history_score,
+            similarity=candidate.similarity,
+            base_conf=candidate.base_conf,
+        )
+        for candidate in candidates
+    ]
 
 
 class AutoModeStore:
@@ -74,6 +107,11 @@ class AutoModeStore:
             running=bool(session and session.running),
             region=session.region if session else None,
             started_at=session.started_at if session else None,
+            config=auto_mode_config(),
+            candidates_found=session.candidates_found if session else 0,
+            selected_candidates=(
+                _selected_candidate_models(session.selected_candidates) if session else []
+            ),
             assignments=list(session.assignments) if session else [],
         )
 
@@ -193,6 +231,12 @@ async def start_auto_mode(
             composite_score=composite_candidate_score(candidate),
             history_score=candidate.history_score,
             similarity=candidate.similarity,
+            base_conf=candidate.base_conf,
+            window=window,
+            params=list(AUTO_PARAMS),
+            param_intervals=dict(AUTO_PARAM_INTERVALS),
+            concurrency=AUTO_CONCURRENCY,
+            limit_seconds=AUTO_LIMIT_SECONDS,
             dispatch_ok=response.ok,
             dispatch_error=response.error,
             job_id=(response.result or {}).get("job_id") if response.result else None,
@@ -205,6 +249,8 @@ async def start_auto_mode(
         tool=tool,
         started_at=datetime.now(timezone.utc),
         assignments=assignments,
+        selected_candidates=selected,
+        candidates_found=len(find_result.candidates),
         running=True,
     )
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { api } from "../api/client";
 import { AddWorkerModal } from "./AddWorkerModal";
+import { AUTO_MODE_CHANGED_EVENT } from "./AutoModePanel";
 
 const sections = [
   { hash: "#candidates", label: "Candidates" },
@@ -45,6 +46,7 @@ export function Layout() {
       setAutoEnabled(status.enabled);
       setAutoRunning(status.running);
       setAutoMessage(status.enabled ? "Auto mode enabled" : "Auto mode disabled");
+      window.dispatchEvent(new Event(AUTO_MODE_CHANGED_EVENT));
     } catch (err) {
       setAutoMessage(err instanceof Error ? err.message : "Failed to update auto mode");
     } finally {

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { FindCandidatesResponse } from "../api/client";
 import { CandidateFinderPanel } from "../components/CandidateFinderPanel";
+import { AutoModePanel } from "../components/AutoModePanel";
 import { HistorySidebar } from "../components/HistorySidebar";
 import { SectionHeader } from "../components/SectionHeader";
 import { WorkersPanel } from "../components/WorkersPanel";
@@ -23,6 +24,7 @@ export function ConsolePage() {
             onResultChange={setCandidateContext}
             embedded
           />
+          <AutoModePanel />
           <WorkersPanel candidateContext={candidateContext} />
         </section>
 

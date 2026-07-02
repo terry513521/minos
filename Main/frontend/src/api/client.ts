@@ -187,21 +187,56 @@ export interface PlatformRound {
   hotkey_ss58: string | null;
 }
 
+export interface AutoModeConfig {
+  tool: string;
+  params: string[];
+  param_intervals: Record<string, ParamIntervalPayload>;
+  worker_names: string[];
+  worker_algorithms: Record<string, string>;
+  limit_seconds: number;
+  concurrency: number;
+  find_k: number;
+  select_k: number;
+  score_weight: number;
+  similarity_weight: number;
+}
+
+export interface AutoDispatchAssignment {
+  worker_id: string;
+  worker_name: string;
+  algorithm: string;
+  candidate_index: number;
+  composite_score: number;
+  history_score: number | null;
+  similarity: number | null;
+  base_conf: Record<string, unknown>;
+  window: string | null;
+  params: string[];
+  param_intervals: Record<string, ParamIntervalPayload>;
+  concurrency: number;
+  limit_seconds: number;
+  dispatch_ok: boolean;
+  dispatch_error: string | null;
+  job_id: string | null;
+}
+
+export interface AutoSelectedCandidate {
+  index: number;
+  composite_score: number;
+  history_score: number | null;
+  similarity: number | null;
+  base_conf: Record<string, unknown>;
+}
+
 export interface AutoModeStatus {
   enabled: boolean;
   running: boolean;
   region: string | null;
   started_at: string | null;
-  assignments: Array<{
-    worker_id: string;
-    worker_name: string;
-    algorithm: string;
-    candidate_index: number;
-    composite_score: number;
-    dispatch_ok: boolean;
-    dispatch_error: string | null;
-    job_id: string | null;
-  }>;
+  config: AutoModeConfig;
+  candidates_found: number;
+  selected_candidates: AutoSelectedCandidate[];
+  assignments: AutoDispatchAssignment[];
 }
 
 export interface AutoStartResult {

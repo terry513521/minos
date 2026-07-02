@@ -1272,6 +1272,131 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   font-size: 0.82rem;
 }
 
+.auto-mode-panel {
+  margin: 0 0 1rem;
+  padding: 1rem 1.1rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+
+.auto-mode-panel--on {
+  border-color: rgba(120, 214, 164, 0.35);
+}
+
+.auto-mode-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.65rem;
+}
+
+.auto-mode-panel-title {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.auto-mode-panel-badges {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.auto-mode-panel-lead {
+  margin: 0 0 0.85rem;
+  color: var(--text-muted);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.auto-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+.auto-mode-card {
+  padding: 0.75rem 0.85rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-solid);
+  font-size: 0.82rem;
+}
+
+.auto-mode-card-label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.auto-mode-card p {
+  margin: 0.2rem 0;
+}
+
+.auto-mode-muted {
+  color: var(--text-muted);
+}
+
+.auto-mode-section {
+  margin-top: 0.85rem;
+}
+
+.auto-mode-section-title {
+  display: block;
+  margin-bottom: 0.45rem;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.auto-mode-param-table-wrap,
+.auto-mode-assignment-table-wrap,
+.auto-mode-worker-table-wrap {
+  overflow: auto;
+}
+
+.auto-mode-param-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.auto-mode-param-table th,
+.auto-mode-param-table td {
+  padding: 0.45rem 0.55rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.auto-mode-candidate-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.auto-mode-candidate-item {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-solid);
+  font-size: 0.8rem;
+}
+
+.chip.chip-ok {
+  border-color: rgba(120, 214, 164, 0.45);
+  color: #9be8c3;
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;

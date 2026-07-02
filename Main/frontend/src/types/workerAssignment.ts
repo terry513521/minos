@@ -28,6 +28,8 @@ export interface WorkerAssignment {
   limitSeconds: number;
   dispatching: boolean;
   dispatchError: string | null;
+  /** Set when assignment is driven by auto mode orchestration. */
+  autoManaged?: boolean;
 }
 
 export function secondsToLimitMinutes(seconds: number): number {

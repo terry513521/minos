@@ -307,6 +307,20 @@ class PlatformRoundResponse(BaseModel):
     hotkey_ss58: str | None = None
 
 
+class AutoModeConfig(BaseModel):
+    tool: str
+    params: list[str]
+    param_intervals: dict[str, ParamIntervalSpec]
+    worker_names: list[str]
+    worker_algorithms: dict[str, str]
+    limit_seconds: int
+    concurrency: int
+    find_k: int
+    select_k: int
+    score_weight: float
+    similarity_weight: float
+
+
 class AutoModeUpdateRequest(BaseModel):
     enabled: bool
 
@@ -319,9 +333,23 @@ class AutoDispatchAssignment(BaseModel):
     composite_score: float
     history_score: float | None = None
     similarity: float | None = None
+    base_conf: dict[str, Any] = Field(default_factory=dict)
+    window: str | None = None
+    params: list[str] = Field(default_factory=list)
+    param_intervals: dict[str, ParamIntervalSpec] = Field(default_factory=dict)
+    concurrency: int = 1
+    limit_seconds: int = 1800
     dispatch_ok: bool = False
     dispatch_error: str | None = None
     job_id: str | None = None
+
+
+class AutoSelectedCandidate(BaseModel):
+    index: int
+    composite_score: float
+    history_score: float | None = None
+    similarity: float | None = None
+    base_conf: dict[str, Any] = Field(default_factory=dict)
 
 
 class AutoModeStatus(BaseModel):
@@ -329,6 +357,9 @@ class AutoModeStatus(BaseModel):
     running: bool = False
     region: str | None = None
     started_at: datetime | None = None
+    config: AutoModeConfig
+    candidates_found: int = 0
+    selected_candidates: list[AutoSelectedCandidate] = Field(default_factory=list)
     assignments: list[AutoDispatchAssignment] = Field(default_factory=list)
 
 
