@@ -19,9 +19,7 @@ class Settings(BaseSettings):
     chromosomes: str = "chr20,chr21"
     platform_url: str = "https://api.theminos.ai"
     reference_url: str = "https://api.theminos.ai/reference"
-    # When concurrency > 1, assign different tune params to each parallel lane (faster).
-    param_split_concurrency: bool = True
-    # Max trials after base benchmark for random / optuna search.
+    # Max trials after base benchmark for adaptive search algorithms.
     adaptive_max_trials: int = 30
     # Random N Mb slice inside dispatched window for faster trials (0 = full window).
     benchmark_subwindow_mb: int = 3

@@ -87,8 +87,12 @@ def make_random_conf_sampler(
     return sample
 
 
-def create_optuna_study():
+def create_optuna_study(algorithm: str = "optuna"):
     import optuna
 
     optuna.logging.set_verbosity(optuna.logging.WARNING)
-    return optuna.create_study(direction="maximize")
+    if algorithm == "gp":
+        sampler = optuna.samplers.GPSampler(deterministic_objective=True)
+    else:
+        sampler = optuna.samplers.TPESampler()
+    return optuna.create_study(direction="maximize", sampler=sampler)

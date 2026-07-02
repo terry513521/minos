@@ -20,7 +20,7 @@ def _main_style_payload(**overrides) -> dict:
       "window": "chr21:35444092-40444092",
       "tool": "gatk",
       "concurrency": "4",
-      "algorithm": "grid",
+      "algorithm": "optuna",
       "limit": "1800",
       "base_conf": {
           "gatk_options": {

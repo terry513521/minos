@@ -212,7 +212,7 @@ class WorkerDispatchRequest(BaseModel):
     params: list[str] = Field(..., min_length=1)
     param_intervals: dict[str, ParamIntervalSpec] | None = None
     concurrency: int = Field(default=1, ge=1, le=32)
-    algorithm: str = "grid"
+    algorithm: str = "optuna"
     limit_seconds: int = Field(default=1800, ge=60, le=86400)
     candidate_index: int | None = None
 

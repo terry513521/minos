@@ -8,11 +8,11 @@ import {
 export const TOOLKIT_OPTIONS = ["gatk", "bcftools", "deepvariant"] as const;
 export type ToolkitOption = (typeof TOOLKIT_OPTIONS)[number];
 
-export const ALGORITHM_OPTIONS = ["grid", "random", "optuna"] as const;
+export const ALGORITHM_OPTIONS = ["optuna", "gp", "random", "sobol", "lhs"] as const;
 export type AlgorithmOption = (typeof ALGORITHM_OPTIONS)[number];
 
 export const DEFAULT_TOOLKIT: ToolkitOption = "gatk";
-export const DEFAULT_ALGORITHM: AlgorithmOption = "grid";
+export const DEFAULT_ALGORITHM: AlgorithmOption = "optuna";
 export const DEFAULT_LIMIT_SECONDS = 1800;
 export const DEFAULT_LIMIT_MINUTES = 30;
 
