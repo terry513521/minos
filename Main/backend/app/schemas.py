@@ -314,10 +314,8 @@ class AutoModeConfig(BaseModel):
     worker_names: list[str]
     worker_algorithms: dict[str, str] = Field(default_factory=dict)
     assignment_strategy: str = "score_similarity_composite"
-    algorithm_pool: list[str] = Field(
-        default_factory=lambda: ["optuna", "gp", "random", "sobol", "lhs"]
-    )
-    algorithm_assignment: str = "random"
+    algorithm_optuna_ratio: int = 2
+    algorithm_random_ratio: int = 1
     limit_seconds: int
     concurrency: int
     find_k: int

@@ -90,7 +90,8 @@ export function AutoModePanel() {
               <span className="auto-mode-card-label">Selection</span>
               <p>
                 Find {config.find_k} candidates → VM top score, Big most similar, Igno best composite.
-                Algorithms: random pick from {config.algorithm_pool.join(", ")}.
+                Algorithms: {config.algorithm_optuna_ratio}:{config.algorithm_random_ratio}{" "}
+                optuna:random.
               </p>
               {status.region && (
                 <p>
@@ -160,9 +161,9 @@ export function AutoModePanel() {
                     <td>VM top score · Big most similar · Igno best composite</td>
                   </tr>
                   <tr>
-                    <td>Pool</td>
+                    <td>Ratio</td>
                     <td>
-                      <code>{config.algorithm_pool.join(", ")}</code> ({config.algorithm_assignment})
+                      {config.algorithm_optuna_ratio}:{config.algorithm_random_ratio} optuna:random
                     </td>
                   </tr>
                   {status.assignments.length > 0 ? (
