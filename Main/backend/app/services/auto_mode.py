@@ -37,7 +37,7 @@ AUTO_SELECT_K = 3
 AUTO_LIMIT_SECONDS = 45 * 60
 AUTO_SCORE_WEIGHT = 0.4
 AUTO_SIMILARITY_WEIGHT = 0.6
-AUTO_CONCURRENCY = 2
+AUTO_CONCURRENCY = 1
 AUTO_TOOL = "gatk"
 AUTO_PARAMS = [
     "standard_min_confidence_threshold_for_calling",
@@ -116,10 +116,8 @@ class AutoModeStore:
         )
 
     def set_enabled(self, enabled: bool) -> AutoModeStatus:
+        """Toggle auto-start arming only; never stops worker optimizations."""
         self.enabled = enabled
-        if not enabled:
-            if self.session:
-                self.session.running = False
         return self.status()
 
 

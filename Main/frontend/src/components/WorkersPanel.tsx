@@ -39,6 +39,7 @@ import {
   saveWorkerPanelState,
 } from "../utils/workerPanelStorage";
 import {
+  assignmentsAsManual,
   assignmentsFromAutoMode,
   previewAssignmentsFromAutoConfig,
 } from "../utils/autoModeSync";
@@ -228,6 +229,12 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
           setAutoAssignmentsByWorker(assignmentsFromAutoMode(status));
         } else {
           setAutoAssignmentsByWorker({});
+          if (!status.enabled && status.assignments.length > 0) {
+            setAssignments((prev) => ({
+              ...prev,
+              ...assignmentsAsManual(status),
+            }));
+          }
         }
       })
       .catch(() => {});

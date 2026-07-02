@@ -45,7 +45,13 @@ export function Layout() {
       const status = await api.setAutoMode(!autoEnabled);
       setAutoEnabled(status.enabled);
       setAutoRunning(status.running);
-      setAutoMessage(status.enabled ? "Auto mode enabled" : "Auto mode disabled");
+      setAutoMessage(
+        status.enabled
+          ? "Auto mode enabled"
+          : status.running
+            ? "Auto mode disabled — worker optimizations continue"
+            : "Auto mode disabled",
+      );
       window.dispatchEvent(new Event(AUTO_MODE_CHANGED_EVENT));
     } catch (err) {
       setAutoMessage(err instanceof Error ? err.message : "Failed to update auto mode");

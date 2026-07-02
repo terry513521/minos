@@ -106,6 +106,18 @@ export function previewAssignmentsFromAutoConfig(
   return next;
 }
 
+export function assignmentsAsManual(
+  status: AutoModeStatus,
+): Record<string, WorkerAssignment> {
+  const synced = assignmentsFromAutoMode(status);
+  return Object.fromEntries(
+    Object.entries(synced).map(([workerId, assignment]) => [
+      workerId,
+      { ...assignment, autoManaged: false },
+    ]),
+  );
+}
+
 export function assignmentsFromAutoMode(status: AutoModeStatus): Record<string, WorkerAssignment> {
   if (!status.assignments.length) {
     return {};

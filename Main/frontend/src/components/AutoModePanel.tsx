@@ -51,15 +51,25 @@ export function AutoModePanel() {
         </div>
       </div>
 
-      {status.enabled && (
-        <>
-          <p className="auto-mode-panel-lead">
-            Overnight orchestration for <strong>VM</strong>, <strong>Big</strong>, and{" "}
-            <strong>Igno</strong>. Start via{" "}
-            <code>POST /api/v1/auto/start</code> with the round region. Export via{" "}
-            <code>POST /api/v1/auto/best</code>.
-          </p>
+      {status.enabled ? (
+        <p className="auto-mode-panel-lead">
+          Overnight orchestration for <strong>VM</strong>, <strong>Big</strong>, and{" "}
+          <strong>Igno</strong>. Start via <code>POST /api/v1/auto/start</code> with the round
+          region. Export via <code>POST /api/v1/auto/best</code>.
+        </p>
+      ) : status.running ? (
+        <p className="auto-mode-panel-lead">
+          Auto mode is <strong>off</strong>. Worker optimizations from the last auto start{" "}
+          <strong>continue</strong> — use the worker cards below for live scores.
+        </p>
+      ) : (
+        <p className="auto-mode-panel-lead">
+          Auto mode is off. Enable it to arm overnight orchestration.
+        </p>
+      )}
 
+      {(status.enabled || status.assignments.length > 0) && (
+        <>
           <div className="auto-mode-grid">
             <div className="auto-mode-card">
               <span className="auto-mode-card-label">Selection</span>
