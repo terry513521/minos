@@ -23,13 +23,14 @@ def variant_call(
     config: Dict[str, Any]
 ) -> Dict[str, Any]:
     """Run GATK HaplotypeCaller via Docker."""
-    threads = min(config.get("threads", os.cpu_count() or 2), os.cpu_count() or 2)
-    timeout = config.get("timeout", 1200)
+    cpu = os.cpu_count() or 2
+    threads = min(config.get("threads", min(4, cpu)), cpu)
+    timeout = config.get("timeout", 800)
 
-    # Auto-detect available memory, reserve 512MB for OS/Docker overhead
+    # Auto-detect available memory, reserve 4 GB for OS/Docker overhead
     try:
         total_mem_bytes = os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES')
-        auto_mem_gb = max(1, int(total_mem_bytes / (1024**3)) - 1)
+        auto_mem_gb = max(1, int(total_mem_bytes / (1024**3)) - 4)
     except (ValueError, OSError, AttributeError):
         auto_mem_gb = 2  # Conservative default
     memory_gb = config.get("memory_gb", auto_mem_gb)
@@ -61,6 +62,23 @@ def variant_call(
         return {"success": False, "variant_count": 0, "error": error_msg}
 
     start_time = time.time()
+
+    persistent_runner = config.get("_gatk_persistent_runner")
+    if config.get("persistent_container") and callable(persistent_runner):
+        result = persistent_runner(
+            bam_path=bam_path,
+            reference_path=reference_path,
+            output_vcf_path=output_vcf_path,
+            region=region,
+            flags=validation_result["flags"],
+            timeout=timeout,
+        )
+        if result.get("success"):
+            elapsed = time.time() - start_time
+            metadata = dict(result.get("metadata") or {})
+            metadata.setdefault("runtime_seconds", elapsed)
+            result["metadata"] = metadata
+        return result
 
     cmd = [
         "docker", "run", "--rm",

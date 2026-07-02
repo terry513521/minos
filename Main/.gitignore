@@ -1,0 +1,6 @@
+# Effortless local artifacts
+backend/.venv/
+backend/main.db
+backend/.env
+frontend/node_modules/
+frontend/dist/

@@ -1,0 +1,22 @@
+[Unit]
+Description=Effortless Optimizer Worker API
+Documentation=https://github.com/minos_subnet
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/workspacke/minos_subnet/Worker
+EnvironmentFile=-/root/workspacke/minos_subnet/Worker/.env
+Environment=WORKER_LOG_LEVEL=info
+ExecStart=/root/workspacke/minos_subnet/Worker/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8080 --workers 1 --proxy-headers --forwarded-allow-ips=* --log-level info --no-use-colors
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=120
+
+# Optimization jobs may run long GATK trials; allow graceful stop.
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target
