@@ -1,25 +1,21 @@
-from app.job_control import (
+from app.optimization.job_control import (
     clear_stop_request,
     is_stop_requested,
-    request_stop_optimization as signal_stop,
+    request_stop_optimization,
 )
-from app.jobs import request_stop_optimization, worker_busy
+from app.optimization.jobs import request_stop_optimization as jobs_request_stop, worker_busy
 
 
 def test_stop_request_lifecycle():
     clear_stop_request()
     assert not is_stop_requested()
-    signal_stop()
+    request_stop_optimization()
     assert is_stop_requested()
-
     clear_stop_request()
     assert not is_stop_requested()
 
 
-def test_request_stop_when_idle():
+def test_jobs_stop_when_idle():
     clear_stop_request()
-    assert request_stop_optimization() is False
-
-
-def test_worker_busy_when_idle():
-    assert worker_busy() is False
+    assert not worker_busy()
+    assert jobs_request_stop() is False

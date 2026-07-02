@@ -4,8 +4,8 @@ import random
 from copy import deepcopy
 from typing import Any, Callable
 
-from app.param_specs import TuneSpec, resolve_tune_specs
-from app.search import _values_for_param, _write_param_value
+from app.optimization.param_specs import TuneSpec, resolve_tune_specs
+from app.optimization.search import _values_for_param, _write_param_value
 
 
 def build_conf_from_params(

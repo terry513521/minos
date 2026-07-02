@@ -16,14 +16,14 @@ def conf_for_cache(conf: dict[str, Any]) -> dict[str, Any]:
     return cleaned
 
 
-def conf_cache_key(*, window: str, tool: str, bam_path: str, conf: dict[str, Any]) -> str:
+def conf_fingerprint(*, window: str, tool: str, conf: dict[str, Any], length: int = 16) -> str:
+    """Short stable id for GIAB VCF reuse."""
     payload = {
         "window": window.strip(),
         "tool": tool.lower().strip(),
-        "bam": bam_path,
         "conf": conf_for_cache(conf),
     }
     digest = hashlib.sha256(
         json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
     ).hexdigest()
-    return digest
+    return digest[:length]

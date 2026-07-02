@@ -15,6 +15,9 @@ class HealthResponse(BaseModel):
     cpu_count: int
     ram_total: str
     ram_available: str
+    data_dir: str | None = None
+    giab_ready: bool | None = None
+    giab_message: str | None = None
 
 
 class BestScoreResponse(BaseModel):

@@ -2,8 +2,8 @@ from copy import deepcopy
 from itertools import product
 from typing import Any
 
-from app.algorithms import is_adaptive_algorithm, normalize_algorithm
-from app.param_specs import TuneSpec
+from app.optimization.algorithms import is_adaptive_algorithm, normalize_algorithm
+from app.optimization.param_specs import TuneSpec
 
 
 def _tool_options_key(tool: str) -> str:
@@ -18,7 +18,7 @@ def _read_param_value(base_conf: dict[str, Any], tool: str, name: str) -> Any:
 
 
 def _write_param_value(conf: dict[str, Any], tool: str, name: str, value: Any) -> None:
-    from app.param_specs import coerce_param_value
+    from app.optimization.param_specs import coerce_param_value
 
     key = _tool_options_key(tool)
     options = conf.setdefault(key, {})
@@ -133,7 +133,7 @@ def build_search_space(
     param_intervals: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Expand base_conf by varying each listed conf parameter name."""
-    from app.param_specs import resolve_tune_specs
+    from app.optimization.param_specs import resolve_tune_specs
 
     specs = resolve_tune_specs(tool, param_names, param_intervals)
     if not specs:
@@ -208,7 +208,7 @@ def summarize_param_axes(
     param_intervals: dict[str, Any] | None,
 ) -> list[dict[str, Any]]:
     """Per-parameter value counts and preview for logging / UI."""
-    from app.param_specs import resolve_tune_specs
+    from app.optimization.param_specs import resolve_tune_specs
 
     if not param_names:
         return []

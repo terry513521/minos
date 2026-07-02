@@ -1043,6 +1043,149 @@ class AdvancedScorer:
         overcall_penalty = metrics.get('overcall_penalty', 0.0)
         return max(0.0, final_score - overcall_penalty)
 
+    @staticmethod
+    def compute_breakdown(metrics: Dict[str, float]) -> Dict[str, Any]:
+        """Return AdvancedScorer component breakdown for UI / tuning."""
+        f1_snp = float(metrics.get('f1_snp', 0) or 0)
+        f1_indel = float(metrics.get('f1_indel', 0) or 0)
+        recall_snp = float(metrics.get('recall_snp', 0) or 0)
+        recall_indel = float(metrics.get('recall_indel', 0) or 0)
+
+        truth_total_snp = float(metrics.get('truth_total_snp', 0) or 0)
+        truth_total_indel = float(metrics.get('truth_total_indel', 0) or 0)
+        query_total_snp = float(metrics.get('query_total_snp', 0) or 0)
+        query_total_indel = float(metrics.get('query_total_indel', 0) or 0)
+        fp_snp = float(metrics.get('fp_snp', 0) or 0)
+        fp_indel = float(metrics.get('fp_indel', 0) or 0)
+        frac_na_snp = float(metrics.get('frac_na_snp', 0) or 0)
+        frac_na_indel = float(metrics.get('frac_na_indel', 0) or 0)
+
+        titv_truth_snp = float(metrics.get('titv_truth_snp', 0) or 0)
+        titv_query_snp = float(metrics.get('titv_query_snp', 0) or 0)
+        hethom_truth_snp = float(metrics.get('hethom_truth_snp', 0) or 0)
+        hethom_query_snp = float(metrics.get('hethom_query_snp', 0) or 0)
+        hethom_truth_indel = float(metrics.get('hethom_truth_indel', 0) or 0)
+        hethom_query_indel = float(metrics.get('hethom_query_indel', 0) or 0)
+
+        total_truth = truth_total_snp + truth_total_indel
+        if total_truth <= 0:
+            return {
+                "scorer": metrics.get("scorer", "Advanced"),
+                "final_score": None,
+                "error": "Missing truth totals — full hap.py metrics required for breakdown",
+            }
+
+        weighted_f1 = (f1_snp * truth_total_snp + f1_indel * truth_total_indel) / total_truth
+        core_component = AdvancedScorer.emphasis(weighted_f1, gamma=0.5)
+
+        avg_recall = (recall_snp + recall_indel) / 2
+        frac_na = max(frac_na_snp, frac_na_indel)
+        coverage = 1.0 - frac_na
+        completeness_component = (
+            AdvancedScorer.emphasis(avg_recall, gamma=3.0) +
+            AdvancedScorer.emphasis(coverage, gamma=2.0)
+        ) / 2.0
+
+        total_fp = fp_snp + fp_indel
+        total_calls = query_total_snp + query_total_indel
+        fp_rate = total_fp / max(total_calls, 1.0)
+        size_ratio = total_calls / max(total_truth, 1.0)
+        target_fp = max(0.002, 1.0 / max(total_truth, 1.0))
+        fp_pen = math.exp(-max(0.0, fp_rate - target_fp) / target_fp)
+        size_pen = math.exp(-abs(size_ratio - 1.0) / 0.10)
+        fp_component = (fp_pen + size_pen) / 2.0
+
+        titv_penalties = []
+        hethom_penalties = []
+        if titv_truth_snp > 0 and titv_query_snp > 0:
+            titv_penalties.append(AdvancedScorer.ratio_penalty(titv_query_snp - titv_truth_snp, 0.1))
+        if hethom_truth_snp > 0 and hethom_query_snp > 0:
+            hethom_penalties.append(AdvancedScorer.ratio_penalty(hethom_query_snp - hethom_truth_snp, 0.15))
+        if hethom_truth_indel > 0 and hethom_query_indel > 0:
+            hethom_penalties.append(AdvancedScorer.ratio_penalty(hethom_query_indel - hethom_truth_indel, 0.15))
+
+        titv_component = sum(titv_penalties) / len(titv_penalties) if titv_penalties else 1.0
+        hethom_component = sum(hethom_penalties) / len(hethom_penalties) if hethom_penalties else 1.0
+        quality_component = (titv_component + hethom_component) / 2.0
+
+        weights = (0.60, 0.15, 0.15, 0.10)
+        raw_sum = (
+            weights[0] * core_component +
+            weights[1] * completeness_component +
+            weights[2] * fp_component +
+            weights[3] * quality_component
+        )
+        overcall_penalty = float(metrics.get('overcall_penalty', 0) or 0)
+        final_score = max(0.0, 100.0 * raw_sum - overcall_penalty)
+
+        def _contrib(component: float, weight: float) -> float:
+            return round(100.0 * weight * component, 2)
+
+        return {
+            "scorer": metrics.get("scorer", "Advanced"),
+            "final_score": round(final_score, 2),
+            "combined_final": round(final_score / 100.0, 6),
+            "overcall_penalty": round(overcall_penalty, 2),
+            "weighted_f1": round(weighted_f1, 4),
+            "formula": "100 × (0.60×Core + 0.15×Completeness + 0.15×FP rate + 0.10×Quality) − overcall_penalty",
+            "components": [
+                {
+                    "id": "core",
+                    "label": "Core F1",
+                    "weight": 0.60,
+                    "value": round(core_component, 4),
+                    "contribution": _contrib(core_component, 0.60),
+                    "detail": f"Truth-weighted F1 {weighted_f1:.3f} with emphasis γ=0.5",
+                },
+                {
+                    "id": "completeness",
+                    "label": "Completeness",
+                    "weight": 0.15,
+                    "value": round(completeness_component, 4),
+                    "contribution": _contrib(completeness_component, 0.15),
+                    "detail": f"Avg recall {avg_recall:.3f} (γ=3) + coverage {coverage:.3f} (γ=2)",
+                },
+                {
+                    "id": "fp",
+                    "label": "FP rate",
+                    "weight": 0.15,
+                    "value": round(fp_component, 4),
+                    "contribution": _contrib(fp_component, 0.15),
+                    "detail": f"FP rate {fp_rate:.4f} vs target {target_fp:.4f}; call/truth ratio {size_ratio:.3f}",
+                },
+                {
+                    "id": "quality",
+                    "label": "Quality",
+                    "weight": 0.10,
+                    "value": round(quality_component, 4),
+                    "contribution": _contrib(quality_component, 0.10),
+                    "detail": "Ti/Tv and Het/Hom ratio match penalties",
+                },
+            ],
+            "counts": {
+                "snp": {
+                    "tp": int(metrics.get("tp_snp", metrics.get("snp_tp", 0)) or 0),
+                    "fp": int(fp_snp),
+                    "fn": int(metrics.get("fn_snp", metrics.get("snp_fn", 0)) or 0),
+                    "truth": int(truth_total_snp),
+                    "called": int(query_total_snp),
+                },
+                "indel": {
+                    "tp": int(metrics.get("tp_indel", metrics.get("indel_tp", 0)) or 0),
+                    "fp": int(fp_indel),
+                    "fn": int(metrics.get("fn_indel", metrics.get("indel_fn", 0)) or 0),
+                    "truth": int(truth_total_indel),
+                    "called": int(query_total_indel),
+                },
+            },
+            "f1": {"snp": round(f1_snp, 4), "indel": round(f1_indel, 4)},
+            "precision": {
+                "snp": round(float(metrics.get("precision_snp", metrics.get("snp_precision", 0)) or 0), 4),
+                "indel": round(float(metrics.get("precision_indel", metrics.get("indel_precision", 0)) or 0), 4),
+            },
+            "recall": {"snp": round(recall_snp, 4), "indel": round(recall_indel, 4)},
+        }
+
 
 def parse_happy_vcf(vcf_path: str, truth_vcf_path: str = None) -> List[Dict[str, Any]]:
     """Parse hap.py annotated VCF to extract per-variant TP/FP/FN classifications.

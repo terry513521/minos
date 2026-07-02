@@ -1,0 +1,9 @@
+{
+  "label": "baseline",
+  "gatk_options": {
+    "pcr_indel_model": "CONSERVATIVE",
+    "standard_min_confidence_threshold_for_calling": 30.0,
+    "min_mapping_quality_score": 20,
+    "min_base_quality_score": 10
+  }
+}

@@ -1,4 +1,4 @@
-from app.search import build_optimization_plan, format_optimization_plan
+from app.optimization.search import build_optimization_plan, format_optimization_plan
 
 
 def test_optimization_plan_param_split():

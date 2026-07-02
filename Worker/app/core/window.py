@@ -1,6 +1,20 @@
 from __future__ import annotations
 
-from app.assets import parse_window
+import re
+
+WINDOW_RE = re.compile(r"^(chr(?:[1-9]|1[0-9]|2[0-2]|X|Y|M)):(\d+)-(\d+)$", re.IGNORECASE)
+
+
+def parse_window(window: str) -> tuple[str, int, int]:
+    match = WINDOW_RE.match(window.strip())
+    if not match:
+        raise ValueError(f"Invalid window format: {window}")
+    chrom = match.group(1)
+    start = int(match.group(2))
+    end = int(match.group(3))
+    if start >= end:
+        raise ValueError(f"Invalid window coordinates: {window}")
+    return chrom, start, end
 
 
 def format_window(chrom: str, start: int, end: int) -> str:

@@ -11,20 +11,19 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any, Callable
 
-from app.adaptive_search import (
+from app.optimization.adaptive_search import (
     build_conf_from_params,
     create_optuna_study,
     resolve_search_specs,
     suggest_optuna_params,
     suggest_random_params,
 )
-from app.algorithms import is_adaptive_algorithm, normalize_algorithm
-from app.assets import WORKER_ROOT, resolve_assets
-from app.benchmark import BenchmarkResult, conf_equals, run_benchmark
+from app.optimization.algorithms import is_adaptive_algorithm, normalize_algorithm
+from app.benchmark import BenchmarkResult, conf_equals, run_benchmark, validate_benchmark_assets, validate_tool_supported
 from app.config import Settings, get_settings
-from app.job_control import is_stop_requested
-from app.schemas import OptimizeRequest, OptimizeResponse
-from app.search import (
+from app.optimization.job_control import is_stop_requested
+from app.domain.schemas import OptimizeRequest, OptimizeResponse
+from app.optimization.search import (
     build_optimization_plan,
     build_search_space,
     count_search_trials,
@@ -32,8 +31,9 @@ from app.search import (
     format_optimization_plan,
     split_params_for_lanes,
 )
-from app.state import best_store
-from app.window_utils import resolve_benchmark_window
+from app.domain.state import best_store
+from app.core.window import resolve_benchmark_window
+from app.paths import WORKER_ROOT
 
 logger = logging.getLogger(__name__)
 
@@ -41,14 +41,14 @@ logger = logging.getLogger(__name__)
 def validate_optimize_request(request: OptimizeRequest, settings: Settings | None = None) -> int:
     """Validate payload and return search space size (no benchmarks)."""
     settings = settings or get_settings()
+    validate_tool_supported(request.tool)
     algorithm = normalize_algorithm(request.algorithm)
     _parse_limit_seconds(request.limit)
     _parse_concurrency(request.concurrency)
-    from app.assets import validate_benchmark_assets
+    from app.benchmark import validate_benchmark_assets
 
     benchmark_window, _ = resolve_benchmark_window(request.window, settings.benchmark_subwindow_mb)
     validate_benchmark_assets(benchmark_window, settings)
-    resolve_assets(benchmark_window, settings)
     intervals = _intervals_payload(request)
     concurrency = _parse_concurrency(request.concurrency)
     param_split = (
@@ -134,7 +134,6 @@ def _evaluate_conf(
     conf: dict[str, Any],
     work_root: Path,
     settings: Settings,
-    gatk_pool: Any | None = None,
 ) -> BenchmarkResult:
     trial_dir = work_root / f"trial_{uuid.uuid4().hex[:12]}"
     trial_dir.mkdir(parents=True, exist_ok=True)
@@ -145,7 +144,6 @@ def _evaluate_conf(
             conf=conf,
             work_dir=trial_dir,
             settings=settings,
-            gatk_pool=gatk_pool,
         )
     finally:
         shutil.rmtree(trial_dir, ignore_errors=True)
@@ -180,7 +178,6 @@ def _run_param_split_lanes(
     concurrency: int,
     work_root: Path,
     settings: Settings,
-    gatk_pool: Any | None,
     timed_out: Callable[[], bool],
     record_result: Callable[[BenchmarkResult, str], None],
 ) -> None:
@@ -204,7 +201,7 @@ def _run_param_split_lanes(
             if timed_out():
                 return
             record_result(
-                _evaluate_conf(request, conf, work_root, settings, gatk_pool),
+                _evaluate_conf(request, conf, work_root, settings),
                 f"lane [{', '.join(lane_params)}]",
             )
 
@@ -229,7 +226,6 @@ def _run_adaptive_search(
     max_trials: int,
     work_root: Path,
     settings: Settings,
-    gatk_pool: Any | None,
     timed_out: Callable[[], bool],
     record_result: Callable[[BenchmarkResult, str], None],
 ) -> None:
@@ -245,7 +241,7 @@ def _run_adaptive_search(
         seen.add(key)
         return True
 
-    evaluate = lambda conf: _evaluate_conf(request, conf, work_root, settings, gatk_pool)
+    evaluate = lambda conf: _evaluate_conf(request, conf, work_root, settings)
 
     if algorithm == "random":
         while not timed_out() and extra_done < max_trials:
@@ -323,8 +319,8 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
         limit_seconds=limit_seconds,
         algorithm=algorithm,
         adaptive_max_trials=settings.adaptive_max_trials,
-        vcf_cache_enabled=settings.vcf_cache_enabled,
-        gatk_persistent_container=settings.gatk_persistent_container,
+        vcf_cache_enabled=True,
+        gatk_persistent_container=False,
         source_window=source_window,
         trial_threads=settings.trial_threads,
         trial_memory_gb=settings.trial_memory_gb,
@@ -335,43 +331,26 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
 
     best_store.begin_job(
         request.job_id,
-        benchmark_window,
+        request.window,
         job_request.tool,
         search_space_size=search_space_size,
     )
+    progress_msg = (
+        f"Planned {search_space_size} trials · {plan['mode']} · "
+        f"{plan['param_count']} params"
+    )
+    if source_window and source_window != benchmark_window:
+        progress_msg += f" · benchmark crop {benchmark_window}"
     best_store.set_progress(
         trials_evaluated=0,
-        message=(
-            f"Planned {search_space_size} trials · {plan['mode']} · "
-            f"{plan['param_count']} params"
-        ),
+        message=progress_msg,
     )
     work_root = WORKER_ROOT / "runs" / request.job_id
     work_root.mkdir(parents=True, exist_ok=True)
 
-    gatk_pool = None
+    logger.info("Benchmark: GIAB (Worker/datasets/giab)")
+
     try:
-        if settings.gatk_persistent_container and job_request.tool.lower() == "gatk":
-            assets = resolve_assets(benchmark_window, settings)
-            threads, memory_gb = _runtime_resources(settings, job_request.base_conf)
-            from app.gatk_container import GatkContainerPool
-
-            gatk_pool = GatkContainerPool(
-                job_id=request.job_id,
-                bam_path=assets.bam_path,
-                reference_path=assets.reference_fasta,
-                output_parent=work_root,
-                slots=concurrency,
-                threads=threads,
-                memory_gb=memory_gb,
-            )
-            logger.info(
-                "Persistent GATK pool: %s container(s), %s threads, %s GB",
-                concurrency,
-                threads,
-                memory_gb,
-            )
-
         best_score: float | None = None
         best_conf = deepcopy(request.base_conf)
         trials_evaluated = 0
@@ -408,7 +387,7 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
 
         logger.info("Trial 1/%s (base conf)", search_space_size)
         base_result = _evaluate_conf(
-            job_request, job_request.base_conf, work_root, settings, gatk_pool
+            job_request, job_request.base_conf, work_root, settings
         )
         record_result(base_result, "base conf")
 
@@ -431,7 +410,6 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
                     max_trials=settings.adaptive_max_trials,
                     work_root=work_root,
                     settings=settings,
-                    gatk_pool=gatk_pool,
                     timed_out=timed_out,
                     record_result=record_result,
                 )
@@ -448,7 +426,6 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
                     concurrency=concurrency,
                     work_root=work_root,
                     settings=settings,
-                    gatk_pool=gatk_pool,
                     timed_out=timed_out,
                     record_result=record_result,
                 )
@@ -467,7 +444,7 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
                 )
                 if candidate_variants:
                     evaluate = lambda conf: _evaluate_conf(
-                        job_request, conf, work_root, settings, gatk_pool
+                        job_request, conf, work_root, settings
                     )
                     _run_parallel_grid(
                         candidate_variants=candidate_variants,
@@ -523,6 +500,6 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
             best_conf=best_conf,
             message=finish_message,
         )
-    finally:
-        if gatk_pool is not None:
-            gatk_pool.stop_all()
+    except Exception:
+        logger.exception("Optimization job failed")
+        raise

@@ -1,4 +1,4 @@
-from app.search import count_search_trials, split_params_for_lanes
+from app.optimization.search import count_search_trials, split_params_for_lanes
 
 
 def test_split_params_for_lanes_round_robin():

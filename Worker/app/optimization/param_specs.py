@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from app.benchmark import ensure_repo_imports
+from app.core.repo import ensure_repo_imports
 
 
 @dataclass(frozen=True)

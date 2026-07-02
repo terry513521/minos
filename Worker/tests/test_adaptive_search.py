@@ -1,12 +1,12 @@
 import pytest
 
-from app.algorithms import is_adaptive_algorithm, normalize_algorithm
-from app.adaptive_search import (
+from app.optimization.algorithms import is_adaptive_algorithm, normalize_algorithm
+from app.optimization.adaptive_search import (
     build_conf_from_params,
     suggest_random_params,
 )
-from app.param_specs import resolve_tune_specs
-from app.search import build_optimization_plan, count_search_trials
+from app.optimization.param_specs import resolve_tune_specs
+from app.optimization.search import build_optimization_plan, count_search_trials
 
 
 def test_normalize_algorithm():

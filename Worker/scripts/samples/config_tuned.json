@@ -1,0 +1,9 @@
+{
+  "label": "tuned",
+  "gatk_options": {
+    "pcr_indel_model": "NONE",
+    "standard_min_confidence_threshold_for_calling": 32.0,
+    "min_mapping_quality_score": 24,
+    "min_base_quality_score": 10
+  }
+}

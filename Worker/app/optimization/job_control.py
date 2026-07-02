@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import threading
 
-from app.state import best_store
+from app.domain.state import best_store
 
 logger = logging.getLogger(__name__)
 

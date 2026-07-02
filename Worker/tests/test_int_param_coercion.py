@@ -1,4 +1,4 @@
-from app.search import build_search_space
+from app.optimization.search import build_search_space
 
 
 def test_int_param_linear_grid_uses_int_not_float():

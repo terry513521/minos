@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""List worker benchmark datasets, sizes, and missing files."""
+"""List GIAB benchmark prerequisites under Worker/datasets/."""
 
 from __future__ import annotations
 
-import json
 import os
 import sys
 from pathlib import Path
@@ -19,11 +18,10 @@ try:
 except ImportError:
     pass
 
-from app.assets import resolve_benchmark_bam, resolve_truth_vcf
+from app.benchmark.giab.paths import reference_dir
+from app.benchmark.giab.paths import giab_bam_dir, giab_data_dir, giab_vcf_dir
 from app.config import Settings
-
-DATA_DIR = ROOT / os.getenv("WORKER_DATA_DIR", "datasets")
-MANIFEST = DATA_DIR / "manifest.json"
+from app.paths import WORKER_ROOT, data_root
 
 
 def human_size(num_bytes: int) -> str:
@@ -41,127 +39,62 @@ def parse_chromosomes(raw: str) -> list[str]:
     return [c.strip() for c in (raw or "chr20,chr21").split(",") if c.strip()]
 
 
-def _bam_ok(chrom: str, settings: Settings) -> tuple[bool, Path | None]:
-    path = resolve_benchmark_bam(chrom, settings)
-    if path.exists() and path.stat().st_size > 0:
-        index = path.parent / f"{path.name}.bai"
-        if index.exists():
-            return True, path
-    bams_dir = DATA_DIR / "bams"
-    if bams_dir.is_dir():
-        for candidate in sorted(bams_dir.glob(f"HG002_{chrom}_*.bam")):
-            index = candidate.parent / f"{candidate.name}.bai"
-            if candidate.stat().st_size > 0 and index.exists():
-                return True, candidate
-    return False, None
-
-
-def _truth_ok(chrom: str, settings: Settings) -> tuple[bool, Path | None]:
-    path = resolve_truth_vcf(chrom, settings)
-    return path is not None, path
-
-
 def main() -> int:
     settings = Settings()
-    chromosomes = parse_chromosomes(os.getenv("WORKER_CHROMOSOMES", "chr20,chr21"))
-    print(f"Worker datasets root: {DATA_DIR.relative_to(ROOT)}/")
-    print(f"Chromosomes: {', '.join(chromosomes)}")
-    print(
-        f"Mode: {'benchmark (fixed BAM + GIAB truth; region from job only)' if settings.benchmark_mode else 'platform BAM'}"
-    )
-    if settings.benchmark_mode:
-        print(f"Benchmark truth: {settings.benchmark_truth_vcf}\n")
-    else:
-        print()
+    chromosomes = parse_chromosomes(os.getenv("WORKER_CHROMOSOMES", settings.chromosomes))
+    datasets = data_root(settings.data_dir)
 
-    total = 0
-    missing_bams: list[str] = []
-    missing_truth: list[str] = []
+    print("Benchmark: GIAB (self-contained under Worker/datasets/)")
+    print(f"Worker root:   {WORKER_ROOT}")
+    print(f"Datasets:      {datasets.relative_to(WORKER_ROOT)}/")
+    print(f"Chromosomes:   {', '.join(chromosomes)}\n")
+
     exit_code = 0
+    total = 0
 
     for chrom in chromosomes:
         print(f"[{chrom}]")
-        bam_ok, bam_path = _bam_ok(chrom, settings)
-        truth_ok, truth_path = _truth_ok(chrom, settings)
-        paths = [
-            DATA_DIR / "reference" / chrom / f"{chrom}.fa",
-            DATA_DIR / "reference" / chrom / f"{chrom}.fa.fai",
-            DATA_DIR / "reference" / chrom / f"{chrom}.dict",
-            DATA_DIR / "reference" / chrom / f"{chrom}.sdf",
-        ]
-        for path in paths:
-            if not path.exists():
-                print(f"  --  {path.relative_to(ROOT)}  (missing)")
-                continue
-            size = path.stat().st_size if path.is_file() else sum(
-                f.stat().st_size for f in path.rglob("*") if f.is_file()
-            )
-            total += size
-            print(f"  OK  {path.relative_to(ROOT)}  ({human_size(size)})")
+        ref = reference_dir(chrom) / f"{chrom}.fa"
+        ref_fai = ref.parent / f"{ref.name}.fai"
+        sdf = ref.parent / f"{chrom}.sdf"
+        for path, label in (
+            (ref, "reference FASTA"),
+            (ref_fai, "reference index"),
+            (sdf, "reference SDF (hap.py)"),
+        ):
+            if path.exists():
+                size = path.stat().st_size if path.is_file() else sum(
+                    f.stat().st_size for f in path.rglob("*") if f.is_file()
+                )
+                total += size
+                print(f"  OK  {path.relative_to(WORKER_ROOT)}  ({human_size(size)})  [{label}]")
+            else:
+                print(f"  --  {path.relative_to(WORKER_ROOT)}  (missing) [{label}]")
+                exit_code = 1
 
-        if bam_ok and bam_path is not None:
-            size = bam_path.stat().st_size
-            total += size
-            print(f"  OK  {bam_path.relative_to(ROOT)}  ({human_size(size)})  [benchmark BAM]")
-            index = bam_path.parent / f"{bam_path.name}.bai"
-            if index.exists():
-                total += index.stat().st_size
-        else:
-            print(f"  --  datasets/bams/{chrom}.bam  (missing)")
-            print(f"  --  datasets/bams/HG002_{chrom}_*.bam  (missing)")
-            missing_bams.append(chrom)
+        truth_vcf = giab_data_dir() / "HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz"
+        truth_bed = giab_data_dir() / "HG002_GRCh38_1_22_v4.2.1_benchmark_noinconsistent.bed"
+        for path, label in (
+            (truth_vcf, "GIAB truth VCF (auto-download on first run)"),
+            (truth_bed, "GIAB confident BED"),
+        ):
+            if path.exists() and path.stat().st_size > 0:
+                total += path.stat().st_size
+                print(f"  OK  {path.relative_to(WORKER_ROOT)}  ({human_size(path.stat().st_size)})  [{label}]")
+            else:
+                print(f"  ..  {path.relative_to(WORKER_ROOT)}  (not yet — downloaded on first benchmark) [{label}]")
 
-        if truth_ok and truth_path is not None:
-            size = truth_path.stat().st_size
-            total += size
-            print(f"  OK  {truth_path.relative_to(ROOT)}  ({human_size(size)})  [truth]")
-        else:
-            print(f"  --  {settings.benchmark_truth_vcf}  (missing)")
-            print(f"  --  datasets/truth/{chrom}.vcf.gz  (missing)")
-            missing_truth.append(chrom)
-
-        mutations = DATA_DIR / "truth" / f"{chrom}.mutations.vcf.gz"
-        if mutations.exists():
-            size = mutations.stat().st_size
-            total += size
-            print(f"  OK  {mutations.relative_to(ROOT)}  ({human_size(size)})  [mutations, optional]")
-        else:
-            print(f"  --  {mutations.relative_to(ROOT)}  (optional)")
+        bam_dir = giab_bam_dir()
+        bam_count = len(list(bam_dir.glob("HG002_*.bam"))) if bam_dir.is_dir() else 0
+        print(f"  ..  {bam_dir.relative_to(WORKER_ROOT)}/  ({bam_count} cached BAM slice(s))")
+        print(f"  ..  {giab_vcf_dir().relative_to(WORKER_ROOT)}/  (scored VCF reuse cache)")
         print()
 
-    print(f"Total on disk: {human_size(total)}")
-
-    if MANIFEST.exists():
-        print(f"\nPlatform manifest: {MANIFEST.relative_to(ROOT)}")
-        data = json.loads(MANIFEST.read_text())
-        for row in data.get("assets", []):
-            chrom = row.get("chromosome")
-            size = row.get("bam_size_human")
-            source = row.get("source")
-            print(f"  {chrom}: {size or '?'} ({source or 'unknown'})")
-
-    if missing_bams:
-        exit_code = 1
-        print(
-            "\nMissing benchmark BAM(s) for: "
-            + ", ".join(sorted(set(missing_bams)))
-            + ".\n"
-            "  Need datasets/bams/{chrom}.bam, HG002_{chrom}_minos_window.bam, "
-            "or HG002_{chrom}_<start>-<end>.bam with matching .bai."
-        )
-
-    if missing_truth:
-        exit_code = 1
-        print(
-            "\nMissing truth for: "
-            + ", ".join(sorted(set(missing_truth)))
-            + f".\n"
-            f"  Expected GIAB file: {settings.benchmark_truth_vcf}"
-        )
-
+    print(f"Reference total (listed): {human_size(total)}")
     if exit_code == 0:
-        print("\nBenchmark datasets ready. Optimization uses job region only; platform round BAM not required.")
-
+        print("\nGIAB benchmark ready. First trial may download truth/BAM slices.")
+    else:
+        print("\nFix missing reference under datasets/reference/{chr}/ — run Worker setup.sh")
     return exit_code
 
 

@@ -4,10 +4,10 @@ import logging
 import threading
 
 from app.config import Settings
-from app.job_control import clear_stop_request, request_stop_optimization as signal_stop
-from app.optimizer import optimize_job
-from app.schemas import OptimizeRequest
-from app.state import best_store
+from app.optimization.job_control import clear_stop_request, request_stop_optimization as signal_stop
+from app.optimization.optimizer import optimize_job
+from app.domain.schemas import OptimizeRequest
+from app.domain.state import best_store
 
 logger = logging.getLogger(__name__)
 
