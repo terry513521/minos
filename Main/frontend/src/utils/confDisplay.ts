@@ -49,9 +49,58 @@ export function confToJson(conf: Record<string, unknown>, pretty = true): string
   return JSON.stringify(conf, null, pretty ? 2 : 0);
 }
 
+/** Extract `{tool}_options` inner dict for miner-style .conf export. */
+export function extractConfOptions(conf: Record<string, unknown>): Record<string, unknown> {
+  const optionKeys = Object.keys(conf).filter((key) => key.endsWith("_options"));
+  if (optionKeys.length > 0) {
+    const preferred =
+      optionKeys.find((key) => key === "gatk_options") ??
+      optionKeys.find((key) => key === "bcftools_options") ??
+      optionKeys.find((key) => key === "deepvariant_options") ??
+      optionKeys[0];
+    const inner = conf[preferred];
+    if (inner && typeof inner === "object" && !Array.isArray(inner)) {
+      return inner as Record<string, unknown>;
+    }
+  }
+
+  const scalars = Object.fromEntries(
+    Object.entries(conf).filter(
+      ([, value]) => value == null || typeof value !== "object" || Array.isArray(value),
+    ),
+  );
+  if (Object.keys(scalars).length > 0) {
+    return scalars;
+  }
+
+  return conf;
+}
+
+function formatConfValue(value: unknown): string {
+  if (typeof value === "boolean") {
+    return value ? "true" : "false";
+  }
+  if (typeof value === "number") {
+    return Number.isInteger(value) ? String(value) : String(value);
+  }
+  if (value == null) {
+    return "";
+  }
+  return String(value);
+}
+
+/** Minos miner format: one `key=value` per line (see configs/*.conf). */
+export function confToDotConf(conf: Record<string, unknown>): string {
+  const options = extractConfOptions(conf);
+  const lines = Object.entries(options)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `${key}=${formatConfValue(value)}`);
+  return lines.length > 0 ? `${lines.join("\n")}\n` : "";
+}
+
 export async function copyConfToClipboard(conf: Record<string, unknown>): Promise<boolean> {
   try {
-    await navigator.clipboard.writeText(confToJson(conf));
+    await navigator.clipboard.writeText(confToDotConf(conf));
     return true;
   } catch {
     return false;
@@ -59,11 +108,12 @@ export async function copyConfToClipboard(conf: Record<string, unknown>): Promis
 }
 
 export function downloadConfFile(conf: Record<string, unknown>, fileName: string): void {
-  const blob = new Blob([confToJson(conf)], { type: "application/json" });
+  const blob = new Blob([confToDotConf(conf)], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = fileName.endsWith(".json") ? fileName : `${fileName}.json`;
+  const base = fileName.replace(/\.(json|conf)$/i, "");
+  anchor.download = `${base}.conf`;
   anchor.click();
   URL.revokeObjectURL(url);
 }
