@@ -130,12 +130,20 @@ export function CandidateFinderPanel({
 
       {result && (
         <div className="candidate-results">
-          <div className="candidate-results-summary">
+            <div className="candidate-results-summary">
             <span className="chip chip-accent">{result.tool}</span>
             <span className="chip">
               {result.coordinate_matched} similar on {result.chromosome}
             </span>
-            {result.used_default && <span className="chip chip-warn">default conf</span>}
+            {result.total_history === 0 && (
+              <span className="chip chip-warn">no history in database</span>
+            )}
+            {result.used_default && result.total_history > 0 && (
+              <span className="chip chip-warn">no similar window — default conf</span>
+            )}
+            {result.used_default && result.total_history === 0 && (
+              <span className="chip chip-warn">default conf — import history first</span>
+            )}
           </div>
           <div className="candidate-card-grid">
             {result.candidates.map((c) => (

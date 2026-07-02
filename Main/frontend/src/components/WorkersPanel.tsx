@@ -27,6 +27,7 @@ import {
   defaultParamInterval,
   ParamInterval,
 } from "../utils/paramBounds";
+import { parseToolOptionValue, setToolOption } from "../utils/confEdit";
 import { WORKERS_CHANGED_EVENT } from "./AddWorkerModal";
 import { ConfParamPicker } from "./ConfParamPicker";
 import { ConfManualEditor } from "./ConfManualEditor";
@@ -38,8 +39,8 @@ import {
 } from "../utils/workerPanelStorage";
 
 const CONCURRENCY_OPTIONS = [1, 2, 3, 4, 6, 8];
-/** Background poll for worker GET /best — manual Refresh fetches immediately. */
-const BEST_POLL_INTERVAL_MS = 5 * 60 * 1000;
+/** Background poll for worker GET /best — updates every second while workers are registered. */
+const BEST_POLL_INTERVAL_MS = 1000;
 
 interface WorkersPanelProps {
   candidateContext?: FindCandidatesResponse | null;
@@ -109,9 +110,18 @@ function hasConfContent(conf: Record<string, unknown>): boolean {
 
 function bestStatusClass(status: string | null | undefined): string {
   if (status === "ready") return "online";
-  if (status === "optimizing") return "running";
+  if (status === "optimizing" || status === "stopping") return "running";
   if (status === "error") return "failed";
   return "offline";
+}
+
+function isJobActive(status: string | null | undefined): boolean {
+  return status === "optimizing" || status === "stopping";
+}
+
+function formatTrialScore(score: number | null | undefined): string {
+  if (score == null || Number.isNaN(score)) return "—";
+  return `${(score * 100).toFixed(2)}%`;
 }
 
 function withoutLoadingBest(
@@ -309,6 +319,7 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
             search_space_size: 0,
             updated_at: null,
             message: null,
+            trials: [],
             error: err instanceof Error ? err.message : "Failed to fetch best score",
           },
         }));
@@ -341,7 +352,20 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
         });
         return;
       }
-      void pollWorkerBest(workerId, true);
+
+      const deadline = Date.now() + 120_000;
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => window.setTimeout(resolve, 500));
+        try {
+          const best = await api.fetchWorkerBest(workerId);
+          setBestByWorker((prev) => ({ ...prev, [workerId]: best }));
+          if (best.ok && best.status && !isJobActive(best.status)) {
+            break;
+          }
+        } catch {
+          break;
+        }
+      }
     } catch (err) {
       setBestByWorker((prev) => {
         const current = prev[workerId];
@@ -466,6 +490,19 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
     });
   }
 
+  function updateBaseParamValue(workerId: string, param: string, raw: string) {
+    const assignment = assignments[workerId];
+    if (!assignment) return;
+    const value = parseToolOptionValue(assignment.tool, param, raw);
+    const nextBaseConf = setToolOption(
+      assignment.candidate.base_conf,
+      assignment.tool,
+      param,
+      value,
+    );
+    updateAssignmentBaseConf(workerId, nextBaseConf);
+  }
+
   function updateParamInterval(
     workerId: string,
     param: string,
@@ -572,7 +609,7 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
             const score =
               assignment?.candidate.history_score ?? assignment?.candidate.rank_score;
             const isOptimizing = Boolean(
-              best && best !== "loading" && best.ok && best.status === "optimizing",
+              best && best !== "loading" && best.ok && isJobActive(best.status),
             );
             const compareBaseConf =
               assignment?.candidate.base_conf ?? baseConfByWorker[worker.id] ?? null;
@@ -628,7 +665,7 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
                   <div className="worker-best-head">
                     <span className="worker-assignment-label">Current best</span>
                     <div className="worker-best-actions">
-                      {best && best !== "loading" && best.ok && best.status === "optimizing" && (
+                      {best && best !== "loading" && best.ok && isJobActive(best.status) && (
                         <button
                           type="button"
                           className="button ghost worker-best-stop"
@@ -705,12 +742,56 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
                       {bestOk.message && !hasConfContent(bestOk.best_conf) && bestOk.best_score == null && (
                         <span className="worker-best-message">{bestOk.message}</span>
                       )}
+
+                      {bestOk.trials.length > 0 && (
+                        <div className="worker-trial-history">
+                          <div className="worker-trial-history-head">
+                            <span className="worker-assignment-label">Trial scores</span>
+                            <span className="worker-trial-history-count">
+                              {bestOk.trials.length} recorded
+                            </span>
+                          </div>
+                          <div className="worker-trial-history-table-wrap">
+                            <table className="worker-trial-history-table">
+                              <thead>
+                                <tr>
+                                  <th>#</th>
+                                  <th>Label</th>
+                                  <th>Score</th>
+                                  <th>Status</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {[...bestOk.trials].reverse().map((trial) => (
+                                  <tr
+                                    key={`${trial.index}-${trial.label}-${trial.recorded_at ?? ""}`}
+                                    className={trial.is_best ? "worker-trial-row-best" : undefined}
+                                  >
+                                    <td>{trial.index}</td>
+                                    <td>{trial.label}</td>
+                                    <td>{formatTrialScore(trial.score)}</td>
+                                    <td>
+                                      {trial.is_best && <span className="chip chip-accent">best</span>}
+                                      {!trial.success && (
+                                        <span className="chip chip-warn" title={trial.error ?? undefined}>
+                                          failed
+                                        </span>
+                                      )}
+                                      {trial.cached && <span className="chip chip-muted">cache</span>}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
                   {!best && (
                     <div className="worker-best-empty">
-                      Use Refresh to load best score and conf (auto-refresh every 5 min).
+                      Scores refresh every second. Use Refresh for an immediate update.
                     </div>
                   )}
                 </div>
@@ -769,12 +850,6 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
                       </button>
                     </div>
 
-                    <ConfManualEditor
-                      baseConf={assignment.candidate.base_conf}
-                      tool={assignment.tool}
-                      onChange={(nextBaseConf) => updateAssignmentBaseConf(worker.id, nextBaseConf)}
-                    />
-
                     <ConfParamPicker
                       baseConf={assignment.candidate.base_conf}
                       tool={assignment.tool}
@@ -784,6 +859,15 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
                       onIntervalChange={(param, patch) =>
                         updateParamInterval(worker.id, param, patch)
                       }
+                      onBaseValueChange={(param, raw) =>
+                        updateBaseParamValue(worker.id, param, raw)
+                      }
+                    />
+
+                    <ConfManualEditor
+                      baseConf={assignment.candidate.base_conf}
+                      tool={assignment.tool}
+                      onChange={(nextBaseConf) => updateAssignmentBaseConf(worker.id, nextBaseConf)}
                     />
 
                     <div className="worker-assignment-options">

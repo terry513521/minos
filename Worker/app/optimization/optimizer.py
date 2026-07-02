@@ -149,6 +149,10 @@ def _evaluate_conf(
         shutil.rmtree(trial_dir, ignore_errors=True)
 
 
+def _shutdown_executor(pool: ThreadPoolExecutor) -> None:
+    pool.shutdown(wait=False, cancel_futures=True)
+
+
 def _run_parallel_grid(
     *,
     candidate_variants: list[dict[str, Any]],
@@ -158,8 +162,9 @@ def _run_parallel_grid(
     record_result: Callable[[BenchmarkResult, str], None],
     label: str = "trial",
 ) -> None:
-    with ThreadPoolExecutor(max_workers=concurrency) as pool:
-        futures = []
+    pool = ThreadPoolExecutor(max_workers=concurrency)
+    futures = []
+    try:
         for conf in candidate_variants:
             if timed_out():
                 break
@@ -167,7 +172,12 @@ def _run_parallel_grid(
         for future in as_completed(futures):
             if timed_out():
                 break
-            record_result(future.result(), label)
+            try:
+                record_result(future.result(), label)
+            except Exception as exc:
+                logger.warning("Trial task failed: %s", exc)
+    finally:
+        _shutdown_executor(pool)
 
 
 def _run_param_split_lanes(
@@ -205,15 +215,21 @@ def _run_param_split_lanes(
                 f"lane [{', '.join(lane_params)}]",
             )
 
-    with ThreadPoolExecutor(max_workers=len(lanes)) as pool:
-        futures = [
-            pool.submit(run_lane, lane_params, candidates)
-            for lane_params, candidates in lane_variants
-        ]
+    pool = ThreadPoolExecutor(max_workers=len(lanes))
+    futures = [
+        pool.submit(run_lane, lane_params, candidates)
+        for lane_params, candidates in lane_variants
+    ]
+    try:
         for future in as_completed(futures):
             if timed_out():
                 break
-            future.result()
+            try:
+                future.result()
+            except Exception as exc:
+                logger.warning("Lane task failed: %s", exc)
+    finally:
+        _shutdown_executor(pool)
 
 
 def _run_adaptive_search(
@@ -280,6 +296,9 @@ def _run_adaptive_search(
         if not remember(conf):
             study.tell(trial, state=optuna.trial.TrialState.FAIL)
             continue
+        if timed_out():
+            study.tell(trial, state=optuna.trial.TrialState.FAIL)
+            break
         result = evaluate(conf)
         record_result(result, "optuna")
         extra_done += 1
@@ -369,27 +388,44 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
                 progress += " · failed"
             logger.info("%s", progress)
             best_store.set_progress(trials_evaluated=trials_evaluated, message=progress)
-            if not result.success:
-                if result.error:
-                    errors.append(result.error)
-                    logger.warning("Trial error: %s", result.error)
-                return
-            with best_lock:
-                if best_score is None or result.score > best_score:
-                    best_score = result.score
-                    best_conf = deepcopy(result.conf)
-                    best_store.update_best(
-                        score=result.score,
-                        conf=result.conf,
-                        trials_evaluated=trials_evaluated,
-                        message=f"{progress} · new best",
-                    )
 
-        logger.info("Trial 1/%s (base conf)", search_space_size)
-        base_result = _evaluate_conf(
-            job_request, job_request.base_conf, work_root, settings
-        )
-        record_result(base_result, "base conf")
+            is_best = False
+            if result.success:
+                with best_lock:
+                    if best_score is None or result.score > best_score:
+                        best_score = result.score
+                        best_conf = deepcopy(result.conf)
+                        is_best = True
+                        best_store.update_best(
+                            score=result.score,
+                            conf=result.conf,
+                            trials_evaluated=trials_evaluated,
+                            message=f"{progress} · new best",
+                        )
+
+            best_store.record_trial(
+                index=trials_evaluated,
+                label=label,
+                success=result.success,
+                score=result.score if result.success else None,
+                raw_score=result.raw_score if result.success else None,
+                cached=result.cached,
+                error=result.error,
+                is_best=is_best,
+            )
+
+            if not result.success and result.error:
+                errors.append(result.error)
+                logger.warning("Trial error: %s", result.error)
+
+        if not is_stop_requested():
+            logger.info("Trial 1/%s (base conf)", search_space_size)
+            base_result = _evaluate_conf(
+                job_request, job_request.base_conf, work_root, settings
+            )
+            record_result(base_result, "base conf")
+        else:
+            logger.info("Stop requested before base trial — skipping optimization")
 
         def timed_out() -> bool:
             return time.time() >= deadline or is_stop_requested()
@@ -456,6 +492,8 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
 
         if best_score is None:
             message = errors[0] if errors else "No successful benchmark trials"
+            if is_stop_requested():
+                message = "Stopped — no successful trials completed"
             best_store.fail_job(message=message)
             return OptimizeResponse(
                 status="error",

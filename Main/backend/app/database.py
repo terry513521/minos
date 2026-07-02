@@ -30,6 +30,8 @@ async def init_db() -> None:
         await _ensure_history_columns(conn)
         await _ensure_worker_columns(conn)
 
+    await _maybe_sync_fish_database()
+
     settings = get_settings()
     if settings.history_path_list:
         async with SessionLocal() as session:
@@ -54,6 +56,45 @@ async def _ensure_history_columns(conn) -> None:
             )
 
     await conn.run_sync(_migrate)
+
+
+async def _maybe_sync_fish_database() -> None:
+    """One-time copy of round_history from fish.db when main.db is still empty."""
+    import sqlite3
+    from pathlib import Path
+
+    backend = Path(__file__).resolve().parents[1]
+    main_path = backend / "main.db"
+    fish_path = backend / "fish.db"
+    if not fish_path.is_file():
+        return
+
+    def _sync(_sync_conn) -> None:
+        main = sqlite3.connect(main_path)
+        try:
+            main_history = main.execute("SELECT COUNT(*) FROM round_history").fetchone()[0]
+            if main_history > 0:
+                return
+            fish = sqlite3.connect(fish_path)
+            try:
+                fish_history = fish.execute("SELECT COUNT(*) FROM round_history").fetchone()[0]
+                if fish_history <= 0:
+                    return
+                cols = [r[1] for r in fish.execute("PRAGMA table_info(round_history)")]
+                col_list = ", ".join(f"[{c}]" for c in cols)
+                main.execute("ATTACH DATABASE ? AS fish", (str(fish_path),))
+                main.execute(
+                    f"INSERT OR IGNORE INTO round_history ({col_list}) "
+                    f"SELECT {col_list} FROM fish.round_history"
+                )
+                main.commit()
+            finally:
+                fish.close()
+        finally:
+            main.close()
+
+    async with engine.begin() as conn:
+        await conn.run_sync(lambda _: _sync(conn))
 
 
 async def _ensure_worker_columns(conn) -> None:

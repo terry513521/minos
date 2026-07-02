@@ -19,14 +19,13 @@ def is_stop_requested() -> bool:
 
 
 def request_stop_optimization() -> bool:
-    """Signal the active job to stop after the current trial."""
+    """Signal the active job to stop; pending trials are skipped."""
     if not _stop_requested.is_set():
         _stop_requested.set()
         snap = best_store.snapshot()
-        if snap.status == "optimizing":
-            best_store.set_progress(
-                trials_evaluated=snap.trials_evaluated,
-                message="Stop requested — finishing current trial…",
+        if snap.status in ("optimizing", "stopping"):
+            best_store.set_stopping(
+                message="Stop requested — cancelling pending trials…",
             )
         logger.info("Optimization stop requested")
     return True

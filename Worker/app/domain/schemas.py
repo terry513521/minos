@@ -20,6 +20,18 @@ class HealthResponse(BaseModel):
     giab_message: str | None = None
 
 
+class TrialScoreEntry(BaseModel):
+    index: int
+    label: str
+    success: bool
+    score: float | None = None
+    raw_score: float | None = None
+    cached: bool = False
+    error: str | None = None
+    is_best: bool = False
+    recorded_at: str | None = None
+
+
 class BestScoreResponse(BaseModel):
     status: str
     worker: str
@@ -32,6 +44,7 @@ class BestScoreResponse(BaseModel):
     search_space_size: int = 0
     updated_at: str | None = None
     message: str | None = None
+    trials: list[TrialScoreEntry] = Field(default_factory=list)
 
 
 class OptimizeRequest(BaseModel):

@@ -7,7 +7,14 @@ from fastapi import FastAPI, HTTPException
 from app.benchmark import benchmark_status
 from app.config import get_settings
 from app.core.utils import format_bytes
-from app.domain.schemas import BestScoreResponse, HealthResponse, OptimizeRequest, OptimizeResponse, StopResponse
+from app.domain.schemas import (
+    BestScoreResponse,
+    HealthResponse,
+    OptimizeRequest,
+    OptimizeResponse,
+    StopResponse,
+    TrialScoreEntry,
+)
 from app.domain.state import best_store
 from app.optimization.jobs import request_stop_optimization, submit_optimize_job, worker_busy
 from app.optimization.optimizer import build_accept_response, validate_optimize_request
@@ -50,6 +57,20 @@ async def get_best() -> BestScoreResponse:
         search_space_size=snap.search_space_size,
         updated_at=snap.updated_at.isoformat() if snap.updated_at else None,
         message=snap.message,
+        trials=[
+            TrialScoreEntry(
+                index=trial.index,
+                label=trial.label,
+                success=trial.success,
+                score=trial.score,
+                raw_score=trial.raw_score,
+                cached=trial.cached,
+                error=trial.error,
+                is_best=trial.is_best,
+                recorded_at=trial.recorded_at.isoformat() if trial.recorded_at else None,
+            )
+            for trial in snap.trials
+        ],
     )
 
 

@@ -19,6 +19,7 @@ from app.schemas import (
     WorkerResponse,
     WorkerStatus,
     WorkerStopResponse,
+    WorkerTrialScore,
     WorkerUpdate,
 )
 from app.serializers import worker_to_response
@@ -236,6 +237,16 @@ async def fetch_worker_best(
                     status_code=response.status_code,
                     error=(payload or {}).get("detail") if payload else response.text[:500] or "Best score fetch failed",
                 )
+            trials_raw = payload.get("trials")
+            trials: list[WorkerTrialScore] = []
+            if isinstance(trials_raw, list):
+                for item in trials_raw:
+                    if not isinstance(item, dict):
+                        continue
+                    try:
+                        trials.append(WorkerTrialScore.model_validate(item))
+                    except Exception:
+                        continue
             return WorkerBestScoreResponse(
                 worker_id=worker_id,
                 ok=True,
@@ -250,6 +261,7 @@ async def fetch_worker_best(
                 search_space_size=int(payload.get("search_space_size") or 0),
                 updated_at=payload.get("updated_at"),
                 message=payload.get("message"),
+                trials=trials,
             )
     except Exception as exc:
         return WorkerBestScoreResponse(

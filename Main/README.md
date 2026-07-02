@@ -22,7 +22,7 @@ MAIN_PLATFORM_ENABLED=true
 MAIN_PLATFORM_DEMO_MODE=true
 ```
 
-For live rounds, set `MAIN_PLATFORM_DEMO_MODE=false` and your Bittensor wallet name/hotkey.
+For live rounds, set `MAIN_PLATFORM_DEMO_MODE=false` and `MAIN_PLATFORM_WALLET_URI` to your miner hotkey URI.
 
 ## History import
 
@@ -68,6 +68,8 @@ The UI exposes **Sync JSON** in the history panel. Save-winner UI is planned whe
 
 ### Backend
 
+**Linux / macOS**
+
 ```bash
 cd Main/backend
 python -m venv .venv
@@ -75,6 +77,25 @@ source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
+
+**Windows (PowerShell)**
+
+```powershell
+cd Main\backend
+.\start.ps1 --reload
+```
+
+Or manually:
+
+```powershell
+cd Main\backend
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+On native Windows, use `start.ps1` or the manual PowerShell steps below.
 
 API docs: http://localhost:8000/docs
 
