@@ -6,7 +6,7 @@ import shutil
 import threading
 import time
 import uuid
-from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Callable
@@ -22,7 +22,7 @@ from app.algorithms import is_adaptive_algorithm, normalize_algorithm
 from app.assets import WORKER_ROOT, resolve_assets
 from app.benchmark import BenchmarkResult, conf_equals, run_benchmark
 from app.config import Settings, get_settings
-from app.job_control import is_stop_requested, set_abort_hook
+from app.job_control import is_stop_requested
 from app.schemas import OptimizeRequest, OptimizeResponse
 from app.search import (
     build_optimization_plan,
@@ -151,6 +151,10 @@ def _evaluate_conf(
         shutil.rmtree(trial_dir, ignore_errors=True)
 
 
+def _shutdown_executor(pool: ThreadPoolExecutor) -> None:
+    pool.shutdown(wait=False, cancel_futures=True)
+
+
 def _run_parallel_grid(
     *,
     candidate_variants: list[dict[str, Any]],
@@ -159,48 +163,23 @@ def _run_parallel_grid(
     evaluate: Callable[[dict[str, Any]], BenchmarkResult],
     record_result: Callable[[BenchmarkResult, str], None],
     label: str = "trial",
-) -> int:
-    """Run trials with bounded in-flight work. Returns completed trial count."""
-    completed = 0
-    variant_iter = iter(candidate_variants)
-    with ThreadPoolExecutor(max_workers=concurrency) as pool:
-        pending = set()
-
-        def drain_done(done_futures: set) -> None:
-            nonlocal completed
-            for future in done_futures:
-                if future.cancelled():
-                    continue
-                try:
-                    record_result(future.result(), label)
-                    completed += 1
-                except Exception as exc:
-                    logger.warning("Trial worker failed: %s", exc)
-
-        while not timed_out():
-            while len(pending) < concurrency and not timed_out():
-                try:
-                    conf = next(variant_iter)
-                except StopIteration:
-                    break
-                pending.add(pool.submit(evaluate, conf))
-
-            if not pending:
-                break
-
-            done, pending = wait(pending, timeout=0.5, return_when=FIRST_COMPLETED)
-            if done:
-                drain_done(done)
-
-        if pending:
+) -> None:
+    pool = ThreadPoolExecutor(max_workers=concurrency)
+    futures = []
+    try:
+        for conf in candidate_variants:
             if timed_out():
-                for future in pending:
-                    future.cancel()
-                pool.shutdown(wait=False, cancel_futures=True)
-            else:
-                remaining_done, _ = wait(pending)
-                drain_done(remaining_done)
-    return completed
+                break
+            futures.append(pool.submit(evaluate, conf))
+        for future in as_completed(futures):
+            if timed_out():
+                break
+            try:
+                record_result(future.result(), label)
+            except Exception as exc:
+                logger.warning("Trial task failed: %s", exc)
+    finally:
+        _shutdown_executor(pool)
 
 
 def _run_param_split_lanes(
@@ -239,23 +218,21 @@ def _run_param_split_lanes(
                 f"lane [{', '.join(lane_params)}]",
             )
 
-    with ThreadPoolExecutor(max_workers=len(lanes)) as pool:
-        futures = [
-            pool.submit(run_lane, lane_params, candidates)
-            for lane_params, candidates in lane_variants
-        ]
-        pending = set(futures)
-        while pending and not timed_out():
-            done, pending = wait(pending, timeout=0.5, return_when=FIRST_COMPLETED)
-            for future in done:
-                try:
-                    future.result()
-                except Exception as exc:
-                    logger.warning("Param-split lane failed: %s", exc)
-        if timed_out() and pending:
-            for future in pending:
-                future.cancel()
-            pool.shutdown(wait=False, cancel_futures=True)
+    pool = ThreadPoolExecutor(max_workers=len(lanes))
+    futures = [
+        pool.submit(run_lane, lane_params, candidates)
+        for lane_params, candidates in lane_variants
+    ]
+    try:
+        for future in as_completed(futures):
+            if timed_out():
+                break
+            try:
+                future.result()
+            except Exception as exc:
+                logger.warning("Lane task failed: %s", exc)
+    finally:
+        _shutdown_executor(pool)
 
 
 def _run_adaptive_search(
@@ -299,7 +276,8 @@ def _run_adaptive_search(
             if not batch:
                 logger.info("Random search exhausted unique configs")
                 break
-            completed = _run_parallel_grid(
+            before = extra_done
+            _run_parallel_grid(
                 candidate_variants=batch,
                 concurrency=min(concurrency, len(batch)),
                 timed_out=timed_out,
@@ -307,8 +285,8 @@ def _run_adaptive_search(
                 record_result=record_result,
                 label="random",
             )
-            extra_done += completed
-            if completed == 0 or timed_out():
+            extra_done += len(batch)
+            if extra_done == before:
                 break
         return
 
@@ -322,6 +300,9 @@ def _run_adaptive_search(
         if not remember(conf):
             study.tell(trial, state=optuna.trial.TrialState.FAIL)
             continue
+        if timed_out():
+            study.tell(trial, state=optuna.trial.TrialState.FAIL)
+            break
         result = evaluate(conf)
         record_result(result, "optuna")
         extra_done += 1
@@ -410,13 +391,6 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
                 memory_gb,
             )
 
-        def _abort_running_work() -> None:
-            if gatk_pool is not None:
-                logger.info("Stop requested — stopping GATK containers")
-                gatk_pool.stop_all()
-
-        set_abort_hook(_abort_running_work)
-
         best_score: float | None = None
         best_conf = deepcopy(request.base_conf)
         trials_evaluated = 0
@@ -435,13 +409,21 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
                 progress += " · failed"
             logger.info("%s", progress)
             best_store.set_progress(trials_evaluated=trials_evaluated, message=progress)
-            became_best = False
+
+            is_best = False
             if result.success:
                 with best_lock:
-                    became_best = best_score is None or result.score > best_score
-                    if became_best:
+                    if best_score is None or result.score > best_score:
                         best_score = result.score
                         best_conf = deepcopy(result.conf)
+                        is_best = True
+                        best_store.update_best(
+                            score=result.score,
+                            conf=result.conf,
+                            trials_evaluated=trials_evaluated,
+                            message=f"{progress} · new best",
+                        )
+
             best_store.record_trial(
                 index=trials_evaluated,
                 label=label,
@@ -449,26 +431,22 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
                 score=result.score if result.success else None,
                 raw_score=result.raw_score if result.success else None,
                 cached=result.cached,
-                is_best=became_best,
+                error=result.error,
+                is_best=is_best,
             )
-            if not result.success:
-                if result.error:
-                    errors.append(result.error)
-                    logger.warning("Trial error: %s", result.error)
-                return
-            if became_best:
-                best_store.update_best(
-                    score=result.score,
-                    conf=result.conf,
-                    trials_evaluated=trials_evaluated,
-                    message=f"{progress} · new best",
-                )
 
-        logger.info("Trial 1/%s (base conf)", search_space_size)
-        base_result = _evaluate_conf(
-            job_request, job_request.base_conf, work_root, settings, gatk_pool
-        )
-        record_result(base_result, "base conf")
+            if not result.success and result.error:
+                errors.append(result.error)
+                logger.warning("Trial error: %s", result.error)
+
+        if not is_stop_requested():
+            logger.info("Trial 1/%s (base conf)", search_space_size)
+            base_result = _evaluate_conf(
+                job_request, job_request.base_conf, work_root, settings, gatk_pool
+            )
+            record_result(base_result, "base conf")
+        else:
+            logger.info("Stop requested before base trial — skipping optimization")
 
         def timed_out() -> bool:
             return time.time() >= deadline or is_stop_requested()
@@ -537,6 +515,8 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
 
         if best_score is None:
             message = errors[0] if errors else "No successful benchmark trials"
+            if is_stop_requested():
+                message = "Stopped — no successful trials completed"
             best_store.fail_job(message=message)
             return OptimizeResponse(
                 status="error",
@@ -582,6 +562,5 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
             message=finish_message,
         )
     finally:
-        set_abort_hook(None)
         if gatk_pool is not None:
             gatk_pool.stop_all()

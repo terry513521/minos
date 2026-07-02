@@ -99,16 +99,16 @@ export interface WorkerHealthCheckResult {
   error: string | null;
 }
 
-export interface WorkerTrialRecord {
+export interface WorkerTrialScore {
   index: number;
   label: string;
   success: boolean;
   score: number | null;
   raw_score: number | null;
   cached: boolean;
-  is_best: boolean;
   error: string | null;
-  completed_at: string | null;
+  is_best: boolean;
+  recorded_at: string | null;
 }
 
 export interface WorkerBestScoreResult {
@@ -125,8 +125,7 @@ export interface WorkerBestScoreResult {
   search_space_size: number;
   updated_at: string | null;
   message: string | null;
-  stop_requested?: boolean;
-  trials?: WorkerTrialRecord[];
+  trials: WorkerTrialScore[];
   error: string | null;
 }
 

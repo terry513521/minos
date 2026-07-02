@@ -1870,54 +1870,45 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   gap: 0.35rem;
   margin-top: 0.25rem;
 }
-.worker-trial-history-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  max-height: 220px;
+.worker-trial-history-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.worker-trial-history-count {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.worker-trial-history-table-wrap {
+  max-height: 180px;
   overflow: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: rgba(0, 0, 0, 0.12);
 }
-.worker-trial-history-item {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
-  gap: 0.35rem 0.5rem;
-  align-items: center;
-  padding: 0.35rem 0.55rem;
-  font-size: 0.75rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+.worker-trial-history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.76rem;
 }
-.worker-trial-history-item:last-child {
-  border-bottom: none;
+.worker-trial-history-table th,
+.worker-trial-history-table td {
+  padding: 0.35rem 0.5rem;
+  text-align: left;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
-.worker-trial-history-item.is-best {
-  background: rgba(96, 165, 250, 0.1);
-}
-.worker-trial-history-item.failed .worker-trial-history-score {
-  color: var(--danger);
-}
-.worker-trial-history-index {
-  font-variant-numeric: tabular-nums;
-  color: var(--muted);
-}
-.worker-trial-history-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--muted);
-}
-.worker-trial-history-score {
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  color: var(--accent-2);
-}
-.worker-trial-history-tag {
-  font-size: 0.65rem;
+.worker-trial-history-table th {
+  position: sticky;
+  top: 0;
+  background: rgba(0, 0, 0, 0.35);
+  font-size: 0.68rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--muted);
+}
+.worker-trial-row-best td {
+  background: rgba(96, 165, 250, 0.08);
 }
 .worker-assignment-options {
   display: grid;

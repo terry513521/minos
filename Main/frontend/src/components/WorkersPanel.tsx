@@ -110,14 +110,18 @@ function hasConfContent(conf: Record<string, unknown>): boolean {
 
 function bestStatusClass(status: string | null | undefined): string {
   if (status === "ready") return "online";
-  if (status === "optimizing") return "running";
-  if (status === "stopping") return "running";
+  if (status === "optimizing" || status === "stopping") return "running";
   if (status === "error") return "failed";
   return "offline";
 }
 
-function isWorkerJobActive(best: WorkerBestScoreResult | undefined): boolean {
-  return Boolean(best?.ok && (best.status === "optimizing" || best.status === "stopping"));
+function isJobActive(status: string | null | undefined): boolean {
+  return status === "optimizing" || status === "stopping";
+}
+
+function formatTrialScore(score: number | null | undefined): string {
+  if (score == null || Number.isNaN(score)) return "—";
+  return `${(score * 100).toFixed(2)}%`;
 }
 
 function withoutLoadingBest(
@@ -315,6 +319,7 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
             search_space_size: 0,
             updated_at: null,
             message: null,
+            trials: [],
             error: err instanceof Error ? err.message : "Failed to fetch best score",
           },
         }));
@@ -347,7 +352,20 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
         });
         return;
       }
-      void pollWorkerBest(workerId, true);
+
+      const deadline = Date.now() + 120_000;
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => window.setTimeout(resolve, 500));
+        try {
+          const best = await api.fetchWorkerBest(workerId);
+          setBestByWorker((prev) => ({ ...prev, [workerId]: best }));
+          if (best.ok && best.status && !isJobActive(best.status)) {
+            break;
+          }
+        } catch {
+          break;
+        }
+      }
     } catch (err) {
       setBestByWorker((prev) => {
         const current = prev[workerId];
@@ -590,11 +608,12 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
             const dispatchResult = dispatchByWorker[worker.id];
             const score =
               assignment?.candidate.history_score ?? assignment?.candidate.rank_score;
-            const bestOk = best && best !== "loading" && best.ok ? best : null;
-            const isOptimizing = isWorkerJobActive(bestOk ?? undefined);
-            const isStopping = Boolean(bestOk?.status === "stopping" || bestOk?.stop_requested);
+            const isOptimizing = Boolean(
+              best && best !== "loading" && best.ok && isJobActive(best.status),
+            );
             const compareBaseConf =
               assignment?.candidate.base_conf ?? baseConfByWorker[worker.id] ?? null;
+            const bestOk = best && best !== "loading" && best.ok ? best : null;
             const trialTotalCount = trialTotal(bestOk ?? undefined, dispatchResult);
             const trialLabel =
               trialTotalCount || (bestOk?.trials_evaluated ?? 0) > 0
@@ -646,14 +665,14 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
                   <div className="worker-best-head">
                     <span className="worker-assignment-label">Current best</span>
                     <div className="worker-best-actions">
-                      {best && best !== "loading" && best.ok && isWorkerJobActive(best) && (
+                      {best && best !== "loading" && best.ok && isJobActive(best.status) && (
                         <button
                           type="button"
                           className="button ghost worker-best-stop"
                           onClick={() => handleStopOptimization(worker.id)}
-                          disabled={!worker.base_url || stoppingWorkerId === worker.id || isStopping}
+                          disabled={!worker.base_url || stoppingWorkerId === worker.id}
                         >
-                          {stoppingWorkerId === worker.id || isStopping ? "Stopping…" : "Stop"}
+                          {stoppingWorkerId === worker.id ? "Stopping…" : "Stop"}
                         </button>
                       )}
                       <button
@@ -720,35 +739,51 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
                         </span>
                       )}
 
-                      {bestOk.message && (
+                      {bestOk.message && !hasConfContent(bestOk.best_conf) && bestOk.best_score == null && (
                         <span className="worker-best-message">{bestOk.message}</span>
                       )}
 
-                      {bestOk.trials && bestOk.trials.length > 0 && (
+                      {bestOk.trials.length > 0 && (
                         <div className="worker-trial-history">
-                          <span className="worker-assignment-label">Trial scores</span>
-                          <ol className="worker-trial-history-list">
-                            {[...bestOk.trials].reverse().slice(0, 30).map((trial) => (
-                              <li
-                                key={`${trial.index}-${trial.completed_at ?? trial.label}`}
-                                className={`worker-trial-history-item${trial.is_best ? " is-best" : ""}${trial.success ? "" : " failed"}`}
-                              >
-                                <span className="worker-trial-history-index">#{trial.index}</span>
-                                <span className="worker-trial-history-label">{trial.label}</span>
-                                <span className="worker-trial-history-score">
-                                  {trial.success
-                                    ? formatBestScore(trial.score)
-                                    : "failed"}
-                                </span>
-                                {trial.cached && (
-                                  <span className="worker-trial-history-tag">cache</span>
-                                )}
-                                {trial.is_best && (
-                                  <span className="worker-trial-history-tag">best</span>
-                                )}
-                              </li>
-                            ))}
-                          </ol>
+                          <div className="worker-trial-history-head">
+                            <span className="worker-assignment-label">Trial scores</span>
+                            <span className="worker-trial-history-count">
+                              {bestOk.trials.length} recorded
+                            </span>
+                          </div>
+                          <div className="worker-trial-history-table-wrap">
+                            <table className="worker-trial-history-table">
+                              <thead>
+                                <tr>
+                                  <th>#</th>
+                                  <th>Label</th>
+                                  <th>Score</th>
+                                  <th>Status</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {[...bestOk.trials].reverse().map((trial) => (
+                                  <tr
+                                    key={`${trial.index}-${trial.label}-${trial.recorded_at ?? ""}`}
+                                    className={trial.is_best ? "worker-trial-row-best" : undefined}
+                                  >
+                                    <td>{trial.index}</td>
+                                    <td>{trial.label}</td>
+                                    <td>{formatTrialScore(trial.score)}</td>
+                                    <td>
+                                      {trial.is_best && <span className="chip chip-accent">best</span>}
+                                      {!trial.success && (
+                                        <span className="chip chip-warn" title={trial.error ?? undefined}>
+                                          failed
+                                        </span>
+                                      )}
+                                      {trial.cached && <span className="chip chip-muted">cache</span>}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
                         </div>
                       )}
                     </div>

@@ -17,16 +17,16 @@ class HealthResponse(BaseModel):
     ram_available: str
 
 
-class TrialRecordResponse(BaseModel):
+class TrialScoreEntry(BaseModel):
     index: int
     label: str
     success: bool
     score: float | None = None
     raw_score: float | None = None
     cached: bool = False
-    is_best: bool = False
     error: str | None = None
-    completed_at: str | None = None
+    is_best: bool = False
+    recorded_at: str | None = None
 
 
 class BestScoreResponse(BaseModel):
@@ -41,8 +41,7 @@ class BestScoreResponse(BaseModel):
     search_space_size: int = 0
     updated_at: str | None = None
     message: str | None = None
-    stop_requested: bool = False
-    trials: list[TrialRecordResponse] = Field(default_factory=list)
+    trials: list[TrialScoreEntry] = Field(default_factory=list)
 
 
 class OptimizeRequest(BaseModel):

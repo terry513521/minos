@@ -19,40 +19,13 @@ from app.schemas import (
     WorkerResponse,
     WorkerStatus,
     WorkerStopResponse,
-    WorkerTrialRecord,
+    WorkerTrialScore,
     WorkerUpdate,
 )
 from app.serializers import worker_to_response
 from app.worker_urls import normalize_worker_urls, resolve_worker_base_url
 
 router = APIRouter(prefix="/workers", tags=["workers"])
-
-
-def _parse_worker_trials(payload: dict) -> list[WorkerTrialRecord]:
-    raw = payload.get("trials")
-    if not isinstance(raw, list):
-        return []
-    trials: list[WorkerTrialRecord] = []
-    for item in raw:
-        if not isinstance(item, dict):
-            continue
-        try:
-            trials.append(
-                WorkerTrialRecord(
-                    index=int(item.get("index") or 0),
-                    label=str(item.get("label") or "trial"),
-                    success=bool(item.get("success")),
-                    score=item.get("score"),
-                    raw_score=item.get("raw_score"),
-                    cached=bool(item.get("cached")),
-                    is_best=bool(item.get("is_best")),
-                    error=item.get("error"),
-                    completed_at=item.get("completed_at"),
-                )
-            )
-        except (TypeError, ValueError):
-            continue
-    return trials
 
 
 async def _probe_health_url(url: str) -> None:
@@ -264,6 +237,16 @@ async def fetch_worker_best(
                     status_code=response.status_code,
                     error=(payload or {}).get("detail") if payload else response.text[:500] or "Best score fetch failed",
                 )
+            trials_raw = payload.get("trials")
+            trials: list[WorkerTrialScore] = []
+            if isinstance(trials_raw, list):
+                for item in trials_raw:
+                    if not isinstance(item, dict):
+                        continue
+                    try:
+                        trials.append(WorkerTrialScore.model_validate(item))
+                    except Exception:
+                        continue
             return WorkerBestScoreResponse(
                 worker_id=worker_id,
                 ok=True,
@@ -278,8 +261,7 @@ async def fetch_worker_best(
                 search_space_size=int(payload.get("search_space_size") or 0),
                 updated_at=payload.get("updated_at"),
                 message=payload.get("message"),
-                stop_requested=bool(payload.get("stop_requested")),
-                trials=_parse_worker_trials(payload),
+                trials=trials,
             )
     except Exception as exc:
         return WorkerBestScoreResponse(

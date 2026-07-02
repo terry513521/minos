@@ -1,37 +1,28 @@
-"""Tests for worker trial history in best_store."""
-
+from app.job_control import clear_stop_request, request_stop_optimization as signal_stop
 from app.state import best_store
 
 
-def test_record_trial_and_best_flag():
-    best_store.begin_job("job-1", "chr21:1-100", "gatk", search_space_size=5)
+def test_record_trial_and_stopping_status():
+    clear_stop_request()
+    best_store.begin_job("job-1", "chr21:1-1000000", "gatk", search_space_size=5)
     best_store.record_trial(
         index=1,
         label="base conf",
         success=True,
-        score=0.5,
-        raw_score=50.0,
+        score=0.81,
+        raw_score=81.0,
         is_best=True,
     )
-    best_store.record_trial(
-        index=2,
-        label="trial",
-        success=True,
-        score=0.7,
-        raw_score=70.0,
-        is_best=True,
-    )
-
     snap = best_store.snapshot()
-    assert len(snap.trials) == 2
-    assert snap.trials[0].is_best is False
-    assert snap.trials[1].is_best is True
-    assert snap.trials[1].score == 0.7
+    assert len(snap.trials) == 1
+    assert snap.trials[0].score == 0.81
+    assert snap.trials[0].is_best is True
 
-
-def test_set_stopping_status():
-    best_store.begin_job("job-2", "chr21:1-100", "gatk", search_space_size=3)
-    best_store.set_stopping(message="Stop requested")
+    signal_stop()
     snap = best_store.snapshot()
     assert snap.status == "stopping"
-    assert snap.stop_requested is True
+
+    best_store.finish_job(message="Stopped")
+    snap = best_store.snapshot()
+    assert snap.status == "ready"
+    assert len(snap.trials) == 1

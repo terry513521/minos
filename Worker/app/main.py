@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException
 from app.config import get_settings
 from app.jobs import request_stop_optimization, submit_optimize_job, worker_busy
 from app.optimizer import build_accept_response, validate_optimize_request
-from app.schemas import BestScoreResponse, HealthResponse, OptimizeRequest, OptimizeResponse, StopResponse, TrialRecordResponse
+from app.schemas import BestScoreResponse, HealthResponse, OptimizeRequest, OptimizeResponse, StopResponse, TrialScoreEntry
 from app.state import best_store
 from app.utils import format_bytes
 
@@ -45,18 +45,17 @@ async def get_best() -> BestScoreResponse:
         search_space_size=snap.search_space_size,
         updated_at=snap.updated_at.isoformat() if snap.updated_at else None,
         message=snap.message,
-        stop_requested=snap.stop_requested,
         trials=[
-            TrialRecordResponse(
+            TrialScoreEntry(
                 index=trial.index,
                 label=trial.label,
                 success=trial.success,
                 score=trial.score,
                 raw_score=trial.raw_score,
                 cached=trial.cached,
-                is_best=trial.is_best,
                 error=trial.error,
-                completed_at=trial.completed_at.isoformat() if trial.completed_at else None,
+                is_best=trial.is_best,
+                recorded_at=trial.recorded_at.isoformat() if trial.recorded_at else None,
             )
             for trial in snap.trials
         ],
@@ -97,5 +96,5 @@ async def stop_optimization() -> StopResponse:
     return StopResponse(
         status="stopping",
         worker=settings.name,
-        message="Stop requested — finishing current trial…",
+        message="Stop requested — cancelling pending trials…",
     )
