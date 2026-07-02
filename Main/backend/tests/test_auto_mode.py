@@ -1,13 +1,35 @@
+from datetime import datetime, timezone
+
 from app.schemas import AutoDispatchAssignment, CandidatePreview
 from app.services.auto_mode import (
     AUTO_SCORE_WEIGHT,
     AUTO_SIMILARITY_WEIGHT,
     AutoModeStore,
     AutoSession,
+    _algorithm_pool,
+    assign_workers_by_metric,
+    build_diverse_candidate_pool,
+    candidate_dispatch_window,
     composite_candidate_score,
-    select_top_candidates,
 )
-from datetime import datetime, timezone
+
+
+def test_candidate_dispatch_window_prefers_source_window():
+    candidate = CandidatePreview(
+        index=0,
+        base_conf={},
+        rank_score=0.5,
+        source_window="chr21:35444092-40444092",
+    )
+    assert (
+        candidate_dispatch_window(candidate, "chr21:1000000-6000000")
+        == "chr21:35444092-40444092"
+    )
+
+
+def test_candidate_dispatch_window_falls_back_to_query_region():
+    candidate = CandidatePreview(index=0, base_conf={}, rank_score=0.5)
+    assert candidate_dispatch_window(candidate, "chr21:1000000-6000000") == "chr21:1000000-6000000"
 
 
 def test_composite_candidate_score():
@@ -22,21 +44,29 @@ def test_composite_candidate_score():
     assert composite_candidate_score(candidate) == expected
 
 
-def test_select_top_candidates_prefers_similarity_weight():
-    candidates = [
+def test_algorithm_pool_uses_two_to_one_ratio():
+    assert _algorithm_pool(3) == ["optuna", "optuna", "random"]
+    assert _algorithm_pool(3).count("optuna") == 2
+    assert _algorithm_pool(3).count("random") == 1
+
+
+def test_build_diverse_candidate_pool_prioritizes_score_similarity_composite():
+    pool = [
         CandidatePreview(
             index=0,
             base_conf={"a": 1},
-            rank_score=0.9,
-            history_score=0.9,
-            similarity=0.1,
+            rank_score=0.95,
+            history_score=0.95,
+            similarity=0.2,
+            history_id="high-score",
         ),
         CandidatePreview(
             index=1,
             base_conf={"b": 2},
             rank_score=0.5,
             history_score=0.5,
-            similarity=0.9,
+            similarity=0.99,
+            history_id="high-sim",
         ),
         CandidatePreview(
             index=2,
@@ -44,12 +74,53 @@ def test_select_top_candidates_prefers_similarity_weight():
             rank_score=0.7,
             history_score=0.7,
             similarity=0.7,
+            history_id="balanced",
         ),
     ]
-    selected = select_top_candidates(candidates, 2)
-    assert len(selected) == 2
-    assert selected[0].index == 1
-    assert selected[1].index in {0, 2}
+    diverse = build_diverse_candidate_pool(pool, 6)
+    identities = [c.history_id for c in diverse[:3]]
+    assert identities[0] == "high-score"
+    assert identities[1] == "high-sim"
+    assert identities[2] == "balanced"
+
+
+def test_assign_workers_by_metric_maps_vm_big_igno():
+    candidates = [
+        CandidatePreview(
+            index=0,
+            base_conf={"a": 1},
+            rank_score=0.95,
+            history_score=0.95,
+            similarity=0.2,
+            history_id="high-score",
+        ),
+        CandidatePreview(
+            index=1,
+            base_conf={"b": 2},
+            rank_score=0.5,
+            history_score=0.5,
+            similarity=0.99,
+            history_id="high-sim",
+        ),
+        CandidatePreview(
+            index=2,
+            base_conf={"c": 3},
+            rank_score=0.7,
+            history_score=0.7,
+            similarity=0.7,
+            history_id="balanced",
+        ),
+    ]
+    slots = assign_workers_by_metric(candidates)
+    assert [slot.worker_name for slot in slots] == ["VM", "Big", "Igno"]
+    assert slots[0].selection_reason == "top_score"
+    assert slots[0].candidate.history_id == "high-score"
+    assert slots[1].selection_reason == "most_similar"
+    assert slots[1].candidate.history_id == "high-sim"
+    assert slots[2].selection_reason == "best_composite"
+    assert slots[2].algorithm == "random"
+    assert slots[0].algorithm == "optuna"
+    assert slots[1].algorithm == "optuna"
 
 
 def test_disable_auto_mode_keeps_session_running():
@@ -78,3 +149,36 @@ def test_disable_auto_mode_keeps_session_running():
     assert store.session is not None
     assert store.session.running is True
     assert len(status.assignments) == 1
+
+
+def test_finished_session_allows_new_start_check():
+    store = AutoModeStore()
+    store.enabled = True
+    store.session = AutoSession(
+        region="chr21:1-100",
+        tool="gatk",
+        started_at=datetime.now(timezone.utc),
+        running=False,
+    )
+    status = store.status()
+    assert status.running is False
+    assert status.enabled is True
+
+
+def test_auto_mode_status_includes_last_started_region():
+    store = AutoModeStore()
+    store.last_started_region = "chr21:35444092-40444092"
+    assert store.status().last_started_region == "chr21:35444092-40444092"
+
+
+def test_skipped_start_response_shape():
+    from app.services.auto_mode import _skipped_start_response
+
+    response = _skipped_start_response(
+        region="chr21:1-100",
+        tool="gatk",
+        message="skipped",
+    )
+    assert response.skipped is True
+    assert response.ok is False
+    assert response.workers_dispatched == 0

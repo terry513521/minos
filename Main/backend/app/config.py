@@ -72,6 +72,10 @@ class Settings(BaseSettings):
 
     # Comma-separated Minos tuning round_history.json paths (imported on first startup)
     history_json_paths: str = Field(default_factory=_default_history_json_paths)
+    # Remote portfolio rounds API (merged into round_history on startup and via POST /history/sync-rounds)
+    history_api_url: str = "http://192.168.131.16:7860/api/rounds"
+    history_api_timeout: float = 60.0
+    history_api_sync_on_startup: bool = True
 
     @property
     def cors_origin_list(self) -> list[str]:

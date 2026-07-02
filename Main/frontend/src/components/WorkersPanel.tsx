@@ -8,7 +8,9 @@ import {
   WorkerHealthCheckResult,
   WorkerRecord,
 } from "../api/client";
-import { formatLocalDateTime } from "../hooks/useSubmissionCountdown";
+import { formatLocalDateTime, usePeriodicTick } from "../hooks/useSubmissionCountdown";
+import { LimitCountdownBadge } from "./LimitCountdownBadge";
+import { WorkerEndpointsEditor } from "./WorkerEndpointsEditor";
 import {
   ALGORITHM_OPTIONS,
   assignmentParamsForTool,
@@ -39,18 +41,24 @@ import {
   saveWorkerPanelState,
 } from "../utils/workerPanelStorage";
 import {
-  assignmentsAsManual,
-  assignmentsFromAutoMode,
+  autoAssignmentsForStatus,
+  manualAssignmentsFromEndedAuto,
   previewAssignmentsFromAutoConfig,
 } from "../utils/autoModeSync";
+import { loadAutoModeState, saveAutoModeState } from "../utils/autoModeStorage";
+import {
+  isWorkerJobRunning,
+  resolveWorkerJobStatus,
+} from "../utils/workerJobStatus";
 import {
   nextActiveWorkerOrder,
+  shouldPollWorkerBest,
   sortWorkersForDisplay,
 } from "../utils/workerDisplayOrder";
 import { AUTO_MODE_CHANGED_EVENT } from "./AutoModePanel";
 
 const CONCURRENCY_OPTIONS = [1, 2, 3, 4, 6, 8];
-/** Background poll for worker GET /best — updates every second while workers are registered. */
+/** Background poll for worker GET /best while optimization is running. */
 const BEST_POLL_INTERVAL_MS = 1000;
 
 interface WorkersPanelProps {
@@ -121,13 +129,29 @@ function hasConfContent(conf: Record<string, unknown>): boolean {
 
 function bestStatusClass(status: string | null | undefined): string {
   if (status === "ready") return "online";
+  if (status === "time limited") return "warn";
   if (status === "optimizing" || status === "stopping") return "running";
   if (status === "error") return "failed";
   return "offline";
 }
 
-function isJobActive(status: string | null | undefined): boolean {
-  return status === "optimizing" || status === "stopping";
+function isJobActive(
+  status: string | null | undefined,
+  startedAt?: string | null,
+  limitSeconds?: number | null,
+  nowMs = Date.now(),
+): boolean {
+  return isWorkerJobRunning(status, startedAt, limitSeconds, nowMs);
+}
+
+function jobStartedAt(
+  assignment: WorkerAssignment | undefined,
+  autoModeStatus: AutoModeStatus | null,
+  autoManaged: boolean,
+): string | null {
+  if (assignment?.dispatchedAt) return assignment.dispatchedAt;
+  if (autoManaged && autoModeStatus?.started_at) return autoModeStatus.started_at;
+  return null;
 }
 
 function formatTrialScore(score: number | null | undefined): string {
@@ -158,13 +182,17 @@ function withoutLoadingHealth(
 export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
   const persistedRef = useRef(loadWorkerPanelState());
   const persisted = persistedRef.current;
+  const persistedAutoRef = useRef(loadAutoModeState());
+  const initialAutoStatus = persistedAutoRef.current?.status ?? null;
 
   const [workers, setWorkers] = useState<WorkerRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [assignments, setAssignments] = useState<Record<string, WorkerAssignment>>(
-    () => persisted?.assignments ?? {},
-  );
+  const [assignments, setAssignments] = useState<Record<string, WorkerAssignment>>(() => {
+    const base = persisted?.assignments ?? {};
+    if (!initialAutoStatus) return base;
+    return { ...base, ...manualAssignmentsFromEndedAuto(initialAutoStatus) };
+  });
   const [dragOverWorkerId, setDragOverWorkerId] = useState<string | null>(null);
   const [healthByWorker, setHealthByWorker] = useState<
     Record<string, WorkerHealthCheckResult | "loading">
@@ -181,11 +209,18 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
     Record<string, Record<string, unknown>>
   >(() => persisted?.baseConfByWorker ?? {});
   const [activeWorkerOrder, setActiveWorkerOrder] = useState<Record<string, number>>({});
-  const [autoModeEnabled, setAutoModeEnabled] = useState(false);
-  const [autoModeStatus, setAutoModeStatus] = useState<AutoModeStatus | null>(null);
+  const [refreshingBestByWorker, setRefreshingBestByWorker] = useState<
+    Record<string, boolean>
+  >({});
+  const [autoModeEnabled, setAutoModeEnabled] = useState(
+    () => initialAutoStatus?.enabled ?? false,
+  );
+  const [autoModeStatus, setAutoModeStatus] = useState<AutoModeStatus | null>(
+    () => initialAutoStatus,
+  );
   const [autoAssignmentsByWorker, setAutoAssignmentsByWorker] = useState<
     Record<string, WorkerAssignment>
-  >({});
+  >(() => (initialAutoStatus ? autoAssignmentsForStatus(initialAutoStatus) : {}));
 
   const autoPreviewByWorker = useMemo(
     () =>
@@ -195,9 +230,50 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
     [autoModeStatus, autoModeEnabled, workers],
   );
 
+  const effectiveAssignmentsByWorker = useMemo(() => {
+    const merged = { ...assignments };
+    for (const [workerId, assignment] of Object.entries(autoAssignmentsByWorker)) {
+      merged[workerId] = assignment;
+    }
+    for (const [workerId, assignment] of Object.entries(autoPreviewByWorker)) {
+      if (!merged[workerId]) merged[workerId] = assignment;
+    }
+    return merged;
+  }, [assignments, autoAssignmentsByWorker, autoPreviewByWorker]);
+
+  const bestByWorkerRef = useRef(bestByWorker);
+  bestByWorkerRef.current = bestByWorker;
+  const effectiveAssignmentsRef = useRef(effectiveAssignmentsByWorker);
+  effectiveAssignmentsRef.current = effectiveAssignmentsByWorker;
+
+  const anyActiveJob = useMemo(() => {
+    for (const worker of workers) {
+      const best = bestByWorker[worker.id];
+      if (
+        best &&
+        best !== "loading" &&
+        best.ok &&
+        (best.status === "optimizing" || best.status === "stopping")
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }, [workers, bestByWorker]);
+
+  const nowMs = usePeriodicTick(anyActiveJob);
+
   const displayWorkers = useMemo(
-    () => sortWorkersForDisplay(workers, bestByWorker, assignments, activeWorkerOrder),
-    [workers, bestByWorker, assignments, activeWorkerOrder],
+    () =>
+      sortWorkersForDisplay(
+        workers,
+        bestByWorker,
+        healthByWorker,
+        effectiveAssignmentsByWorker,
+        activeWorkerOrder,
+        nowMs,
+      ),
+    [workers, bestByWorker, healthByWorker, effectiveAssignmentsByWorker, activeWorkerOrder, nowMs],
   );
 
   const refresh = useCallback(() => {
@@ -223,18 +299,13 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
     api
       .getAutoMode()
       .then((status) => {
+        saveAutoModeState(status);
         setAutoModeEnabled(status.enabled);
         setAutoModeStatus(status);
-        if (status.enabled && status.assignments.length > 0) {
-          setAutoAssignmentsByWorker(assignmentsFromAutoMode(status));
-        } else {
-          setAutoAssignmentsByWorker({});
-          if (!status.enabled && status.assignments.length > 0) {
-            setAssignments((prev) => ({
-              ...prev,
-              ...assignmentsAsManual(status),
-            }));
-          }
+        setAutoAssignmentsByWorker(autoAssignmentsForStatus(status));
+        const manualFromAuto = manualAssignmentsFromEndedAuto(status);
+        if (Object.keys(manualFromAuto).length > 0) {
+          setAssignments((prev) => ({ ...prev, ...manualFromAuto }));
         }
       })
       .catch(() => {});
@@ -278,10 +349,16 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
 
   useEffect(() => {
     setActiveWorkerOrder((current) => {
-      const next = nextActiveWorkerOrder(current, workers, bestByWorker, assignments);
+      const next = nextActiveWorkerOrder(
+        current,
+        workers,
+        bestByWorker,
+        effectiveAssignmentsByWorker,
+        nowMs,
+      );
       return next ?? current;
     });
-  }, [workers, bestByWorker, assignments]);
+  }, [workers, bestByWorker, effectiveAssignmentsByWorker, nowMs]);
 
   function updateAssignment(workerId: string, patch: Partial<WorkerAssignment>) {
     setAssignments((prev) => {
@@ -399,8 +476,13 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
   }, []);
 
   const handleRefreshBest = useCallback(
-    (workerId: string) => {
-      void pollWorkerBest(workerId, false);
+    async (workerId: string) => {
+      setRefreshingBestByWorker((prev) => ({ ...prev, [workerId]: true }));
+      try {
+        await pollWorkerBest(workerId, true);
+      } finally {
+        setRefreshingBestByWorker((prev) => ({ ...prev, [workerId]: false }));
+      }
     },
     [pollWorkerBest],
   );
@@ -461,9 +543,24 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
     if (pollable.length === 0) return;
 
     const tick = () => {
-      pollable.forEach((worker) => {
+      const best = bestByWorkerRef.current;
+      const assignmentsByWorker = effectiveAssignmentsRef.current;
+      const tickNow = Date.now();
+      for (const worker of pollable) {
+        const assignment = assignmentsByWorker[worker.id];
+        if (
+          !shouldPollWorkerBest(
+            best[worker.id],
+            assignment,
+            assignment?.dispatchedAt,
+            assignment?.limitSeconds,
+            tickNow,
+          )
+        ) {
+          continue;
+        }
         void pollWorkerBest(worker.id, true);
-      });
+      }
     };
 
     tick();
@@ -496,6 +593,7 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
       updateAssignment(workerId, {
         dispatching: false,
         dispatchError: result.ok ? null : result.error ?? "Dispatch failed",
+        dispatchedAt: result.ok ? new Date().toISOString() : assignment.dispatchedAt ?? null,
       });
       if (result.ok) {
         setBaseConfByWorker((prev) => ({
@@ -631,6 +729,15 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
     clearWorkerPanelEntry(workerId);
   }
 
+  function handleWorkerUpdated(updated: WorkerRecord) {
+    setWorkers((prev) => prev.map((w) => (w.id === updated.id ? updated : w)));
+    setHealthByWorker((prev) => {
+      const next = { ...prev };
+      delete next[updated.id];
+      return next;
+    });
+  }
+
   async function handleRemoveWorker(workerId: string, workerName: string) {
     if (!window.confirm(`Remove worker "${workerName}" from the control plane?`)) {
       return;
@@ -680,21 +787,30 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
             const health = healthByWorker[worker.id];
             const best = bestByWorker[worker.id];
             const dispatchResult = dispatchByWorker[worker.id];
+            const refreshingBest = Boolean(refreshingBestByWorker[worker.id]);
             const score =
               assignment?.candidate.history_score ?? assignment?.candidate.rank_score;
-            const isOptimizing = Boolean(
-              best && best !== "loading" && best.ok && isJobActive(best.status),
-            );
             const compareBaseConf =
               assignment?.candidate.base_conf ?? baseConfByWorker[worker.id] ?? null;
             const bestOk = best && best !== "loading" && best.ok ? best : null;
+            const runStartedAt = jobStartedAt(assignment, autoModeStatus, autoManaged);
+            const runLimitSeconds = assignment?.limitSeconds ?? autoModeStatus?.config.limit_seconds;
+            const displayStatus = resolveWorkerJobStatus(
+              bestOk?.status ?? null,
+              runStartedAt,
+              runLimitSeconds,
+              nowMs,
+            );
+            const isOptimizing = Boolean(
+              bestOk && isJobActive(bestOk.status, runStartedAt, runLimitSeconds, nowMs),
+            );
             const trialTotalCount = trialTotal(bestOk ?? undefined, dispatchResult);
             const trialLabel =
               trialTotalCount || (bestOk?.trials_evaluated ?? 0) > 0
                 ? formatTrialProgress(
                     bestOk?.trials_evaluated ?? 0,
                     trialTotalCount,
-                    bestOk?.status ?? (isOptimizing ? "optimizing" : null),
+                    displayStatus ?? (isOptimizing ? "optimizing" : null),
                   )
                 : "";
 
@@ -740,7 +856,7 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
                   <div className="worker-best-head">
                     <span className="worker-assignment-label">Current best</span>
                     <div className="worker-best-actions">
-                      {best && best !== "loading" && best.ok && isJobActive(best.status) && (
+                      {isOptimizing && (
                         <button
                           type="button"
                           className="button ghost worker-best-stop"
@@ -754,9 +870,9 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
                         type="button"
                         className="button ghost worker-best-refresh"
                         onClick={() => handleRefreshBest(worker.id)}
-                        disabled={!worker.base_url || best === "loading"}
+                        disabled={!worker.base_url || refreshingBest}
                       >
-                        {best === "loading" ? "Refreshing…" : "Refresh"}
+                        {refreshingBest ? "Refreshing…" : "Refresh"}
                       </button>
                     </div>
                   </div>
@@ -769,13 +885,23 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
                     <div className="worker-best-body">
                       <div className="worker-best-score-row">
                         <span className="worker-best-score">{formatBestScore(bestOk.best_score)}</span>
-                        {bestOk.status && (
-                          <span className={`badge ${bestStatusClass(bestOk.status)}`}>{bestOk.status}</span>
+                        {displayStatus && (
+                          <span className={`badge ${bestStatusClass(displayStatus)}`}>
+                            {displayStatus}
+                          </span>
                         )}
                         {trialLabel && (
                           <span className="worker-best-trials worker-best-trials--inline">
                             {trialLabel}
                           </span>
+                        )}
+                        {(isOptimizing || displayStatus === "time limited") && (
+                          <LimitCountdownBadge
+                            startedAt={runStartedAt}
+                            limitSeconds={runLimitSeconds ?? null}
+                            active
+                            className="worker-limit-countdown"
+                          />
                         )}
                       </div>
 
@@ -866,7 +992,8 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
 
                   {!best && (
                     <div className="worker-best-empty">
-                      Scores refresh every second. Use Refresh for an immediate update.
+                      Live scores update while optimization runs. Use Refresh for an immediate
+                      update.
                     </div>
                   )}
                 </div>
@@ -884,16 +1011,7 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
                   </div>
                 )}
 
-                <dl className="worker-endpoints">
-                  <div>
-                    <dt>Health</dt>
-                    <dd><code>{worker.health_url ?? "—"}</code></dd>
-                  </div>
-                  <div>
-                    <dt>Main API</dt>
-                    <dd><code>{worker.base_url ?? "—"}</code></dd>
-                  </div>
-                </dl>
+                <WorkerEndpointsEditor worker={worker} onUpdated={handleWorkerUpdated} />
 
                 <div className="worker-card-meta">
                   {worker.version && <span className="chip chip-muted">v{worker.version}</span>}

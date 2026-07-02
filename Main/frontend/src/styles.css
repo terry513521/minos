@@ -572,6 +572,12 @@ code, .input-mono {
   border-color: rgba(167, 139, 250, 0.45);
   box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.12);
 }
+
+.candidate-region-input:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
 .candidate-finder-chrom {
   flex: 1 1 auto;
   min-width: 0;
@@ -1383,13 +1389,133 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
 
 .auto-mode-candidate-item {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.auto-mode-candidate-region {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.auto-mode-candidate-metric {
+  font-size: 0.82rem;
+  color: var(--text);
+}
+
+.auto-mode-section-lead {
+  margin: 0 0 0.65rem;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.auto-mode-found-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.65rem;
+}
+
+.auto-mode-found-item {
+  display: flex;
+  flex-direction: column;
   gap: 0.45rem;
-  padding: 0.45rem 0.6rem;
-  border-radius: 8px;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.auto-mode-found-item--selected {
+  border-color: rgba(120, 180, 255, 0.55);
+  background: rgba(80, 140, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(120, 180, 255, 0.15);
+}
+
+.auto-mode-found-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.auto-mode-found-region {
+  display: block;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+.auto-mode-found-region-missing {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.auto-mode-found-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.65rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.auto-mode-found-selections {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding-top: 0.15rem;
+  border-top: 1px dashed var(--border);
+}
+
+.auto-mode-found-selection-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+}
+
+.auto-mode-found-conf {
+  margin-top: 0.1rem;
+}
+
+.auto-mode-limit-row {
+  margin: 0.35rem 0;
+}
+
+.limit-countdown-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
   border: 1px solid var(--border);
   background: var(--surface-solid);
-  font-size: 0.8rem;
+}
+
+.limit-countdown-badge.urgency-ok {
+  color: var(--accent);
+  border-color: rgba(120, 180, 255, 0.35);
+}
+
+.limit-countdown-badge.urgency-warn {
+  color: var(--warn);
+  border-color: rgba(255, 196, 120, 0.45);
+}
+
+.limit-countdown-badge.urgency-critical,
+.limit-countdown-badge.urgency-ended {
+  color: var(--danger);
+  border-color: rgba(255, 140, 140, 0.45);
+}
+
+.worker-limit-countdown {
+  font-size: 0.75rem;
 }
 
 .chip.chip-ok {
@@ -1537,6 +1663,66 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   font-size: 0.78rem;
   word-break: break-all;
 }
+
+.worker-endpoints-form {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.worker-endpoints-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.worker-endpoints-title {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.worker-endpoints-edit,
+.worker-endpoints-cancel {
+  font-size: 0.78rem;
+  padding: 0.2rem 0.5rem;
+}
+
+.worker-endpoints-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.worker-endpoint-input {
+  width: 100%;
+  font-size: 0.78rem;
+  padding: 0.35rem 0.5rem;
+}
+
+.worker-endpoint-input:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
+.worker-endpoints-save {
+  justify-self: start;
+  font-size: 0.78rem;
+  padding: 0.25rem 0.55rem;
+}
+
+.worker-endpoints-error {
+  margin: 0;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.78rem;
+}
+
+.worker-endpoints-saved {
+  font-size: 0.75rem;
+  color: var(--accent);
+}
+
 .worker-card-meta {
   display: flex;
   flex-wrap: wrap;

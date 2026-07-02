@@ -25,6 +25,10 @@ def _to_preview(index: int, scored) -> CandidatePreview:
     )
 
 
+def scored_pool_to_previews(ranked_pool) -> list[CandidatePreview]:
+    return [_to_preview(i, scored) for i, scored in enumerate(ranked_pool)]
+
+
 async def load_history_entries(
     db: AsyncSession,
     *,

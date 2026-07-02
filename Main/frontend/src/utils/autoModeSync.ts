@@ -26,6 +26,7 @@ export function paramIntervalsFromAutoConfig(
 export function assignmentFromAutoDispatch(
   autoAssignment: AutoDispatchAssignment,
   config: AutoModeConfig,
+  sessionStartedAt?: string | null,
 ): WorkerAssignment {
   const candidate: CandidatePreview = {
     index: autoAssignment.candidate_index,
@@ -64,6 +65,8 @@ export function assignmentFromAutoDispatch(
     limitSeconds: autoAssignment.limit_seconds || config.limit_seconds,
     dispatching: false,
     dispatchError: autoAssignment.dispatch_error,
+    dispatchedAt:
+      autoAssignment.dispatch_ok && sessionStartedAt ? sessionStartedAt : null,
     autoManaged: true,
   };
 }
@@ -72,7 +75,7 @@ export function previewAssignmentsFromAutoConfig(
   status: AutoModeStatus,
   workers: WorkerRecord[],
 ): Record<string, WorkerAssignment> {
-  if (!status.enabled || status.assignments.length > 0) {
+  if (!status.enabled || status.running || status.assignments.length > 0) {
     return {};
   }
 
@@ -124,9 +127,33 @@ export function assignmentsFromAutoMode(status: AutoModeStatus): Record<string, 
   }
   const next: Record<string, WorkerAssignment> = {};
   for (const item of status.assignments) {
-    next[item.worker_id] = assignmentFromAutoDispatch(item, status.config);
+    next[item.worker_id] = assignmentFromAutoDispatch(
+      item,
+      status.config,
+      status.started_at,
+    );
   }
   return next;
+}
+
+/** Live auto session assignments shown on worker cards while auto mode is running. */
+export function autoAssignmentsForStatus(
+  status: AutoModeStatus,
+): Record<string, WorkerAssignment> {
+  if (status.enabled && status.running && status.assignments.length > 0) {
+    return assignmentsFromAutoMode(status);
+  }
+  return {};
+}
+
+/** Persisted auto session converted to manual cards after auto mode is turned off. */
+export function manualAssignmentsFromEndedAuto(
+  status: AutoModeStatus,
+): Record<string, WorkerAssignment> {
+  if (!status.enabled && status.assignments.length > 0) {
+    return assignmentsAsManual(status);
+  }
+  return {};
 }
 
 export function formatParamInterval(spec: ParamInterval): string {

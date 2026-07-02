@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -7,7 +7,7 @@ from app.database import get_db
 from app.models import OptimizationRun, RoundHistory
 from app.schemas import CreateHistoryRequest, HistoryImportResponse, HistoryRecord
 from app.serializers import history_to_response
-from app.services.history_import import import_history_files
+from app.services.history_import import import_history_api, import_history_files, maybe_sync_history_api
 from app.services.history_store import save_history_from_run, save_history_record
 
 router = APIRouter(prefix="/history", tags=["history"])
@@ -84,6 +84,31 @@ async def import_history(
 ) -> HistoryImportResponse:
     settings = get_settings()
     result = await import_history_files(db, settings.history_path_list, replace=replace)
+    return HistoryImportResponse(**result.__dict__)
+
+
+@router.post("/sync-rounds", response_model=HistoryImportResponse)
+async def sync_rounds_from_api(
+    replace: bool = False,
+    url: str | None = Query(default=None, description="Override MAIN_HISTORY_API_URL"),
+    db: AsyncSession = Depends(get_db),
+) -> HistoryImportResponse:
+    settings = get_settings()
+    target = (url or settings.history_api_url or "").strip()
+    if not target:
+        raise HTTPException(status_code=400, detail="No history API URL configured")
+    try:
+        result = await import_history_api(
+            db,
+            target,
+            replace=replace,
+            timeout=settings.history_api_timeout,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to fetch or import rounds API: {exc}",
+        ) from exc
     return HistoryImportResponse(**result.__dict__)
 
 

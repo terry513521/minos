@@ -9,7 +9,8 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api import auto, candidates, health, history, jobs, platform_round, policies, runs, workers
 from app.config import get_settings
-from app.database import init_db
+from app.database import SessionLocal, init_db
+from app.services.auto_mode import load_auto_mode_state
 from app.services.platform_round import poller
 
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
@@ -18,6 +19,8 @@ FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     await init_db()
+    async with SessionLocal() as db:
+        await load_auto_mode_state(db)
     await poller.start()
     yield
     await poller.stop()

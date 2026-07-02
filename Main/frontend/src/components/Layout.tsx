@@ -100,7 +100,7 @@ export function Layout() {
             aria-pressed={autoEnabled}
             title={
               autoEnabled
-                ? "Auto mode on — POST /api/v1/auto/start with region to dispatch workers"
+                ? "Auto mode armed — call POST /api/v1/auto/start to begin; POST /api/v1/auto/best to stop"
                 : "Enable auto mode for unattended overnight runs"
             }
           >

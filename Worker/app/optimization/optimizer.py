@@ -330,7 +330,7 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
         and not is_adaptive_algorithm(algorithm)
     )
     plan = build_optimization_plan(
-        window=benchmark_window,
+        window=request.window,
         tool=job_request.tool,
         params=job_request.params,
         param_intervals=intervals,
@@ -342,7 +342,9 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
         adaptive_max_trials=settings.adaptive_max_trials,
         vcf_cache_enabled=True,
         gatk_persistent_container=False,
-        source_window=source_window,
+        benchmark_window=benchmark_window
+        if source_window and benchmark_window != request.window
+        else None,
         trial_threads=settings.trial_threads,
         trial_memory_gb=settings.trial_memory_gb,
     )
@@ -501,7 +503,7 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
                 status="error",
                 worker=worker_name,
                 job_id=request.job_id,
-                window=benchmark_window,
+                window=request.window,
                 tool=job_request.tool,
                 concurrency=request.concurrency,
                 algorithm=algorithm,
@@ -528,7 +530,7 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
             status="completed",
             worker=worker_name,
             job_id=request.job_id,
-            window=benchmark_window,
+            window=request.window,
             tool=job_request.tool,
             concurrency=request.concurrency,
             algorithm=algorithm,

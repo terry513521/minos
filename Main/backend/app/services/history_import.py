@@ -1,4 +1,4 @@
-"""Import round history from Minos tuning JSON exports."""
+"""Import round history from Minos tuning JSON exports and remote /api/rounds."""
 
 from __future__ import annotations
 
@@ -7,7 +7,9 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 
+import httpx
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -55,7 +57,11 @@ def _source_key(source_label: str, entry: dict) -> str:
     round_id = entry.get("round_id") or ""
     region = entry.get("region") or ""
     tool = entry.get("tool") or "gatk"
-    return f"{source_label}:{tool}:{round_id}:{region}"
+    instance_id = entry.get("instance_id") or ""
+    base = f"{source_label}:{tool}:{round_id}:{region}"
+    if instance_id:
+        return f"{base}:{instance_id}"
+    return base
 
 
 def _source_label(path: Path) -> str:
@@ -67,12 +73,50 @@ def _source_label(path: Path) -> str:
     return path.stem
 
 
+def api_source_label(url: str) -> str:
+    parsed = urlparse(url)
+    host = parsed.netloc or parsed.path.strip("/") or "api"
+    return f"api:{host}"
+
+
+def flatten_round_entries(data: dict | list) -> list[dict]:
+    """Normalize portfolio /api/rounds payloads into flat scored history rows."""
+    if isinstance(data, list):
+        rounds = data
+    elif isinstance(data, dict):
+        rounds = data.get("rounds") or []
+    else:
+        return []
+
+    entries: list[dict] = []
+    for round_item in rounds:
+        if not isinstance(round_item, dict):
+            continue
+
+        instances = round_item.get("instances")
+        if isinstance(instances, dict) and instances:
+            for instance_id, instance in instances.items():
+                if not isinstance(instance, dict):
+                    continue
+                entry = dict(instance)
+                entry.setdefault("round_id", round_item.get("round_id"))
+                entry.setdefault("region", round_item.get("region"))
+                entry.setdefault("instance_id", instance.get("instance_id") or instance_id)
+                entries.append(entry)
+            continue
+
+        if round_item.get("combined_final") is not None or round_item.get("config_snapshot"):
+            entries.append(round_item)
+
+    return entries
+
+
 def _load_rounds(path: Path) -> list[dict]:
     data = json.loads(path.read_text(encoding="utf-8"))
-    if isinstance(data, dict):
-        return list(data.get("rounds") or [])
+    if isinstance(data, dict) and "rounds" in data:
+        return flatten_round_entries(data)
     if isinstance(data, list):
-        return data
+        return flatten_round_entries(data)
     return []
 
 
@@ -109,6 +153,40 @@ def _entry_to_row(source_label: str, entry: dict) -> RoundHistory | None:
     )
 
 
+async def _import_entries(
+    db: AsyncSession,
+    source_label: str,
+    entries: list[dict],
+    *,
+    replace: bool = False,
+) -> HistoryImportResult:
+    result = HistoryImportResult(
+        files=0,
+        parsed=0,
+        imported=0,
+        skipped_unscored=0,
+        skipped_invalid=0,
+        skipped_duplicate=0,
+    )
+
+    existing_keys: set[str] = set()
+    if not replace:
+        rows = await db.execute(
+            select(RoundHistory.source_key).where(RoundHistory.source_key.is_not(None))
+        )
+        existing_keys = {k for k in rows.scalars().all() if k}
+
+    if replace:
+        await db.execute(RoundHistory.__table__.delete())
+        existing_keys.clear()
+
+    for entry in entries:
+        _import_one_entry(result, existing_keys, source_label, entry, db)
+
+    await db.commit()
+    return result
+
+
 async def import_history_files(
     db: AsyncSession,
     paths: list[Path],
@@ -140,27 +218,61 @@ async def import_history_files(
             continue
         result.files += 1
         source_label = _source_label(path)
-
         for entry in _load_rounds(path):
-            result.parsed += 1
-            if entry.get("combined_final") is None:
-                result.skipped_unscored += 1
-                continue
-
-            row = _entry_to_row(source_label, entry)
-            if row is None:
-                result.skipped_invalid += 1
-                continue
-
-            if row.source_key in existing_keys:
-                result.skipped_duplicate += 1
-                continue
-
-            db.add(row)
-            existing_keys.add(row.source_key)
-            result.imported += 1
+            _import_one_entry(result, existing_keys, source_label, entry, db)
 
     await db.commit()
+    return result
+
+
+def _import_one_entry(
+    result: HistoryImportResult,
+    existing_keys: set[str],
+    source_label: str,
+    entry: dict,
+    db: AsyncSession,
+) -> None:
+    result.parsed += 1
+    if entry.get("combined_final") is None:
+        result.skipped_unscored += 1
+        return
+
+    row = _entry_to_row(source_label, entry)
+    if row is None:
+        result.skipped_invalid += 1
+        return
+
+    if row.source_key in existing_keys:
+        result.skipped_duplicate += 1
+        return
+
+    db.add(row)
+    existing_keys.add(row.source_key)
+    result.imported += 1
+
+
+async def fetch_rounds_payload(url: str, *, timeout: float = 60.0) -> dict | list:
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+        response = await client.get(url)
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, (dict, list)):
+            raise ValueError("Rounds API returned non-JSON object")
+        return payload
+
+
+async def import_history_api(
+    db: AsyncSession,
+    url: str,
+    *,
+    replace: bool = False,
+    timeout: float = 60.0,
+) -> HistoryImportResult:
+    """Fetch GET /api/rounds and upsert scored rows into round_history."""
+    payload = await fetch_rounds_payload(url, timeout=timeout)
+    entries = flatten_round_entries(payload)
+    result = await _import_entries(db, api_source_label(url), entries, replace=replace)
+    result.files = 1
     return result
 
 
@@ -174,3 +286,13 @@ async def maybe_import_default_history(db: AsyncSession, paths: list[Path]) -> H
         return None
 
     return await import_history_files(db, paths, replace=False)
+
+
+async def maybe_sync_history_api(db: AsyncSession, url: str | None) -> HistoryImportResult | None:
+    """Merge new rows from the configured rounds API on startup."""
+    if not url or not url.strip():
+        return None
+    try:
+        return await import_history_api(db, url.strip(), replace=False)
+    except Exception:
+        return None

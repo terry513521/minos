@@ -107,3 +107,11 @@ class RoundHistory(Base):
     source_key: Mapped[str | None] = mapped_column(String(256), nullable=True, unique=True, index=True)
     worker_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class ControlPlaneSetting(Base):
+    __tablename__ = "control_plane_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)

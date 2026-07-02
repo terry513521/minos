@@ -1,11 +1,13 @@
-import { DragEvent, FormEvent, useEffect, useRef, useState } from "react";
+import { DragEvent, FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { api, CandidatePreview, FindCandidatesResponse } from "../api/client";
 import { CANDIDATE_DRAG_MIME } from "../utils/candidateAssign";
+import { compositeCandidateScore } from "../utils/candidateSelection";
 import {
   loadCandidateFinderState,
   saveCandidateFinderState,
 } from "../utils/candidateFinderStorage";
 import { chromosomeFromWindow, normalizeRegion } from "../utils/window";
+import { AUTO_MODE_CHANGED_EVENT } from "./AutoModePanel";
 import { ConfTooltip } from "./ConfTooltip";
 
 const K_OPTIONS = [1, 2, 3, 4, 5, 6, 8];
@@ -37,6 +39,23 @@ export function CandidateFinderPanel({
   const [result, setResult] = useState<FindCandidatesResponse | null>(
     () => initialFinderState?.result ?? null,
   );
+  const [autoModeEnabled, setAutoModeEnabled] = useState(false);
+
+  const refreshAutoMode = useCallback(() => {
+    api
+      .getAutoMode()
+      .then((status) => setAutoModeEnabled(status.enabled))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    refreshAutoMode();
+    function onAutoChanged() {
+      refreshAutoMode();
+    }
+    window.addEventListener(AUTO_MODE_CHANGED_EVENT, onAutoChanged);
+    return () => window.removeEventListener(AUTO_MODE_CHANGED_EVENT, onAutoChanged);
+  }, [refreshAutoMode]);
 
   const previewChrom = chromosomeFromWindow(region);
 
@@ -101,6 +120,7 @@ export function CandidateFinderPanel({
             placeholder={DEFAULT_REGION}
             aria-label="Genomic region"
             spellCheck={false}
+            disabled={autoModeEnabled}
           />
         </label>
         <label className="candidate-k-select">
@@ -120,7 +140,7 @@ export function CandidateFinderPanel({
         <button
           type="submit"
           className="button primary candidate-find-btn"
-          disabled={loading || !region.trim()}
+          disabled={loading || !region.trim() || autoModeEnabled}
         >
           {loading ? "Finding…" : `Find ${kCandidates} candidates`}
         </button>
@@ -182,6 +202,8 @@ function CandidateCard({
   const chrom =
     chromosomeFromWindow(candidate.source_window) ?? fallbackChrom;
   const score = candidate.history_score ?? candidate.rank_score;
+  const composite = compositeCandidateScore(candidate);
+  const region = candidate.source_window?.trim();
 
   function handleDragStart(e: DragEvent<HTMLElement>) {
     if (!draggable) return;
@@ -202,14 +224,19 @@ function CandidateCard({
         <span className="candidate-result-chrom">{chrom}</span>
         <span className="candidate-result-score">{(score * 100).toFixed(1)}%</span>
       </div>
-      {candidate.source_window && (
-        <code className="candidate-result-window">{candidate.source_window}</code>
+      {region ? (
+        <code className="candidate-result-window">{region}</code>
+      ) : (
+        <span className="candidate-result-window-missing">No history region</span>
       )}
       <div className="candidate-result-foot">
         <span className="candidate-rank-badge">#{candidate.index + 1}</span>
         {candidate.similarity != null && (
           <span className="candidate-sim-tag">sim {candidate.similarity.toFixed(2)}</span>
         )}
+        <span className="candidate-composite-tag">
+          composite {(composite * 100).toFixed(1)}%
+        </span>
         <ConfTooltip conf={candidate.base_conf} label="Conf" />
       </div>
     </article>

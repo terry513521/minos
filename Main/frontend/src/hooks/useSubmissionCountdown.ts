@@ -37,6 +37,58 @@ export function useSubmissionCountdown(
   return remaining;
 }
 
+export function computeDeadlineFromLimit(
+  startedAt: string | null | undefined,
+  limitSeconds: number | null | undefined,
+): number | null {
+  if (!startedAt || limitSeconds == null || limitSeconds <= 0) return null;
+  const startedMs = new Date(startedAt).getTime();
+  if (Number.isNaN(startedMs)) return null;
+  return startedMs + limitSeconds * 1000;
+}
+
+/** Countdown until startedAt + limitSeconds. */
+export function useLimitCountdown(
+  startedAt: string | null | undefined,
+  limitSeconds: number | null | undefined,
+  active: boolean,
+): number | null {
+  const [remaining, setRemaining] = useState<number | null>(null);
+
+  useEffect(() => {
+    const deadline = computeDeadlineFromLimit(startedAt, limitSeconds);
+    if (!active || deadline == null) {
+      setRemaining(null);
+      return;
+    }
+
+    const tick = () => {
+      setRemaining(Math.max(0, Math.floor((deadline - Date.now()) / 1000)));
+    };
+
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [startedAt, limitSeconds, active]);
+
+  return remaining;
+}
+
+/** Returns a moving clock (ms) while active — for client-side limit detection. */
+export function usePeriodicTick(active: boolean, intervalMs = 1000): number {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!active) return;
+    const tick = () => setNowMs(Date.now());
+    tick();
+    const id = window.setInterval(tick, intervalMs);
+    return () => window.clearInterval(id);
+  }, [active, intervalMs]);
+
+  return nowMs;
+}
+
 export interface CountdownParts {
   totalSeconds: number;
   hours: number;
@@ -135,6 +187,19 @@ export function countdownUrgency(
   if (seconds <= 0) return "ended";
   if (seconds < minSubmitSeconds) return "critical";
   if (seconds < minSubmitSeconds + 300) return "warn";
+  return "ok";
+}
+
+export function limitCountdownUrgency(
+  remainingSeconds: number | null,
+  totalSeconds: number | null | undefined,
+): CountdownUrgency {
+  if (remainingSeconds == null) return "ok";
+  if (remainingSeconds <= 0) return "ended";
+  if (!totalSeconds || totalSeconds <= 0) return "ok";
+  const ratio = remainingSeconds / totalSeconds;
+  if (ratio <= 0.1) return "critical";
+  if (ratio <= 0.25) return "warn";
   return "ok";
 }
 

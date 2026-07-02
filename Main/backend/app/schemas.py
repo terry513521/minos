@@ -312,7 +312,10 @@ class AutoModeConfig(BaseModel):
     params: list[str]
     param_intervals: dict[str, ParamIntervalSpec]
     worker_names: list[str]
-    worker_algorithms: dict[str, str]
+    worker_algorithms: dict[str, str] = Field(default_factory=dict)
+    assignment_strategy: str = "score_similarity_composite"
+    algorithm_optuna_ratio: int = 2
+    algorithm_random_ratio: int = 1
     limit_seconds: int
     concurrency: int
     find_k: int
@@ -330,6 +333,7 @@ class AutoDispatchAssignment(BaseModel):
     worker_name: str
     algorithm: str
     candidate_index: int
+    selection_reason: str | None = None
     composite_score: float
     history_score: float | None = None
     similarity: float | None = None
@@ -346,9 +350,13 @@ class AutoDispatchAssignment(BaseModel):
 
 class AutoSelectedCandidate(BaseModel):
     index: int
+    worker_name: str | None = None
+    algorithm: str | None = None
+    selection_reason: str | None = None
     composite_score: float
     history_score: float | None = None
     similarity: float | None = None
+    source_window: str | None = None
     base_conf: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -356,9 +364,13 @@ class AutoModeStatus(BaseModel):
     enabled: bool
     running: bool = False
     region: str | None = None
+    last_started_region: str | None = None
     started_at: datetime | None = None
     config: AutoModeConfig
     candidates_found: int = 0
+    found_candidates: list[CandidatePreview] = Field(default_factory=list)
+    time_remaining_seconds: int | None = None
+    limit_seconds: int | None = None
     selected_candidates: list[AutoSelectedCandidate] = Field(default_factory=list)
     assignments: list[AutoDispatchAssignment] = Field(default_factory=list)
 
@@ -370,11 +382,14 @@ class AutoStartRequest(BaseModel):
 
 class AutoStartResponse(BaseModel):
     ok: bool
+    skipped: bool = False
     region: str
     tool: str
     candidates_found: int
     candidates_selected: int
     workers_dispatched: int
+    found_candidates: list[CandidatePreview] = Field(default_factory=list)
+    selected_candidates: list[AutoSelectedCandidate] = Field(default_factory=list)
     assignments: list[AutoDispatchAssignment] = Field(default_factory=list)
     message: str
 

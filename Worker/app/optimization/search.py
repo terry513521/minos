@@ -259,7 +259,7 @@ def build_optimization_plan(
     adaptive_max_trials: int = 30,
     vcf_cache_enabled: bool = False,
     gatk_persistent_container: bool = False,
-    source_window: str | None = None,
+    benchmark_window: str | None = None,
     trial_threads: int | None = None,
     trial_memory_gb: int | None = None,
 ) -> dict[str, Any]:
@@ -286,7 +286,7 @@ def build_optimization_plan(
 
     plan: dict[str, Any] = {
         "window": window,
-        "source_window": source_window,
+        "benchmark_window": benchmark_window,
         "tool": tool,
         "algorithm": algo,
         "mode": mode,
@@ -334,10 +334,11 @@ def format_optimization_plan(plan: dict[str, Any]) -> str:
     """Human-readable multi-line summary for worker logs."""
     lines = [
         "=== Optimization plan ===",
-        f"window: {plan['window']}",
+        f"assigned window: {plan['window']}",
     ]
-    if plan.get("source_window"):
-        lines.append(f"round window: {plan['source_window']} (benchmark uses random slice)")
+    benchmark_window = plan.get("benchmark_window")
+    if benchmark_window and benchmark_window != plan["window"]:
+        lines.append(f"benchmark slice: {benchmark_window} (random sub-window for speed)")
     lines.extend([
         f"tool: {plan['tool']}  algorithm: {plan['algorithm']}  limit: {plan['limit_seconds']}s",
         f"mode: {plan['mode']}  concurrency: {plan['concurrency']}",

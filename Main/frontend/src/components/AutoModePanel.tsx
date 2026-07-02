@@ -1,18 +1,30 @@
-import { useCallback, useEffect, useState } from "react";
-import { api, AutoModeStatus } from "../api/client";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api, AutoModeStatus, AutoSelectedCandidate, CandidatePreview } from "../api/client";
 import { formatLocalDateTime } from "../hooks/useSubmissionCountdown";
+import {
+  candidateHistoryScore,
+  compositeCandidateScore,
+  selectionSlotsByIndex,
+} from "../utils/candidateSelection";
+import { loadAutoModeState, saveAutoModeState } from "../utils/autoModeStorage";
 import { formatParamInterval, paramIntervalsFromAutoConfig } from "../utils/autoModeSync";
+import { ConfTooltip } from "./ConfTooltip";
+import { LimitCountdownBadge } from "./LimitCountdownBadge";
 
 export const AUTO_MODE_CHANGED_EVENT = "effortless:auto-mode-changed";
 
 export function AutoModePanel() {
-  const [status, setStatus] = useState<AutoModeStatus | null>(null);
+  const persistedAutoRef = useRef(loadAutoModeState());
+  const [status, setStatus] = useState<AutoModeStatus | null>(
+    () => persistedAutoRef.current?.status ?? null,
+  );
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     api
       .getAutoMode()
       .then((next) => {
+        saveAutoModeState(next);
         setStatus(next);
         setError(null);
       })
@@ -38,6 +50,8 @@ export function AutoModePanel() {
 
   const config = status.config;
   const paramIntervals = paramIntervalsFromAutoConfig(config);
+  const selectionByIndex = selectionSlotsByIndex(status.selected_candidates);
+  const foundCount = status.found_candidates.length || status.candidates_found;
 
   return (
     <div className={`auto-mode-panel${status.enabled ? " auto-mode-panel--on" : ""}`}>
@@ -54,8 +68,9 @@ export function AutoModePanel() {
       {status.enabled ? (
         <p className="auto-mode-panel-lead">
           Overnight orchestration for <strong>VM</strong>, <strong>Big</strong>, and{" "}
-          <strong>Igno</strong>. Start via <code>POST /api/v1/auto/start</code> with the round
-          region. Export via <code>POST /api/v1/auto/best</code>.
+          <strong>Igno</strong>. Workers run only after{" "}
+          <code>POST /api/v1/auto/start</code> with the round region. Stop and export via{" "}
+          <code>POST /api/v1/auto/best</code>.
         </p>
       ) : status.running ? (
         <p className="auto-mode-panel-lead">
@@ -68,14 +83,15 @@ export function AutoModePanel() {
         </p>
       )}
 
-      {(status.enabled || status.assignments.length > 0) && (
+      {(status.enabled || status.assignments.length > 0 || status.found_candidates.length > 0) && (
         <>
           <div className="auto-mode-grid">
             <div className="auto-mode-card">
               <span className="auto-mode-card-label">Selection</span>
               <p>
-                Find {config.find_k} candidates → top {config.select_k} by{" "}
-                {config.score_weight}×score + {config.similarity_weight}×similarity
+                Find {config.find_k} candidates → VM top score, Big most similar, Igno best composite.
+                Algorithms: {config.algorithm_optuna_ratio}:{config.algorithm_random_ratio}{" "}
+                optuna:random.
               </p>
               {status.region && (
                 <p>
@@ -93,6 +109,16 @@ export function AutoModePanel() {
               <span className="auto-mode-card-label">Run settings</span>
               <p>Tool: {config.tool}</p>
               <p>Time limit: {Math.round(config.limit_seconds / 60)} min</p>
+              {status.running && status.started_at && (
+                <p className="auto-mode-limit-row">
+                  <LimitCountdownBadge
+                    startedAt={status.started_at}
+                    limitSeconds={config.limit_seconds}
+                    active={status.running}
+                    className="auto-mode-limit-countdown"
+                  />
+                </p>
+              )}
               <p>Concurrency: {config.concurrency}</p>
             </div>
           </div>
@@ -120,46 +146,63 @@ export function AutoModePanel() {
           </div>
 
           <div className="auto-mode-section">
-            <span className="auto-mode-section-title">Worker algorithms</span>
+            <span className="auto-mode-section-title">Algorithm distribution</span>
             <div className="auto-mode-worker-table-wrap">
               <table className="auto-mode-param-table">
                 <thead>
                   <tr>
-                    <th>Worker</th>
-                    <th>Algorithm</th>
+                    <th>Setting</th>
+                    <th>Value</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {config.worker_names.map((name) => (
-                    <tr key={name}>
-                      <td>{name}</td>
-                      <td><code>{config.worker_algorithms[name] ?? "—"}</code></td>
-                    </tr>
-                  ))}
+                  <tr>
+                    <td>Assignment</td>
+                    <td>VM top score · Big most similar · Igno best composite</td>
+                  </tr>
+                  <tr>
+                    <td>Ratio</td>
+                    <td>
+                      {config.algorithm_optuna_ratio}:{config.algorithm_random_ratio} optuna:random
+                    </td>
+                  </tr>
+                  {status.assignments.length > 0 ? (
+                    status.assignments.map((item) => (
+                      <tr key={item.worker_id}>
+                        <td>{item.worker_name}</td>
+                        <td><code>{item.algorithm}</code></td>
+                      </tr>
+                    ))
+                  ) : (
+                    config.worker_names.map((name) => (
+                      <tr key={name}>
+                        <td>{name}</td>
+                        <td className="auto-mode-muted">assigned at start</td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
           </div>
 
-          {status.selected_candidates.length > 0 && (
+          {status.found_candidates.length > 0 && (
             <div className="auto-mode-section">
               <span className="auto-mode-section-title">
-                Selected base confs ({status.selected_candidates.length})
+                Found candidates ({foundCount})
               </span>
-              <div className="auto-mode-candidate-list">
-                {status.selected_candidates.map((candidate) => (
-                  <div key={candidate.index} className="auto-mode-candidate-item">
-                    <span className="chip chip-muted">#{candidate.index + 1}</span>
-                    <span>
-                      composite {(candidate.composite_score * 100).toFixed(1)}%
-                    </span>
-                    {candidate.history_score != null && (
-                      <span>score {(candidate.history_score * 100).toFixed(1)}%</span>
-                    )}
-                    {candidate.similarity != null && (
-                      <span>sim {(candidate.similarity * 100).toFixed(0)}%</span>
-                    )}
-                  </div>
+              <p className="auto-mode-section-lead">
+                {status.selected_candidates.length > 0
+                  ? `${status.selected_candidates.length} highlighted — score / similarity / composite picks per worker.`
+                  : "Pool from history search before worker selection."}
+              </p>
+              <div className="auto-mode-found-list">
+                {status.found_candidates.map((candidate) => (
+                  <AutoModeFoundCandidateCard
+                    key={candidate.index}
+                    candidate={candidate}
+                    selectionSlots={selectionByIndex.get(candidate.index) ?? []}
+                  />
                 ))}
               </div>
             </div>
@@ -173,9 +216,9 @@ export function AutoModePanel() {
                   <thead>
                     <tr>
                       <th>Worker</th>
-                      <th>Algorithm</th>
                       <th>Candidate</th>
-                      <th>Composite</th>
+                      <th>Region</th>
+                      <th>Algorithm</th>
                       <th>Dispatch</th>
                     </tr>
                   </thead>
@@ -183,9 +226,11 @@ export function AutoModePanel() {
                     {status.assignments.map((item) => (
                       <tr key={item.worker_id}>
                         <td>{item.worker_name}</td>
-                        <td><code>{item.algorithm}</code></td>
                         <td>#{item.candidate_index + 1}</td>
-                        <td>{(item.composite_score * 100).toFixed(1)}%</td>
+                        <td>
+                          {item.window ? <code>{item.window}</code> : "—"}
+                        </td>
+                        <td><code>{item.algorithm}</code></td>
                         <td>
                           {item.dispatch_ok ? (
                             <span className="chip chip-ok">accepted</span>
@@ -205,5 +250,67 @@ export function AutoModePanel() {
         </>
       )}
     </div>
+  );
+}
+
+function AutoModeFoundCandidateCard({
+  candidate,
+  selectionSlots,
+}: {
+  candidate: CandidatePreview;
+  selectionSlots: AutoSelectedCandidate[];
+}) {
+  const selected = selectionSlots.length > 0;
+  const region = candidate.source_window?.trim();
+  const score = candidateHistoryScore(candidate);
+  const composite = compositeCandidateScore(candidate);
+
+  return (
+    <article
+      className={`auto-mode-found-item${selected ? " auto-mode-found-item--selected" : ""}`}
+    >
+      <div className="auto-mode-found-item-head">
+        <span className="candidate-rank-badge">#{candidate.index + 1}</span>
+        {selected ? (
+          <span className="chip chip-accent">Selected</span>
+        ) : (
+          <span className="chip chip-muted">Pool</span>
+        )}
+      </div>
+
+      {region ? (
+        <code className="auto-mode-found-region">{region}</code>
+      ) : (
+        <span className="auto-mode-found-region-missing">No history region</span>
+      )}
+
+      <div className="auto-mode-found-metrics">
+        <span>score {(score * 100).toFixed(1)}%</span>
+        {candidate.similarity != null && (
+          <span>sim {(candidate.similarity * 100).toFixed(0)}%</span>
+        )}
+        <span>composite {(composite * 100).toFixed(1)}%</span>
+      </div>
+
+      {selected && (
+        <div className="auto-mode-found-selections">
+          {selectionSlots.map((slot) => (
+            <div
+              key={`${slot.worker_name ?? "worker"}-${slot.algorithm ?? "algo"}`}
+              className="auto-mode-found-selection-row"
+            >
+              {slot.worker_name && (
+                <span className="chip chip-accent">{slot.worker_name}</span>
+              )}
+              {slot.algorithm && <code>{slot.algorithm}</code>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="auto-mode-found-conf">
+        <ConfTooltip conf={candidate.base_conf} label="Conf" />
+      </div>
+    </article>
   );
 }

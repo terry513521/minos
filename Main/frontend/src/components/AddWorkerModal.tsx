@@ -1,30 +1,16 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
+import { deriveBaseUrlFromHealth, parseApiError } from "../utils/workerUrls";
 
 export const WORKERS_CHANGED_EVENT = "effortless:workers-changed";
-
-function deriveBaseUrl(healthUrl: string): string {
-  const trimmed = healthUrl.trim().replace(/\/+$/, "");
-  if (trimmed.toLowerCase().endsWith("/health")) {
-    return trimmed.slice(0, -"/health".length);
-  }
-  return trimmed;
-}
 
 interface AddWorkerModalProps {
   open: boolean;
   onClose: () => void;
 }
 
-function parseApiError(raw: string): string {
-  try {
-    const data = JSON.parse(raw) as { detail?: string | { msg?: string }[] };
-    if (typeof data.detail === "string") return data.detail;
-    if (Array.isArray(data.detail) && data.detail[0]?.msg) return data.detail[0].msg;
-  } catch {
-    /* use raw */
-  }
-  return raw || "Failed to add worker";
+function parseApiErrorFromRegister(raw: string): string {
+  return parseApiError(raw) || "Failed to add worker";
 }
 
 export function AddWorkerModal({ open, onClose }: AddWorkerModalProps) {
@@ -68,7 +54,7 @@ export function AddWorkerModal({ open, onClose }: AddWorkerModalProps) {
       setBaseUrl("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to add worker");
-      if (err instanceof Error) setError(parseApiError(err.message));
+      if (err instanceof Error) setError(parseApiErrorFromRegister(err.message));
     } finally {
       setLoading(false);
     }
@@ -111,7 +97,7 @@ export function AddWorkerModal({ open, onClose }: AddWorkerModalProps) {
                 const next = e.target.value;
                 setHealthUrl(next);
                 if (!baseUrlTouched) {
-                  setBaseUrl(deriveBaseUrl(next));
+                  setBaseUrl(deriveBaseUrlFromHealth(next));
                 }
               }}
               placeholder="http://192.168.1.10:8080/health"

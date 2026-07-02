@@ -23,7 +23,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 async def init_db() -> None:
     from app import models  # noqa: F401
     from app.config import get_settings
-    from app.services.history_import import maybe_import_default_history
+    from app.services.history_import import maybe_import_default_history, maybe_sync_history_api
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -36,6 +36,10 @@ async def init_db() -> None:
     if settings.history_path_list:
         async with SessionLocal() as session:
             await maybe_import_default_history(session, settings.history_path_list)
+
+    if settings.history_api_sync_on_startup and settings.history_api_url:
+        async with SessionLocal() as session:
+            await maybe_sync_history_api(session, settings.history_api_url)
 
 
 async def _ensure_history_columns(conn) -> None:

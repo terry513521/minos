@@ -36,7 +36,26 @@ def test_optimization_plan_param_split():
 
     text = format_optimization_plan(plan)
     assert "Optimization plan" in text
+    assert "assigned window:" in text
     assert "full Cartesian grid: 9" in text
     assert "planned trials: 5" in text
     assert "lane 1:" in text
     assert "lane 2:" in text
+
+
+def test_optimization_plan_shows_benchmark_slice():
+    plan = build_optimization_plan(
+        window="chr21:1000000-6000000",
+        benchmark_window="chr21:2000000-5000000",
+        tool="gatk",
+        params=["min_mapping_quality_score"],
+        param_intervals={"min_mapping_quality_score": {"min": 15, "max": 25, "step": 5}},
+        base_conf={"gatk_options": {"min_mapping_quality_score": 20}},
+        concurrency=1,
+        param_split=False,
+        limit_seconds=600,
+        algorithm="grid",
+    )
+    text = format_optimization_plan(plan)
+    assert "assigned window: chr21:1000000-6000000" in text
+    assert "benchmark slice: chr21:2000000-5000000" in text

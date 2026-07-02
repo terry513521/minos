@@ -193,6 +193,9 @@ export interface AutoModeConfig {
   param_intervals: Record<string, ParamIntervalPayload>;
   worker_names: string[];
   worker_algorithms: Record<string, string>;
+  assignment_strategy: string;
+  algorithm_optuna_ratio: number;
+  algorithm_random_ratio: number;
   limit_seconds: number;
   concurrency: number;
   find_k: number;
@@ -206,6 +209,7 @@ export interface AutoDispatchAssignment {
   worker_name: string;
   algorithm: string;
   candidate_index: number;
+  selection_reason: "random" | string | null;
   composite_score: number;
   history_score: number | null;
   similarity: number | null;
@@ -222,9 +226,13 @@ export interface AutoDispatchAssignment {
 
 export interface AutoSelectedCandidate {
   index: number;
+  worker_name: string | null;
+  algorithm: string | null;
+  selection_reason: "random" | string | null;
   composite_score: number;
   history_score: number | null;
   similarity: number | null;
+  source_window: string | null;
   base_conf: Record<string, unknown>;
 }
 
@@ -232,20 +240,27 @@ export interface AutoModeStatus {
   enabled: boolean;
   running: boolean;
   region: string | null;
+  last_started_region: string | null;
   started_at: string | null;
   config: AutoModeConfig;
   candidates_found: number;
+  found_candidates: CandidatePreview[];
+  time_remaining_seconds: number | null;
+  limit_seconds: number | null;
   selected_candidates: AutoSelectedCandidate[];
   assignments: AutoDispatchAssignment[];
 }
 
 export interface AutoStartResult {
   ok: boolean;
+  skipped?: boolean;
   region: string;
   tool: string;
   candidates_found: number;
   candidates_selected: number;
   workers_dispatched: number;
+  found_candidates: CandidatePreview[];
+  selected_candidates: AutoSelectedCandidate[];
   assignments: AutoModeStatus["assignments"];
   message: string;
 }
@@ -305,6 +320,14 @@ export const api = {
   deleteWorker: (workerId: string) =>
     request<{ ok: string; worker_id: string }>(`/workers/${workerId}`, {
       method: "DELETE",
+    }),
+  updateWorker: (
+    workerId: string,
+    body: { health_url?: string; base_url?: string; status?: WorkerRecord["status"] },
+  ) =>
+    request<WorkerRecord>(`/workers/${workerId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
     }),
   getAutoMode: () => request<AutoModeStatus>("/auto/mode"),
   setAutoMode: (enabled: boolean) =>

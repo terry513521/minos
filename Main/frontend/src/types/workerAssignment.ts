@@ -28,6 +28,8 @@ export interface WorkerAssignment {
   limitSeconds: number;
   dispatching: boolean;
   dispatchError: string | null;
+  /** ISO timestamp when optimization was last dispatched to this worker. */
+  dispatchedAt?: string | null;
   /** Set when assignment is driven by auto mode orchestration. */
   autoManaged?: boolean;
 }
@@ -59,6 +61,14 @@ export function buildDefaultParamIntervals(
   return intervals;
 }
 
+export function resolveAssignmentWindow(
+  candidate: CandidatePreview,
+  contextWindow: string,
+): string {
+  const fromCandidate = candidate.source_window?.trim();
+  return fromCandidate || contextWindow;
+}
+
 export function createAssignment(
   candidate: CandidatePreview,
   context: FindCandidatesResponse,
@@ -69,7 +79,7 @@ export function createAssignment(
   const selectedParams = defaultSelectedParams(resolvedTool, keys);
   return {
     candidate,
-    window: context.window,
+    window: resolveAssignmentWindow(candidate, context.window),
     tool: resolvedTool,
     algorithm: DEFAULT_ALGORITHM,
     selectedParams,
