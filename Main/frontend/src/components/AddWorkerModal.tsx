@@ -131,7 +131,11 @@ export function AddWorkerModal({ open, onClose }: AddWorkerModalProps) {
               required
             />
           </label>
-          <p className="modal-hint">Main API must include the port (e.g. <code>:8080</code>), same host as health check.</p>
+          <p className="modal-hint">
+            Health check runs from the <strong>Main server</strong>, not your browser. Use an address
+            the control plane can reach (public IP, same LAN as Main, or <code>127.0.0.1</code> if
+            worker runs on the same host as Main).
+          </p>
 
           {error && <div className="alert error">{error}</div>}
           {token && (

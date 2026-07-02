@@ -1506,6 +1506,16 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   font-size: 0.72rem;
   color: var(--muted);
 }
+.worker-best-trials--inline {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  font-weight: 600;
+}
+.worker-best-score-row .worker-best-trials--inline {
+  flex: 1;
+  text-align: right;
+}
 .worker-best-conf .conf-tooltip-wrap--panel {
   margin-top: 0.15rem;
 }
@@ -1704,6 +1714,103 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   text-align: right;
   word-break: break-word;
   color: var(--accent);
+  font-size: 0.72rem;
+}
+.worker-conf-manual {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+.worker-conf-manual-toggle {
+  align-self: flex-start;
+  padding: 0.22rem 0.55rem;
+  font-size: 0.72rem;
+}
+.worker-conf-manual-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.55rem 0.6rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.1);
+}
+.worker-conf-manual-tabs {
+  display: flex;
+  gap: 0.35rem;
+}
+.worker-conf-manual-tab {
+  padding: 0.2rem 0.55rem;
+  font-size: 0.72rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.worker-conf-manual-tab.active {
+  color: var(--text);
+  border-color: rgba(96, 165, 250, 0.45);
+  background: rgba(96, 165, 250, 0.1);
+}
+.worker-conf-manual-form {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.45rem;
+  max-height: 280px;
+  overflow: auto;
+}
+.worker-conf-manual-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 0.45rem;
+  align-items: center;
+}
+.worker-conf-manual-field--bool {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.worker-conf-manual-label {
+  font-size: 0.72rem;
+  color: var(--muted);
+  word-break: break-word;
+}
+.worker-conf-manual-field input[type="text"],
+.worker-conf-manual-field input[type="number"],
+.worker-conf-manual-field select {
+  width: 100%;
+  padding: 0.3rem 0.45rem;
+  font: inherit;
+  font-size: 0.78rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-solid);
+  color: var(--text);
+}
+.worker-conf-manual-empty,
+.worker-conf-manual-json-hint {
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.worker-conf-manual-json-input {
+  width: 100%;
+  min-height: 180px;
+  padding: 0.55rem 0.6rem;
+  font-size: 0.75rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-solid);
+  color: var(--text);
+  resize: vertical;
+}
+.worker-conf-manual-json-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+.worker-best-use-conf {
+  margin-top: 0.35rem;
+  padding: 0.22rem 0.55rem;
   font-size: 0.72rem;
 }
 .worker-assignment-options {

@@ -39,7 +39,16 @@ async def _probe_health_url(url: str) -> None:
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Health check unreachable: {url}") from exc
+        host_hint = ""
+        if "192.168." in url or "10." in url or "172.16." in url or "172.17." in url:
+            host_hint = (
+                " Private LAN IPs (192.168.x.x) are only reachable from the same network. "
+                "The control plane probes workers from its own server, not from your browser."
+            )
+        raise HTTPException(
+            status_code=400,
+            detail=f"Health check unreachable: {url} ({exc}).{host_hint}",
+        ) from exc
 
 
 @router.get("", response_model=list[WorkerResponse])
@@ -238,6 +247,7 @@ async def fetch_worker_best(
                 best_score=payload.get("best_score"),
                 best_conf=payload.get("best_conf") if isinstance(payload.get("best_conf"), dict) else {},
                 trials_evaluated=int(payload.get("trials_evaluated") or 0),
+                search_space_size=int(payload.get("search_space_size") or 0),
                 updated_at=payload.get("updated_at"),
                 message=payload.get("message"),
             )

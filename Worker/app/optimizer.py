@@ -333,7 +333,12 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
     logger.info("\n%s", plan_text)
     search_space_size = int(plan["planned_trials"])
 
-    best_store.begin_job(request.job_id, benchmark_window, job_request.tool)
+    best_store.begin_job(
+        request.job_id,
+        benchmark_window,
+        job_request.tool,
+        search_space_size=search_space_size,
+    )
     best_store.set_progress(
         trials_evaluated=0,
         message=(

@@ -26,6 +26,7 @@ class BestScoreResponse(BaseModel):
     best_score: float | None = None
     best_conf: dict[str, Any] = Field(default_factory=dict)
     trials_evaluated: int = 0
+    search_space_size: int = 0
     updated_at: str | None = None
     message: str | None = None
 

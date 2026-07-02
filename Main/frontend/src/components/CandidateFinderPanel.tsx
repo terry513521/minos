@@ -1,11 +1,17 @@
-import { DragEvent, FormEvent, useEffect, useState } from "react";
+import { DragEvent, FormEvent, useEffect, useRef, useState } from "react";
 import { api, CandidatePreview, FindCandidatesResponse } from "../api/client";
 import { CANDIDATE_DRAG_MIME } from "../utils/candidateAssign";
+import {
+  loadCandidateFinderState,
+  saveCandidateFinderState,
+} from "../utils/candidateFinderStorage";
 import { chromosomeFromWindow, normalizeRegion } from "../utils/window";
 import { ConfTooltip } from "./ConfTooltip";
 
 const K_OPTIONS = [1, 2, 3, 4, 5, 6, 8];
 const DEFAULT_REGION = "chr20:10000000-15000000";
+
+const initialFinderState = loadCandidateFinderState();
 
 interface CandidateFinderPanelProps {
   onChromosomeChange?: (chromosome: string | null) => void;
@@ -18,15 +24,40 @@ export function CandidateFinderPanel({
   onResultChange,
   embedded = false,
 }: CandidateFinderPanelProps) {
-  const [region, setRegion] = useState(DEFAULT_REGION);
-  const [kCandidates, setKCandidates] = useState(2);
+  const regionInitializedRef = useRef(false);
+  const restoredResultRef = useRef(initialFinderState?.result ?? null);
+  const [region, setRegion] = useState(
+    () => initialFinderState?.region || DEFAULT_REGION,
+  );
+  const [kCandidates, setKCandidates] = useState(
+    () => initialFinderState?.kCandidates ?? 2,
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<FindCandidatesResponse | null>(null);
+  const [result, setResult] = useState<FindCandidatesResponse | null>(
+    () => initialFinderState?.result ?? null,
+  );
 
   const previewChrom = chromosomeFromWindow(region);
 
   useEffect(() => {
+    saveCandidateFinderState({ region, kCandidates, result });
+  }, [region, kCandidates, result]);
+
+  useEffect(() => {
+    if (!regionInitializedRef.current) {
+      regionInitializedRef.current = true;
+      const restored = restoredResultRef.current;
+      if (restored) {
+        onChromosomeChange?.(restored.chromosome);
+        onResultChange?.(restored);
+      } else {
+        onChromosomeChange?.(previewChrom);
+        onResultChange?.(null);
+      }
+      return;
+    }
+
     setResult(null);
     setError(null);
     onChromosomeChange?.(previewChrom);

@@ -15,6 +15,7 @@ class BestSnapshot:
     best_score: float | None = None
     best_conf: dict[str, Any] = field(default_factory=dict)
     trials_evaluated: int = 0
+    search_space_size: int = 0
     status: str = "idle"
     message: str | None = None
     updated_at: datetime | None = None
@@ -25,13 +26,21 @@ class BestStateStore:
         self._lock = threading.Lock()
         self._snapshot = BestSnapshot()
 
-    def begin_job(self, job_id: str, window: str, tool: str) -> None:
+    def begin_job(
+        self,
+        job_id: str,
+        window: str,
+        tool: str,
+        *,
+        search_space_size: int = 0,
+    ) -> None:
         with self._lock:
             self._snapshot = BestSnapshot(
                 job_id=job_id,
                 window=window,
                 tool=tool,
                 status="optimizing",
+                search_space_size=search_space_size,
                 message="Running base benchmark",
                 updated_at=datetime.now(timezone.utc),
             )
@@ -83,6 +92,7 @@ class BestStateStore:
                 best_score=snap.best_score,
                 best_conf=deepcopy(snap.best_conf),
                 trials_evaluated=snap.trials_evaluated,
+                search_space_size=snap.search_space_size,
                 status=snap.status,
                 message=snap.message,
                 updated_at=snap.updated_at,

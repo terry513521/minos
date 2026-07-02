@@ -110,6 +110,7 @@ export interface WorkerBestScoreResult {
   best_score: number | null;
   best_conf: Record<string, unknown>;
   trials_evaluated: number;
+  search_space_size: number;
   updated_at: string | null;
   message: string | null;
   error: string | null;

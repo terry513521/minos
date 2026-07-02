@@ -1,4 +1,4 @@
-import { DragEvent, useCallback, useEffect, useState } from "react";
+import { DragEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   api,
   FindCandidatesResponse,
@@ -29,7 +29,13 @@ import {
 } from "../utils/paramBounds";
 import { WORKERS_CHANGED_EVENT } from "./AddWorkerModal";
 import { ConfParamPicker } from "./ConfParamPicker";
+import { ConfManualEditor } from "./ConfManualEditor";
 import { ConfTooltip } from "./ConfTooltip";
+import {
+  clearWorkerPanelEntry,
+  loadWorkerPanelState,
+  saveWorkerPanelState,
+} from "../utils/workerPanelStorage";
 
 const CONCURRENCY_OPTIONS = [1, 2, 3, 4, 6, 8];
 /** Background poll for worker GET /best — manual Refresh fetches immediately. */
@@ -68,6 +74,35 @@ function formatBestScore(score: number | null | undefined): string {
   return `${(score * 100).toFixed(2)}%`;
 }
 
+function formatTrialProgress(
+  evaluated: number,
+  total: number | null | undefined,
+  status: string | null | undefined,
+): string {
+  const done = Math.max(0, evaluated);
+  const planned = total && total > 0 ? total : null;
+  if (planned) {
+    if (status === "optimizing") return `Trial ${done} / ${planned}`;
+    return `${done} / ${planned} trials`;
+  }
+  if (done > 0) return `${done} trial${done === 1 ? "" : "s"}`;
+  return "";
+}
+
+function trialTotal(
+  best: WorkerBestScoreResult | undefined,
+  dispatchResult: WorkerDispatchResult | null | undefined,
+): number | null {
+  if (best?.search_space_size && best.search_space_size > 0) {
+    return best.search_space_size;
+  }
+  const fromDispatch = dispatchResult?.result?.search_space_size;
+  if (typeof fromDispatch === "number" && fromDispatch > 0) {
+    return fromDispatch;
+  }
+  return null;
+}
+
 function hasConfContent(conf: Record<string, unknown>): boolean {
   return Object.keys(conf).length > 0;
 }
@@ -79,26 +114,51 @@ function bestStatusClass(status: string | null | undefined): string {
   return "offline";
 }
 
+function withoutLoadingBest(
+  bestByWorker: Record<string, WorkerBestScoreResult | "loading">,
+): Record<string, WorkerBestScoreResult> {
+  return Object.fromEntries(
+    Object.entries(bestByWorker).filter((entry): entry is [string, WorkerBestScoreResult] => {
+      return entry[1] !== "loading";
+    }),
+  );
+}
+
+function withoutLoadingHealth(
+  healthByWorker: Record<string, WorkerHealthCheckResult | "loading">,
+): Record<string, WorkerHealthCheckResult> {
+  return Object.fromEntries(
+    Object.entries(healthByWorker).filter((entry): entry is [string, WorkerHealthCheckResult] => {
+      return entry[1] !== "loading";
+    }),
+  );
+}
+
 export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
+  const persistedRef = useRef(loadWorkerPanelState());
+  const persisted = persistedRef.current;
+
   const [workers, setWorkers] = useState<WorkerRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [assignments, setAssignments] = useState<Record<string, WorkerAssignment>>({});
+  const [assignments, setAssignments] = useState<Record<string, WorkerAssignment>>(
+    () => persisted?.assignments ?? {},
+  );
   const [dragOverWorkerId, setDragOverWorkerId] = useState<string | null>(null);
   const [healthByWorker, setHealthByWorker] = useState<
     Record<string, WorkerHealthCheckResult | "loading">
-  >({});
+  >(() => persisted?.healthByWorker ?? {});
   const [bestByWorker, setBestByWorker] = useState<
     Record<string, WorkerBestScoreResult | "loading">
-  >({});
+  >(() => persisted?.bestByWorker ?? {});
   const [dispatchByWorker, setDispatchByWorker] = useState<
     Record<string, WorkerDispatchResult | null>
-  >({});
+  >(() => persisted?.dispatchByWorker ?? {});
   const [removingWorkerId, setRemovingWorkerId] = useState<string | null>(null);
   const [stoppingWorkerId, setStoppingWorkerId] = useState<string | null>(null);
   const [baseConfByWorker, setBaseConfByWorker] = useState<
     Record<string, Record<string, unknown>>
-  >({});
+  >(() => persisted?.baseConfByWorker ?? {});
 
   const refresh = useCallback(() => {
     setLoading(true);
@@ -120,10 +180,27 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
   }, [refresh]);
 
   useEffect(() => {
-    if (!candidateContext) {
-      setAssignments({});
-    }
-  }, [candidateContext]);
+    saveWorkerPanelState({
+      assignments,
+      baseConfByWorker,
+      dispatchByWorker,
+      bestByWorker: withoutLoadingBest(bestByWorker),
+      healthByWorker: withoutLoadingHealth(healthByWorker),
+    });
+  }, [assignments, baseConfByWorker, dispatchByWorker, bestByWorker, healthByWorker]);
+
+  useEffect(() => {
+    if (workers.length === 0) return;
+    const activeIds = new Set(workers.map((worker) => worker.id));
+    const prune = <T,>(record: Record<string, T>): Record<string, T> =>
+      Object.fromEntries(Object.entries(record).filter(([id]) => activeIds.has(id)));
+
+    setAssignments((prev) => prune(prev));
+    setBaseConfByWorker((prev) => prune(prev));
+    setDispatchByWorker((prev) => prune(prev));
+    setBestByWorker((prev) => prune(prev));
+    setHealthByWorker((prev) => prune(prev));
+  }, [workers]);
 
   function updateAssignment(workerId: string, patch: Partial<WorkerAssignment>) {
     setAssignments((prev) => {
@@ -144,6 +221,7 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
       delete next[workerId];
       return next;
     });
+    clearWorkerPanelEntry(workerId);
   }
 
   function handleDragOver(e: DragEvent, workerId: string) {
@@ -228,6 +306,7 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
             best_score: null,
             best_conf: {},
             trials_evaluated: 0,
+            search_space_size: 0,
             updated_at: null,
             message: null,
             error: err instanceof Error ? err.message : "Failed to fetch best score",
@@ -364,6 +443,29 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
     });
   }
 
+  function updateAssignmentBaseConf(workerId: string, nextBaseConf: Record<string, unknown>) {
+    const assignment = assignments[workerId];
+    if (!assignment) return;
+
+    const nextIntervals = { ...assignment.paramIntervals };
+    for (const param of assignment.selectedParams) {
+      const options = nextBaseConf[`${assignment.tool}_options`];
+      const baseValue =
+        options && typeof options === "object" && !Array.isArray(options)
+          ? String((options as Record<string, unknown>)[param] ?? "")
+          : "";
+      nextIntervals[param] = defaultParamInterval(assignment.tool, param, baseValue);
+    }
+
+    updateAssignment(workerId, {
+      candidate: {
+        ...assignment.candidate,
+        base_conf: nextBaseConf,
+      },
+      paramIntervals: nextIntervals,
+    });
+  }
+
   function updateParamInterval(
     workerId: string,
     param: string,
@@ -377,6 +479,18 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
         ...assignment.paramIntervals,
         [param]: { ...current, ...patch },
       },
+    });
+  }
+
+  function applyBestConfToAssignment(workerId: string) {
+    const assignment = assignments[workerId];
+    const best = bestByWorker[workerId];
+    if (!assignment || !best || best === "loading" || !best.ok || !hasConfContent(best.best_conf)) {
+      return;
+    }
+    updateAssignmentBaseConf(workerId, {
+      ...assignment.candidate.base_conf,
+      ...best.best_conf,
     });
   }
 
@@ -406,6 +520,7 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
       delete next[workerId];
       return next;
     });
+    clearWorkerPanelEntry(workerId);
   }
 
   async function handleRemoveWorker(workerId: string, workerName: string) {
@@ -461,6 +576,16 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
             );
             const compareBaseConf =
               assignment?.candidate.base_conf ?? baseConfByWorker[worker.id] ?? null;
+            const bestOk = best && best !== "loading" && best.ok ? best : null;
+            const trialTotalCount = trialTotal(bestOk ?? undefined, dispatchResult);
+            const trialLabel =
+              trialTotalCount || (bestOk?.trials_evaluated ?? 0) > 0
+                ? formatTrialProgress(
+                    bestOk?.trials_evaluated ?? 0,
+                    trialTotalCount,
+                    bestOk?.status ?? (isOptimizing ? "optimizing" : null),
+                  )
+                : "";
 
             return (
               <article
@@ -528,47 +653,57 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
                     <div className="worker-best-empty">{best.error ?? "Could not load best score"}</div>
                   )}
 
-                  {best && best !== "loading" && best.ok && (
+                  {bestOk && (
                     <div className="worker-best-body">
                       <div className="worker-best-score-row">
-                        <span className="worker-best-score">{formatBestScore(best.best_score)}</span>
-                        {best.status && (
-                          <span className={`badge ${bestStatusClass(best.status)}`}>{best.status}</span>
+                        <span className="worker-best-score">{formatBestScore(bestOk.best_score)}</span>
+                        {bestOk.status && (
+                          <span className={`badge ${bestStatusClass(bestOk.status)}`}>{bestOk.status}</span>
+                        )}
+                        {trialLabel && (
+                          <span className="worker-best-trials worker-best-trials--inline">
+                            {trialLabel}
+                          </span>
                         )}
                       </div>
 
-                      {(best.tool || best.window) && (
+                      {(bestOk.tool || bestOk.window) && (
                         <div className="worker-best-meta">
-                          {best.tool && <span className="chip chip-accent">{best.tool}</span>}
-                          {best.window && <code className="worker-best-window">{best.window}</code>}
+                          {bestOk.tool && <span className="chip chip-accent">{bestOk.tool}</span>}
+                          {bestOk.window && <code className="worker-best-window">{bestOk.window}</code>}
                         </div>
                       )}
 
-                      {best.trials_evaluated > 0 && (
-                        <span className="worker-best-trials">{best.trials_evaluated} trials</span>
-                      )}
-
-                      {hasConfContent(best.best_conf) && (
+                      {hasConfContent(bestOk.best_conf) && (
                         <div className="worker-best-conf">
                           <ConfTooltip
-                            conf={best.best_conf}
+                            conf={bestOk.best_conf}
                             label="Best conf"
                             layout="panel"
                             showActions
                             baseConf={compareBaseConf}
                             downloadFileName={`${worker.name.replace(/[^\w.-]+/g, "-")}-best-conf`}
                           />
+                          {assignment && (
+                            <button
+                              type="button"
+                              className="button ghost worker-best-use-conf"
+                              onClick={() => applyBestConfToAssignment(worker.id)}
+                            >
+                              Use best as base
+                            </button>
+                          )}
                         </div>
                       )}
 
-                      {best.updated_at && (
+                      {bestOk.updated_at && (
                         <span className="worker-best-updated">
-                          Updated {formatLocalDateTime(best.updated_at)}
+                          Updated {formatLocalDateTime(bestOk.updated_at)}
                         </span>
                       )}
 
-                      {best.message && !hasConfContent(best.best_conf) && best.best_score == null && (
-                        <span className="worker-best-message">{best.message}</span>
+                      {bestOk.message && !hasConfContent(bestOk.best_conf) && bestOk.best_score == null && (
+                        <span className="worker-best-message">{bestOk.message}</span>
                       )}
                     </div>
                   )}
@@ -633,6 +768,12 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
                         Clear
                       </button>
                     </div>
+
+                    <ConfManualEditor
+                      baseConf={assignment.candidate.base_conf}
+                      tool={assignment.tool}
+                      onChange={(nextBaseConf) => updateAssignmentBaseConf(worker.id, nextBaseConf)}
+                    />
 
                     <ConfParamPicker
                       baseConf={assignment.candidate.base_conf}

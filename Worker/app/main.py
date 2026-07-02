@@ -42,6 +42,7 @@ async def get_best() -> BestScoreResponse:
         best_score=snap.best_score,
         best_conf=snap.best_conf,
         trials_evaluated=snap.trials_evaluated,
+        search_space_size=snap.search_space_size,
         updated_at=snap.updated_at.isoformat() if snap.updated_at else None,
         message=snap.message,
     )
