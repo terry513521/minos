@@ -26,6 +26,7 @@ export const DEFAULT_ADAPTIVE_MAX_TRIALS = 44;
 export const DEFAULT_TOTAL_TRIALS = 45;
 export const DEFAULT_TRIAL_THREADS = 4;
 export const DEFAULT_TRIAL_MEMORY_GB = 6;
+export const MAX_TRIAL_THREADS = 100;
 
 export interface WorkerAssignment {
   candidate: CandidatePreview;
@@ -78,7 +79,7 @@ export function adaptiveMaxTrialsFromTotal(totalTrials: number): number {
 export function clampTrialThreads(value: number): number {
   const parsed = Math.round(Number(value));
   if (!Number.isFinite(parsed)) return DEFAULT_TRIAL_THREADS;
-  return Math.min(32, Math.max(1, parsed));
+  return Math.min(MAX_TRIAL_THREADS, Math.max(1, parsed));
 }
 
 export function clampTrialMemoryGb(value: number): number {

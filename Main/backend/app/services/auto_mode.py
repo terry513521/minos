@@ -1,4 +1,4 @@
-"""Overnight auto-mode orchestration for VM / Big / Igno workers."""
+"""Overnight auto-mode orchestration for registered workers."""
 
 from __future__ import annotations
 
@@ -38,11 +38,10 @@ from app.services.worker_proxy import dispatch_to_worker, fetch_worker_best, sto
 SelectionReason = Literal["top_score", "most_similar", "best_composite"]
 
 AUTO_ASSIGNMENT_STRATEGY = "score_similarity_composite"
-AUTO_WORKER_NAMES: tuple[str, ...] = ("VM", "Big", "Igno")
-WORKER_SELECTION_RULES: tuple[tuple[str, SelectionReason], ...] = (
-    ("VM", "top_score"),
-    ("Big", "most_similar"),
-    ("Igno", "best_composite"),
+SELECTION_REASONS: tuple[SelectionReason, ...] = (
+    "top_score",
+    "most_similar",
+    "best_composite",
 )
 AUTO_ALGORITHM = "optuna"
 AUTO_ALGORITHMS: frozenset[str] = frozenset({"optuna", "gp", "random", "sobol", "lhs"})
@@ -55,6 +54,7 @@ AUTO_SIMILARITY_WEIGHT = 0.6
 AUTO_CONCURRENCY = 1
 AUTO_TRIAL_THREADS = 4
 AUTO_TRIAL_MEMORY_GB = 6
+MAX_TRIAL_THREADS = 100
 AUTO_TOOL = "gatk"
 AUTO_PARAMS = [
     "standard_min_confidence_threshold_for_calling",
@@ -81,26 +81,76 @@ class AutoModeTunableConfig:
     worker_trial_memory_gb: dict[str, int] = field(default_factory=dict)
 
 
-def default_worker_algorithms() -> dict[str, str]:
-    return {name: AUTO_ALGORITHM for name in AUTO_WORKER_NAMES}
+def default_worker_algorithms(worker_names: list[str] | None = None) -> dict[str, str]:
+    names = worker_names or []
+    return {name: AUTO_ALGORITHM for name in names}
 
 
-def default_worker_trial_threads() -> dict[str, int]:
-    return {name: AUTO_TRIAL_THREADS for name in AUTO_WORKER_NAMES}
+def default_worker_trial_threads(worker_names: list[str] | None = None) -> dict[str, int]:
+    names = worker_names or []
+    return {name: AUTO_TRIAL_THREADS for name in names}
 
 
-def default_worker_trial_memory_gb() -> dict[str, int]:
-    return {name: AUTO_TRIAL_MEMORY_GB for name in AUTO_WORKER_NAMES}
+def default_worker_trial_memory_gb(worker_names: list[str] | None = None) -> dict[str, int]:
+    names = worker_names or []
+    return {name: AUTO_TRIAL_MEMORY_GB for name in names}
 
 
-def default_auto_tunable_config() -> AutoModeTunableConfig:
+def default_auto_tunable_config(worker_names: list[str] | None = None) -> AutoModeTunableConfig:
     return AutoModeTunableConfig(
         params=list(AUTO_PARAMS),
         param_intervals=dict(AUTO_PARAM_INTERVALS),
-        worker_algorithms=default_worker_algorithms(),
-        worker_trial_threads=default_worker_trial_threads(),
-        worker_trial_memory_gb=default_worker_trial_memory_gb(),
+        worker_algorithms=default_worker_algorithms(worker_names),
+        worker_trial_threads=default_worker_trial_threads(worker_names),
+        worker_trial_memory_gb=default_worker_trial_memory_gb(worker_names),
     )
+
+
+async def get_registered_worker_names(db: AsyncSession) -> list[str]:
+    result = await db.execute(select(Worker).order_by(Worker.name))
+    return [worker.name for worker in result.scalars().all()]
+
+
+def _lookup_worker_setting(stored: dict[str, Any], worker_name: str, default: Any) -> Any:
+    if worker_name in stored:
+        return stored[worker_name]
+    lower = worker_name.lower()
+    for key, value in stored.items():
+        if key.lower() == lower:
+            return value
+    return default
+
+
+def selection_rules_for_workers(worker_names: list[str]) -> list[tuple[str, SelectionReason]]:
+    if not worker_names:
+        return []
+    return [
+        (name, SELECTION_REASONS[index % len(SELECTION_REASONS)])
+        for index, name in enumerate(worker_names)
+    ]
+
+
+def merge_worker_string_settings(
+    stored: dict[str, str],
+    worker_names: list[str],
+    default: str,
+) -> dict[str, str]:
+    return {
+        name: str(_lookup_worker_setting(stored, name, default)).strip().lower()
+        for name in worker_names
+    }
+
+
+def merge_worker_int_settings(
+    stored: dict[str, int],
+    worker_names: list[str],
+    default: int,
+    clamp_fn: Callable[[int], int],
+) -> dict[str, int]:
+    return {
+        name: clamp_fn(int(_lookup_worker_setting(stored, name, default)))
+        for name in worker_names
+    }
 
 
 def _tunable_config_to_json(config: AutoModeTunableConfig) -> str:
@@ -134,25 +184,25 @@ def _tunable_config_from_json(raw: str) -> AutoModeTunableConfig:
         if isinstance(spec, dict)
     }
     worker_algorithms_raw = payload.get("worker_algorithms")
-    worker_algorithms = default_worker_algorithms()
+    worker_algorithms: dict[str, str] = {}
     if isinstance(worker_algorithms_raw, dict):
         for name, algorithm in worker_algorithms_raw.items():
-            if isinstance(name, str) and isinstance(algorithm, str) and name in AUTO_WORKER_NAMES:
+            if isinstance(name, str) and isinstance(algorithm, str) and name.strip():
                 worker_algorithms[name] = algorithm.strip().lower()
-    worker_trial_threads = default_worker_trial_threads()
+    worker_trial_threads: dict[str, int] = {}
     threads_raw = payload.get("worker_trial_threads")
     if isinstance(threads_raw, dict):
         for name, threads in threads_raw.items():
-            if isinstance(name, str) and name in AUTO_WORKER_NAMES:
+            if isinstance(name, str) and name.strip():
                 try:
                     worker_trial_threads[name] = clamp_trial_threads(int(threads))
                 except (TypeError, ValueError):
                     pass
-    worker_trial_memory_gb = default_worker_trial_memory_gb()
+    worker_trial_memory_gb: dict[str, int] = {}
     memory_raw = payload.get("worker_trial_memory_gb")
     if isinstance(memory_raw, dict):
         for name, memory_gb in memory_raw.items():
-            if isinstance(name, str) and name in AUTO_WORKER_NAMES:
+            if isinstance(name, str) and name.strip():
                 try:
                     worker_trial_memory_gb[name] = clamp_trial_memory_gb(int(memory_gb))
                 except (TypeError, ValueError):
@@ -166,22 +216,38 @@ def _tunable_config_from_json(raw: str) -> AutoModeTunableConfig:
     )
 
 
-def validate_auto_tunable_config(config: AutoModeTunableConfig) -> None:
+def validate_auto_tunable_config(
+    config: AutoModeTunableConfig,
+    worker_names: list[str] | None = None,
+) -> None:
     if not config.params:
         raise ValueError("At least one tunable parameter is required")
     for param in config.params:
         if param not in config.param_intervals:
             raise ValueError(f"Missing search interval for parameter: {param}")
-    validate_worker_algorithms(config.worker_algorithms)
-    validate_worker_trial_resources(
-        config.worker_trial_threads,
-        config.worker_trial_memory_gb,
-    )
+    names = worker_names if worker_names is not None else list(config.worker_algorithms)
+    if names:
+        validate_worker_algorithms(config.worker_algorithms, names)
+        validate_worker_trial_resources(
+            config.worker_trial_threads,
+            config.worker_trial_memory_gb,
+            names,
+        )
+    else:
+        for worker_name, algorithm in config.worker_algorithms.items():
+            if algorithm not in AUTO_ALGORITHMS:
+                raise ValueError(
+                    f"Unsupported algorithm for {worker_name}: {algorithm!r} "
+                    f"(use {', '.join(sorted(AUTO_ALGORITHMS))})"
+                )
 
 
-def validate_worker_algorithms(worker_algorithms: dict[str, str]) -> None:
-    for worker_name in AUTO_WORKER_NAMES:
-        algorithm = worker_algorithms.get(worker_name, AUTO_ALGORITHM)
+def validate_worker_algorithms(
+    worker_algorithms: dict[str, str],
+    worker_names: list[str],
+) -> None:
+    for worker_name in worker_names:
+        algorithm = _lookup_worker_setting(worker_algorithms, worker_name, AUTO_ALGORITHM)
         if algorithm not in AUTO_ALGORITHMS:
             raise ValueError(
                 f"Unsupported algorithm for {worker_name}: {algorithm!r} "
@@ -190,7 +256,7 @@ def validate_worker_algorithms(worker_algorithms: dict[str, str]) -> None:
 
 
 def clamp_trial_threads(value: int) -> int:
-    return max(1, min(32, int(value)))
+    return max(1, min(MAX_TRIAL_THREADS, int(value)))
 
 
 def clamp_trial_memory_gb(value: int) -> int:
@@ -200,32 +266,37 @@ def clamp_trial_memory_gb(value: int) -> int:
 def validate_worker_trial_resources(
     worker_trial_threads: dict[str, int],
     worker_trial_memory_gb: dict[str, int],
+    worker_names: list[str],
 ) -> None:
-    for worker_name in AUTO_WORKER_NAMES:
-        threads = worker_trial_threads.get(worker_name, AUTO_TRIAL_THREADS)
-        memory_gb = worker_trial_memory_gb.get(worker_name, AUTO_TRIAL_MEMORY_GB)
+    for worker_name in worker_names:
+        threads = int(_lookup_worker_setting(worker_trial_threads, worker_name, AUTO_TRIAL_THREADS))
+        memory_gb = int(
+            _lookup_worker_setting(worker_trial_memory_gb, worker_name, AUTO_TRIAL_MEMORY_GB)
+        )
         if threads != clamp_trial_threads(threads):
-            raise ValueError(f"CPUs per trial for {worker_name} must be between 1 and 32")
+            raise ValueError(f"CPUs per trial for {worker_name} must be between 1 and {MAX_TRIAL_THREADS}")
         if memory_gb != clamp_trial_memory_gb(memory_gb):
             raise ValueError(f"RAM per trial for {worker_name} must be between 4 and 128 GB")
 
 
-def effective_worker_algorithms() -> dict[str, str]:
+def effective_worker_algorithms(worker_names: list[str]) -> dict[str, str]:
     stored = auto_mode_store.tunable.worker_algorithms
-    return {name: stored.get(name, AUTO_ALGORITHM) for name in AUTO_WORKER_NAMES}
+    return merge_worker_string_settings(stored, worker_names, AUTO_ALGORITHM)
 
 
-def effective_worker_trial_threads() -> dict[str, int]:
+def effective_worker_trial_threads(worker_names: list[str]) -> dict[str, int]:
     stored = auto_mode_store.tunable.worker_trial_threads
-    return {name: clamp_trial_threads(stored.get(name, AUTO_TRIAL_THREADS)) for name in AUTO_WORKER_NAMES}
+    return merge_worker_int_settings(stored, worker_names, AUTO_TRIAL_THREADS, clamp_trial_threads)
 
 
-def effective_worker_trial_memory_gb() -> dict[str, int]:
+def effective_worker_trial_memory_gb(worker_names: list[str]) -> dict[str, int]:
     stored = auto_mode_store.tunable.worker_trial_memory_gb
-    return {
-        name: clamp_trial_memory_gb(stored.get(name, AUTO_TRIAL_MEMORY_GB))
-        for name in AUTO_WORKER_NAMES
-    }
+    return merge_worker_int_settings(
+        stored,
+        worker_names,
+        AUTO_TRIAL_MEMORY_GB,
+        clamp_trial_memory_gb,
+    )
 
 
 def effective_auto_params() -> list[str]:
@@ -255,22 +326,23 @@ class AutoSession:
     running: bool = True
 
 
-def auto_mode_config() -> AutoModeConfig:
+def auto_mode_config(worker_names: list[str]) -> AutoModeConfig:
     tunable = auto_mode_store.tunable
+    select_k = len(worker_names) if worker_names else AUTO_SELECT_K
     return AutoModeConfig(
         tool=AUTO_TOOL,
         params=list(tunable.params),
         param_intervals=dict(tunable.param_intervals),
-        worker_names=list(AUTO_WORKER_NAMES),
-        worker_algorithms=effective_worker_algorithms(),
-        worker_trial_threads=effective_worker_trial_threads(),
-        worker_trial_memory_gb=effective_worker_trial_memory_gb(),
+        worker_names=list(worker_names),
+        worker_algorithms=effective_worker_algorithms(worker_names),
+        worker_trial_threads=effective_worker_trial_threads(worker_names),
+        worker_trial_memory_gb=effective_worker_trial_memory_gb(worker_names),
         assignment_strategy=AUTO_ASSIGNMENT_STRATEGY,
         limit_seconds=AUTO_LIMIT_SECONDS,
         adaptive_max_trials=AUTO_ADAPTIVE_MAX_TRIALS,
         concurrency=AUTO_CONCURRENCY,
         find_k=AUTO_FIND_K,
-        select_k=AUTO_SELECT_K,
+        select_k=select_k,
         score_weight=AUTO_SCORE_WEIGHT,
         similarity_weight=AUTO_SIMILARITY_WEIGHT,
     )
@@ -299,7 +371,7 @@ class AutoModeStore:
         self.last_started_region: str | None = None
         self.tunable: AutoModeTunableConfig = default_auto_tunable_config()
 
-    def status(self) -> AutoModeStatus:
+    def status(self, worker_names: list[str]) -> AutoModeStatus:
         session = self.session
         _end_session_if_time_limit_reached(session)
         time_remaining_seconds = None
@@ -311,7 +383,7 @@ class AutoModeStore:
             region=session.region if session else None,
             last_started_region=self.last_started_region,
             started_at=session.started_at if session else None,
-            config=auto_mode_config(),
+            config=auto_mode_config(worker_names),
             candidates_found=session.candidates_found if session else 0,
             found_candidates=list(session.found_candidates) if session else [],
             time_remaining_seconds=time_remaining_seconds,
@@ -322,27 +394,41 @@ class AutoModeStore:
             assignments=list(session.assignments) if session else [],
         )
 
-    def set_enabled(self, enabled: bool) -> AutoModeStatus:
+    def set_enabled(self, enabled: bool, worker_names: list[str]) -> AutoModeStatus:
         """Arm or disarm auto mode. Does not start or stop worker optimizations."""
         self.enabled = enabled
-        return self.status()
+        return self.status(worker_names)
 
-    def end_session(self) -> AutoModeStatus:
+    def end_session(self, worker_names: list[str]) -> AutoModeStatus:
         """Clear in-memory auto session so a new /auto/start can run."""
         self.session = None
         self.last_started_region = None
-        return self.status()
+        return self.status(worker_names)
 
-    def set_tunable(self, config: AutoModeTunableConfig) -> AutoModeStatus:
-        validate_auto_tunable_config(config)
+    def set_tunable(self, config: AutoModeTunableConfig, worker_names: list[str]) -> AutoModeStatus:
+        validate_auto_tunable_config(config, worker_names)
         self.tunable = AutoModeTunableConfig(
             params=list(config.params),
             param_intervals=dict(config.param_intervals),
-            worker_algorithms=dict(config.worker_algorithms),
-            worker_trial_threads=dict(config.worker_trial_threads),
-            worker_trial_memory_gb=dict(config.worker_trial_memory_gb),
+            worker_algorithms=merge_worker_string_settings(
+                config.worker_algorithms,
+                worker_names,
+                AUTO_ALGORITHM,
+            ),
+            worker_trial_threads=merge_worker_int_settings(
+                config.worker_trial_threads,
+                worker_names,
+                AUTO_TRIAL_THREADS,
+                clamp_trial_threads,
+            ),
+            worker_trial_memory_gb=merge_worker_int_settings(
+                config.worker_trial_memory_gb,
+                worker_names,
+                AUTO_TRIAL_MEMORY_GB,
+                clamp_trial_memory_gb,
+            ),
         )
-        return self.status()
+        return self.status(worker_names)
 
 
 auto_mode_store = AutoModeStore()
@@ -359,7 +445,8 @@ async def load_auto_mode_state(db: AsyncSession) -> None:
             auto_mode_store.tunable = _tunable_config_from_json(raw_tunable)
             validate_auto_tunable_config(auto_mode_store.tunable)
         except (ValueError, TypeError, json.JSONDecodeError):
-            auto_mode_store.tunable = default_auto_tunable_config()
+            worker_names = await get_registered_worker_names(db)
+            auto_mode_store.tunable = default_auto_tunable_config(worker_names)
 
 
 async def update_auto_mode_tunable_config(
@@ -373,20 +460,31 @@ async def update_auto_mode_tunable_config(
 ) -> AutoModeStatus:
     if auto_mode_store.session and auto_mode_store.session.running:
         raise ValueError("Cannot edit tunable parameters while an auto session is running")
-    algorithms = (
-        dict(worker_algorithms)
+    worker_names = await get_registered_worker_names(db)
+    if not worker_names:
+        raise ValueError("No workers registered — add workers before configuring auto mode")
+    algorithms = merge_worker_string_settings(
+        worker_algorithms
         if worker_algorithms is not None
-        else dict(auto_mode_store.tunable.worker_algorithms)
+        else auto_mode_store.tunable.worker_algorithms,
+        worker_names,
+        AUTO_ALGORITHM,
     )
-    trial_threads = (
-        dict(worker_trial_threads)
+    trial_threads = merge_worker_int_settings(
+        worker_trial_threads
         if worker_trial_threads is not None
-        else dict(auto_mode_store.tunable.worker_trial_threads)
+        else auto_mode_store.tunable.worker_trial_threads,
+        worker_names,
+        AUTO_TRIAL_THREADS,
+        clamp_trial_threads,
     )
-    trial_memory_gb = (
-        dict(worker_trial_memory_gb)
+    trial_memory_gb = merge_worker_int_settings(
+        worker_trial_memory_gb
         if worker_trial_memory_gb is not None
-        else dict(auto_mode_store.tunable.worker_trial_memory_gb)
+        else auto_mode_store.tunable.worker_trial_memory_gb,
+        worker_names,
+        AUTO_TRIAL_MEMORY_GB,
+        clamp_trial_memory_gb,
     )
     config = AutoModeTunableConfig(
         params=list(params),
@@ -395,8 +493,8 @@ async def update_auto_mode_tunable_config(
         worker_trial_threads=trial_threads,
         worker_trial_memory_gb=trial_memory_gb,
     )
-    validate_auto_tunable_config(config)
-    status = auto_mode_store.set_tunable(config)
+    validate_auto_tunable_config(config, worker_names)
+    status = auto_mode_store.set_tunable(config, worker_names)
     await set_control_plane_setting(db, AUTO_MODE_TUNABLE_CONFIG_KEY, _tunable_config_to_json(config))
     return status
 
@@ -514,10 +612,11 @@ async def find_auto_candidate_pool(
 
 def assign_workers_by_metric(
     candidates: list[CandidatePreview],
-    worker_names: tuple[str, ...] = AUTO_WORKER_NAMES,
+    worker_names: list[str] | tuple[str, ...] | None = None,
 ) -> list[SelectedCandidateSlot]:
-    """Assign VM/Big/Igno to top score, most similar, and best composite confs."""
-    if not candidates or not worker_names:
+    """Assign each registered worker to top score / most similar / best composite in rotation."""
+    names = list(worker_names or [])
+    if not candidates or not names:
         return []
 
     score_fns: dict[SelectionReason, Callable[[CandidatePreview], float]] = {
@@ -529,9 +628,7 @@ def assign_workers_by_metric(
     used_indices: set[int] = set()
     slots: list[SelectedCandidateSlot] = []
 
-    for worker_name, reason in WORKER_SELECTION_RULES:
-        if worker_name not in worker_names:
-            continue
+    for worker_name, reason in selection_rules_for_workers(names):
         score_fn = score_fns[reason]
         available = [candidate for candidate in candidates if candidate.index not in used_indices]
         if not available:
@@ -629,10 +726,13 @@ def build_dispatch_request(
 
 
 async def stop_all_auto_workers(db: AsyncSession) -> list[dict[str, Any]]:
-    """Stop optimization on every auto-mode worker (VM / Big / Igno)."""
-    workers = await resolve_workers_by_name(db, AUTO_WORKER_NAMES)
+    """Stop optimization on every registered worker."""
+    worker_names = await get_registered_worker_names(db)
+    if not worker_names:
+        return []
+    workers = await resolve_workers_by_name(db, tuple(worker_names))
     stop_results: list[dict[str, Any]] = []
-    for worker_name in AUTO_WORKER_NAMES:
+    for worker_name in worker_names:
         worker = workers[worker_name]
         stop = await stop_worker_optimization(db, worker.id)
         stop_results.append(
@@ -669,6 +769,10 @@ async def start_auto_mode(
     if not auto_mode_store.enabled:
         raise ValueError("Auto mode is disabled")
 
+    worker_names = await get_registered_worker_names(db)
+    if not worker_names:
+        raise ValueError("No workers registered")
+
     _end_session_if_time_limit_reached(auto_mode_store.session)
 
     if auto_mode_store.session and auto_mode_store.session.running:
@@ -696,14 +800,14 @@ async def start_auto_mode(
     if not find_result_candidates:
         raise ValueError("No candidates found for region")
 
-    selected_slots = assign_workers_by_metric(find_result_candidates)
+    selected_slots = assign_workers_by_metric(find_result_candidates, worker_names)
     if not selected_slots:
         raise ValueError("No candidates found for region")
 
-    workers = await resolve_workers_by_name(db, AUTO_WORKER_NAMES)
-    worker_algorithms = effective_worker_algorithms()
-    worker_trial_threads = effective_worker_trial_threads()
-    worker_trial_memory_gb = effective_worker_trial_memory_gb()
+    workers = await resolve_workers_by_name(db, tuple(worker_names))
+    worker_algorithms = effective_worker_algorithms(worker_names)
+    worker_trial_threads = effective_worker_trial_threads(worker_names)
+    worker_trial_memory_gb = effective_worker_trial_memory_gb(worker_names)
 
     assignments: list[AutoDispatchAssignment] = []
     dispatch_results: list[AutoDispatchAssignment] = []
@@ -781,7 +885,7 @@ async def start_auto_mode(
         selected_candidates=_selected_candidate_models(selected_slots),
         assignments=dispatch_results,
         message=(
-            f"Auto mode started: {ok_count}/{len(AUTO_WORKER_NAMES)} workers dispatched"
+            f"Auto mode started: {ok_count}/{len(worker_names)} workers dispatched"
             if ok_count
             else "Auto mode failed: no workers accepted dispatch"
         ),
@@ -790,10 +894,11 @@ async def start_auto_mode(
 
 async def restart_auto_mode_session(db: AsyncSession) -> AutoModeStatus:
     """Stop auto workers and clear session state so POST /auto/start can run again."""
+    worker_names = await get_registered_worker_names(db)
     await stop_all_auto_workers(db)
-    auto_mode_store.end_session()
+    auto_mode_store.end_session(worker_names)
     await set_control_plane_setting(db, LAST_AUTO_START_REGION_KEY, None)
-    return auto_mode_store.status()
+    return auto_mode_store.status(worker_names)
 
 
 async def collect_best_and_stop(db: AsyncSession) -> AutoBestResponse:
@@ -802,8 +907,12 @@ async def collect_best_and_stop(db: AsyncSession) -> AutoBestResponse:
     if session and session.assignments:
         worker_ids = [item.worker_id for item in session.assignments]
     else:
-        workers = await resolve_workers_by_name(db, AUTO_WORKER_NAMES)
-        worker_ids = [workers[name].id for name in AUTO_WORKER_NAMES]
+        worker_names = await get_registered_worker_names(db)
+        if not worker_names:
+            worker_ids = []
+        else:
+            workers = await resolve_workers_by_name(db, tuple(worker_names))
+            worker_ids = [workers[name].id for name in worker_names]
 
     best_entries: list[tuple[str, str, float, dict[str, Any]]] = []
 

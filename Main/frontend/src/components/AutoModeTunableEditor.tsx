@@ -1,5 +1,5 @@
-import { FormEvent, useEffect, useRef, useState } from "react";
-import { api, AutoModeConfig } from "../api/client";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { api, AutoModeConfig, WorkerRecord } from "../api/client";
 import { DEFAULT_FINE_TUNE_PARAMS } from "../utils/candidateAssign";
 import {
   buildDispatchParamIntervals,
@@ -7,9 +7,9 @@ import {
   defaultParamInterval,
   ParamInterval,
 } from "../utils/paramBounds";
-import { paramIntervalsFromAutoConfig, workerAlgorithmsFromAutoConfig, workerTrialMemoryGbFromAutoConfig, workerTrialThreadsFromAutoConfig } from "../utils/autoModeSync";
+import { paramIntervalsFromAutoConfig, workerAlgorithmsFromAutoConfig, workerSettingForName, workerTrialMemoryGbFromAutoConfig, workerTrialThreadsFromAutoConfig } from "../utils/autoModeSync";
 import { syncManualParamDefaultsFromAutoConfig } from "../utils/manualParamDefaults";
-import { ALGORITHM_OPTIONS, AlgorithmOption, clampTrialMemoryGb, clampTrialThreads } from "../types/workerAssignment";
+import { ALGORITHM_OPTIONS, AlgorithmOption, clampTrialMemoryGb, clampTrialThreads, MAX_TRIAL_THREADS } from "../types/workerAssignment";
 import { ConfParamPicker } from "./ConfParamPicker";
 import { DeferredNumberInput } from "./DeferredNumberInput";
 import { AUTO_MODE_CHANGED_EVENT } from "./AutoModePanel";
@@ -54,21 +54,106 @@ export function AutoModeTunableEditor({
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [registeredWorkers, setRegisteredWorkers] = useState<WorkerRecord[]>([]);
   const wasOpenRef = useRef(false);
+
+  const workerNames = useMemo(() => {
+    if (registeredWorkers.length > 0) {
+      return [...registeredWorkers]
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((worker) => worker.name);
+    }
+    return [...config.worker_names];
+  }, [registeredWorkers, config.worker_names]);
+
+  function mergeWorkerAlgorithms(names: string[]): Record<string, AlgorithmOption> {
+    const base = workerAlgorithmsFromAutoConfig(config);
+    return Object.fromEntries(
+      names.map((name) => [name, workerSettingForName(base, name) ?? "optuna"]),
+    ) as Record<string, AlgorithmOption>;
+  }
+
+  function mergeWorkerTrialThreads(names: string[]): Record<string, number> {
+    const base = workerTrialThreadsFromAutoConfig(config);
+    return Object.fromEntries(
+      names.map((name) => [name, clampTrialThreads(workerSettingForName(base, name) ?? 4)]),
+    );
+  }
+
+  function mergeWorkerTrialMemoryGb(names: string[]): Record<string, number> {
+    const base = workerTrialMemoryGbFromAutoConfig(config);
+    return Object.fromEntries(
+      names.map((name) => [name, clampTrialMemoryGb(workerSettingForName(base, name) ?? 6)]),
+    );
+  }
 
   useEffect(() => {
     if (!open) {
       wasOpenRef.current = false;
+      setRegisteredWorkers([]);
       return;
     }
     if (wasOpenRef.current) return;
-    wasOpenRef.current = true;
-    setSelectedParams([...config.params]);
-    setParamIntervals(paramIntervalsFromAutoConfig(config));
-    setWorkerAlgorithms(workerAlgorithmsFromAutoConfig(config));
-    setWorkerTrialThreads(workerTrialThreadsFromAutoConfig(config));
-    setWorkerTrialMemoryGb(workerTrialMemoryGbFromAutoConfig(config));
-    setError(null);
+
+    let cancelled = false;
+    api
+      .listWorkers()
+      .then((workers) => {
+        if (cancelled) return;
+        setRegisteredWorkers(workers);
+        const names =
+          workers.length > 0
+            ? [...workers].sort((a, b) => a.name.localeCompare(b.name)).map((worker) => worker.name)
+            : [...config.worker_names];
+        setSelectedParams([...config.params]);
+        setParamIntervals(paramIntervalsFromAutoConfig(config));
+        setWorkerAlgorithms(
+          Object.fromEntries(
+            names.map((name) => [
+              name,
+              workerSettingForName(workerAlgorithmsFromAutoConfig(config), name) ?? "optuna",
+            ]),
+          ) as Record<string, AlgorithmOption>,
+        );
+        setWorkerTrialThreads(
+          Object.fromEntries(
+            names.map((name) => [
+              name,
+              clampTrialThreads(
+                workerSettingForName(workerTrialThreadsFromAutoConfig(config), name) ?? 4,
+              ),
+            ]),
+          ),
+        );
+        setWorkerTrialMemoryGb(
+          Object.fromEntries(
+            names.map((name) => [
+              name,
+              clampTrialMemoryGb(
+                workerSettingForName(workerTrialMemoryGbFromAutoConfig(config), name) ?? 6,
+              ),
+            ]),
+          ),
+        );
+        setError(null);
+        wasOpenRef.current = true;
+      })
+      .catch(() => {
+        if (cancelled) return;
+        const names = [...config.worker_names];
+        setRegisteredWorkers([]);
+        setSelectedParams([...config.params]);
+        setParamIntervals(paramIntervalsFromAutoConfig(config));
+        setWorkerAlgorithms(mergeWorkerAlgorithms(names));
+        setWorkerTrialThreads(mergeWorkerTrialThreads(names));
+        setWorkerTrialMemoryGb(mergeWorkerTrialMemoryGb(names));
+        setError(null);
+        wasOpenRef.current = true;
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [open, config]);
 
   useEffect(() => {
@@ -122,15 +207,19 @@ export function AutoModeTunableEditor({
     }
     setSelectedParams(params);
     setParamIntervals(intervals);
-    setWorkerAlgorithms(workerAlgorithmsFromAutoConfig(config));
-    setWorkerTrialThreads(workerTrialThreadsFromAutoConfig(config));
-    setWorkerTrialMemoryGb(workerTrialMemoryGbFromAutoConfig(config));
+    setWorkerAlgorithms(mergeWorkerAlgorithms(workerNames));
+    setWorkerTrialThreads(mergeWorkerTrialThreads(workerNames));
+    setWorkerTrialMemoryGb(mergeWorkerTrialMemoryGb(workerNames));
   }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (selectedParams.length === 0) {
       setError("Select at least one parameter to tune.");
+      return;
+    }
+    if (workerNames.length === 0) {
+      setError("Add at least one worker before saving auto mode settings.");
       return;
     }
     const dispatchIntervals = buildDispatchParamIntervals(tool, selectedParams, paramIntervals);
@@ -150,6 +239,7 @@ export function AutoModeTunableEditor({
       });
       syncManualParamDefaultsFromAutoConfig({
         ...config,
+        worker_names: workerNames,
         params: selectedParams,
         param_intervals: dispatchIntervals,
         worker_algorithms: workerAlgorithms,
@@ -171,6 +261,8 @@ export function AutoModeTunableEditor({
   }
 
   const isEnable = variant === "enable";
+  const workerListLabel =
+    workerNames.length > 0 ? workerNames.join(", ") : "registered workers";
 
   return (
     <div className="modal-backdrop" onClick={onClose} role="presentation">
@@ -194,16 +286,21 @@ export function AutoModeTunableEditor({
           {isEnable ? (
             <>
               Review tunable parameters before arming overnight orchestration for{" "}
-              <strong>VM</strong>, <strong>Big</strong>, and <strong>Igno</strong>. Workers run only
-              after <code>POST /api/v1/auto/start</code>.
+              <strong>{workerListLabel}</strong>. Workers run only after{" "}
+              <code>POST /api/v1/auto/start</code>.
             </>
           ) : (
             <>
-              Parameters and search intervals used when <code>POST /api/v1/auto/start</code> dispatches
-              VM, Big, and Igno. Changes apply to the next auto start.
+              Parameters and search intervals used when <code>POST /api/v1/auto/start</code>{" "}
+              dispatches {workerListLabel}. Changes apply to the next auto start.
             </>
           )}
         </p>
+        {workerNames.length === 0 && (
+          <div className="alert warn">
+            No workers registered yet — add workers before enabling auto mode.
+          </div>
+        )}
         {running && (
           <div className="alert warn">
             An auto session is running — stop or restart the session before saving changes.
@@ -229,7 +326,7 @@ export function AutoModeTunableEditor({
                   </tr>
                 </thead>
                 <tbody>
-                  {config.worker_names.map((workerName) => (
+                  {workerNames.map((workerName) => (
                     <tr key={workerName}>
                       <td className="auto-mode-worker-settings-name">{workerName}</td>
                       <td>
@@ -257,7 +354,7 @@ export function AutoModeTunableEditor({
                           className="auto-mode-worker-resource-input input-mono"
                           value={workerTrialThreads[workerName] ?? 4}
                           min={1}
-                          max={32}
+                          max={MAX_TRIAL_THREADS}
                           step={1}
                           onCommit={(value) =>
                             setWorkerTrialThreads({
@@ -310,7 +407,7 @@ export function AutoModeTunableEditor({
             <button type="button" className="button ghost" onClick={onClose} disabled={loading}>
               Cancel
             </button>
-            <button type="submit" className="button primary" disabled={loading || running}>
+            <button type="submit" className="button primary" disabled={loading || running || workerNames.length === 0}>
               {loading
                 ? isEnable
                   ? "Enabling…"

@@ -52,7 +52,7 @@ export function ConsolePage() {
             <SectionHeader
               step={1}
               title="Auto mode"
-              lead="Overnight orchestration for VM, Big, and Igno. Workers run after POST /api/v1/auto/start."
+              lead="Overnight orchestration for registered workers. Workers run after POST /api/v1/auto/start."
             />
             <AutoModePanel embedded />
           </section>
@@ -78,7 +78,7 @@ export function ConsolePage() {
             title="Workers"
             lead={
               autoModeEnabled
-                ? "Live scores and controls for VM, Big, and Igno during auto runs."
+                ? "Live scores and controls for registered workers during auto runs."
                 : "Assigned base conf appears here — tune params and dispatch optimization."
             }
           />

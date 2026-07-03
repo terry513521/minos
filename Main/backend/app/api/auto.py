@@ -13,6 +13,7 @@ from app.schemas import (
 from app.services.auto_mode import (
     auto_mode_store,
     collect_best_and_stop,
+    get_registered_worker_names,
     restart_auto_mode_session,
     start_auto_mode,
     update_auto_mode_tunable_config,
@@ -22,13 +23,18 @@ router = APIRouter(prefix="/auto", tags=["auto"])
 
 
 @router.get("/mode", response_model=AutoModeStatus)
-async def get_auto_mode() -> AutoModeStatus:
-    return auto_mode_store.status()
+async def get_auto_mode(db: AsyncSession = Depends(get_db)) -> AutoModeStatus:
+    worker_names = await get_registered_worker_names(db)
+    return auto_mode_store.status(worker_names)
 
 
 @router.put("/mode", response_model=AutoModeStatus)
-async def set_auto_mode(body: AutoModeUpdateRequest) -> AutoModeStatus:
-    return auto_mode_store.set_enabled(body.enabled)
+async def set_auto_mode(
+    body: AutoModeUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+) -> AutoModeStatus:
+    worker_names = await get_registered_worker_names(db)
+    return auto_mode_store.set_enabled(body.enabled, worker_names)
 
 
 @router.put("/config", response_model=AutoModeStatus)

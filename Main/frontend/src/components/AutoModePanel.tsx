@@ -216,7 +216,16 @@ export function AutoModePanel({ embedded = false }: AutoModePanelProps) {
             <div className="auto-mode-card">
               <span className="auto-mode-card-label">Selection</span>
               <p>
-                Find {config.find_k} candidates → VM top score, Big most similar, Igno best composite.
+                Find {config.find_k} candidates → assign{" "}
+                {config.worker_names.length > 0
+                  ? config.worker_names
+                      .map((name, index) => {
+                        const reasons = ["top score", "most similar", "best composite"] as const;
+                        return `${name} ${reasons[index % reasons.length]}`;
+                      })
+                      .join(", ")
+                  : "registered workers"}
+                .
               </p>
               {status.region && (
                 <p>

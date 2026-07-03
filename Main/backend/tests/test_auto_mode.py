@@ -79,6 +79,7 @@ def test_build_diverse_candidate_pool_prioritizes_score_similarity_composite():
 
 
 def test_assign_workers_by_metric_maps_vm_big_igno():
+    worker_names = ["VM", "Big", "Igno"]
     candidates = [
         CandidatePreview(
             index=0,
@@ -105,7 +106,7 @@ def test_assign_workers_by_metric_maps_vm_big_igno():
             history_id="balanced",
         ),
     ]
-    slots = assign_workers_by_metric(candidates)
+    slots = assign_workers_by_metric(candidates, worker_names)
     assert [slot.worker_name for slot in slots] == ["VM", "Big", "Igno"]
     assert slots[0].selection_reason == "top_score"
     assert slots[0].candidate.history_id == "high-score"
@@ -146,6 +147,8 @@ def test_auto_dispatch_uses_configured_algorithm():
 
 
 def test_update_auto_tunable_config_persists():
+    from unittest.mock import AsyncMock, patch
+
     from app.schemas import ParamIntervalSpec
     from app.services.auto_mode import (
         auto_mode_store,
@@ -153,28 +156,33 @@ def test_update_auto_tunable_config_persists():
         update_auto_mode_tunable_config,
     )
 
-    auto_mode_store.tunable = default_auto_tunable_config()
+    auto_mode_store.tunable = default_auto_tunable_config(["VM", "Big", "Igno"])
     auto_mode_store.session = None
 
     async def _run():
         from app.database import SessionLocal
 
         async with SessionLocal() as db:
-            status = await update_auto_mode_tunable_config(
-                db,
-                params=["min_base_quality_score"],
-                param_intervals={
-                    "min_base_quality_score": ParamIntervalSpec(min=8.0, max=18.0, step=2.0),
-                },
-                worker_algorithms={"VM": "gp", "Big": "random", "Igno": "sobol"},
-                worker_trial_threads={"VM": 6, "Big": 4, "Igno": 8},
-                worker_trial_memory_gb={"VM": 8, "Big": 6, "Igno": 12},
-            )
-            assert status.config.params == ["min_base_quality_score"]
-            assert status.config.param_intervals["min_base_quality_score"].min == 8.0
-            assert status.config.worker_algorithms["VM"] == "gp"
-            assert status.config.worker_trial_threads["VM"] == 6
-            assert status.config.worker_trial_memory_gb["Igno"] == 12
+            with patch(
+                "app.services.auto_mode.get_registered_worker_names",
+                new_callable=AsyncMock,
+                return_value=["VM", "Big", "Igno"],
+            ):
+                status = await update_auto_mode_tunable_config(
+                    db,
+                    params=["min_base_quality_score"],
+                    param_intervals={
+                        "min_base_quality_score": ParamIntervalSpec(min=8.0, max=18.0, step=2.0),
+                    },
+                    worker_algorithms={"VM": "gp", "Big": "random", "Igno": "sobol"},
+                    worker_trial_threads={"VM": 6, "Big": 4, "Igno": 8},
+                    worker_trial_memory_gb={"VM": 8, "Big": 6, "Igno": 12},
+                )
+                assert status.config.params == ["min_base_quality_score"]
+                assert status.config.param_intervals["min_base_quality_score"].min == 8.0
+                assert status.config.worker_algorithms["VM"] == "gp"
+                assert status.config.worker_trial_threads["VM"] == 6
+                assert status.config.worker_trial_memory_gb["Igno"] == 12
 
     import asyncio
 
@@ -200,7 +208,7 @@ def test_disable_auto_mode_keeps_session_running():
         running=True,
     )
 
-    status = store.set_enabled(False)
+    status = store.set_enabled(False, ["VM"])
 
     assert status.enabled is False
     assert status.running is True
@@ -218,7 +226,7 @@ def test_finished_session_allows_new_start_check():
         started_at=datetime.now(timezone.utc),
         running=False,
     )
-    status = store.status()
+    status = store.status([])
     assert status.running is False
     assert status.enabled is True
 
@@ -226,7 +234,7 @@ def test_finished_session_allows_new_start_check():
 def test_auto_mode_status_includes_last_started_region():
     store = AutoModeStore()
     store.last_started_region = "chr21:35444092-40444092"
-    assert store.status().last_started_region == "chr21:35444092-40444092"
+    assert store.status([]).last_started_region == "chr21:35444092-40444092"
 
 
 def test_end_session_clears_running_session():
@@ -240,7 +248,7 @@ def test_end_session_clears_running_session():
     )
     store.last_started_region = "chr21:1-100"
 
-    status = store.end_session()
+    status = store.end_session([])
 
     assert store.session is None
     assert store.last_started_region is None

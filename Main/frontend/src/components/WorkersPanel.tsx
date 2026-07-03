@@ -20,6 +20,7 @@ import {
   WorkerAssignmentSummary,
   clampTrialMemoryGb,
   clampTrialThreads,
+  MAX_TRIAL_THREADS,
   clampTotalTrials,
   createAssignment,
   adaptiveMaxTrialsFromTotal,
@@ -1321,7 +1322,7 @@ export function WorkersPanel({
                           <input
                             type="number"
                             min={1}
-                            max={32}
+                            max={MAX_TRIAL_THREADS}
                             step={1}
                             disabled={autoManaged}
                             value={assignment.trialThreads}

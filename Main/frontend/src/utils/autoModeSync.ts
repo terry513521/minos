@@ -35,37 +35,58 @@ function trialCountFromAutoConfig(config: AutoModeConfig): number {
   return clampTotalTrials(config.adaptive_max_trials + 1);
 }
 
+export function workerSettingForName<T>(
+  map: Record<string, T> | undefined,
+  workerName: string,
+): T | undefined {
+  if (!map || !workerName.trim()) return undefined;
+  const trimmed = workerName.trim();
+  if (map[trimmed] !== undefined) return map[trimmed];
+  const lower = trimmed.toLowerCase();
+  const matchedKey = Object.keys(map).find((key) => key.toLowerCase() === lower);
+  return matchedKey ? map[matchedKey] : undefined;
+}
+
+function workerSettingsFromConfig<T>(
+  config: AutoModeConfig,
+  map: Record<string, T> | undefined,
+  fallback: T,
+): Record<string, T> {
+  const settings: Record<string, T> = {};
+  for (const workerName of config.worker_names) {
+    settings[workerName] = workerSettingForName(map, workerName) ?? fallback;
+  }
+  return settings;
+}
+
 export function workerAlgorithmsFromAutoConfig(
   config: AutoModeConfig,
 ): Record<string, AlgorithmOption> {
-  const algorithms: Record<string, AlgorithmOption> = {};
-  for (const workerName of config.worker_names) {
-    const raw = config.worker_algorithms[workerName] ?? DEFAULT_ALGORITHM;
-    algorithms[workerName] = raw as AlgorithmOption;
-  }
-  return algorithms;
+  return workerSettingsFromConfig(
+    config,
+    config.worker_algorithms as Record<string, AlgorithmOption>,
+    DEFAULT_ALGORITHM,
+  );
 }
 
 export function workerTrialThreadsFromAutoConfig(
   config: AutoModeConfig,
 ): Record<string, number> {
-  const threads: Record<string, number> = {};
-  for (const workerName of config.worker_names) {
-    const raw = config.worker_trial_threads?.[workerName] ?? DEFAULT_TRIAL_THREADS;
-    threads[workerName] = clampTrialThreads(raw);
-  }
-  return threads;
+  return workerSettingsFromConfig(
+    config,
+    config.worker_trial_threads,
+    DEFAULT_TRIAL_THREADS,
+  );
 }
 
 export function workerTrialMemoryGbFromAutoConfig(
   config: AutoModeConfig,
 ): Record<string, number> {
-  const memory: Record<string, number> = {};
-  for (const workerName of config.worker_names) {
-    const raw = config.worker_trial_memory_gb?.[workerName] ?? DEFAULT_TRIAL_MEMORY_GB;
-    memory[workerName] = clampTrialMemoryGb(raw);
-  }
-  return memory;
+  return workerSettingsFromConfig(
+    config,
+    config.worker_trial_memory_gb,
+    DEFAULT_TRIAL_MEMORY_GB,
+  );
 }
 
 export function paramIntervalsFromAutoConfig(
@@ -146,7 +167,10 @@ export function previewAssignmentsFromAutoConfig(
   const trialMemoryByWorker = workerTrialMemoryGbFromAutoConfig(status.config);
   const next: Record<string, WorkerAssignment> = {};
   for (const worker of workers) {
-    const algorithm = status.config.worker_algorithms[worker.name];
+    const algorithm = workerSettingForName(
+      status.config.worker_algorithms,
+      worker.name,
+    );
     if (!algorithm) continue;
     next[worker.id] = {
       candidate: {
@@ -165,8 +189,9 @@ export function previewAssignmentsFromAutoConfig(
       paramIntervals: intervals,
       concurrency: status.config.concurrency,
       limitSeconds: status.config.limit_seconds,
-      trialThreads: trialThreadsByWorker[worker.name] ?? DEFAULT_TRIAL_THREADS,
-      trialMemoryGb: trialMemoryByWorker[worker.name] ?? DEFAULT_TRIAL_MEMORY_GB,
+      trialThreads: workerSettingForName(trialThreadsByWorker, worker.name) ?? DEFAULT_TRIAL_THREADS,
+      trialMemoryGb:
+        workerSettingForName(trialMemoryByWorker, worker.name) ?? DEFAULT_TRIAL_MEMORY_GB,
       trialCount: trialCountFromAutoConfig(status.config),
       dispatching: false,
       dispatchError: null,
