@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { api, AutoModeStatus } from "../api/client";
 import { AddWorkerModal } from "./AddWorkerModal";
@@ -25,6 +25,8 @@ export function Layout() {
   const [autoRunning, setAutoRunning] = useState(false);
   const [autoModeStatus, setAutoModeStatus] = useState<AutoModeStatus | null>(null);
   const [enableConfirmOpen, setEnableConfirmOpen] = useState(false);
+  const enableConfirmOpenRef = useRef(false);
+  enableConfirmOpenRef.current = enableConfirmOpen;
   const [autoBusy, setAutoBusy] = useState(false);
   const [autoRestarting, setAutoRestarting] = useState(false);
   const [autoMessage, setAutoMessage] = useState<string | null>(null);
@@ -52,7 +54,9 @@ export function Layout() {
       refreshAutoMode();
     }
     window.addEventListener(AUTO_MODE_CHANGED_EVENT, onChanged);
-    const intervalId = window.setInterval(refreshAutoMode, 5000);
+    const intervalId = window.setInterval(() => {
+      if (!enableConfirmOpenRef.current) refreshAutoMode();
+    }, 5000);
     return () => {
       window.removeEventListener(AUTO_MODE_CHANGED_EVENT, onChanged);
       window.clearInterval(intervalId);

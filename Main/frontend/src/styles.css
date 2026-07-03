@@ -841,6 +841,14 @@ code, .input-mono {
   border-color: rgba(52, 211, 153, 0.45);
   background: rgba(52, 211, 153, 0.08);
 }
+.candidate-worker-assign-btn--locked {
+  opacity: 0.72;
+  cursor: not-allowed;
+}
+.candidate-worker-assign-btn--locked:hover {
+  border-color: var(--border);
+  background: var(--inset-bg);
+}
 .candidate-worker-assign-btn-name {
   font-weight: 600;
 }

@@ -16,6 +16,7 @@ import {
   assignmentParamsForTool,
   buildWorkerAssignmentSummaries,
   buildDispatchBaseConf,
+  isBaseConfReassignmentLocked,
   WorkerAssignmentSummary,
   clampTrialMemoryGb,
   clampTrialThreads,
@@ -441,6 +442,7 @@ export function WorkersPanel({
   }
 
   function clearAssignment(workerId: string) {
+    if (isBaseConfReassignmentLocked(effectiveAssignmentsByWorker[workerId])) return;
     setDismissedWorkers((prev) => {
       const next = new Set(prev);
       next.add(workerId);
@@ -468,6 +470,7 @@ export function WorkersPanel({
   const assignCandidateToWorker = useCallback(
     (workerId: string, candidateIndex: number): boolean => {
       if (!candidateContext) return false;
+      if (isBaseConfReassignmentLocked(effectiveAssignmentsByWorker[workerId])) return false;
 
       const candidate = candidateContext.candidates.find((c) => c.index === candidateIndex);
       if (!candidate) return false;
@@ -493,7 +496,7 @@ export function WorkersPanel({
       });
       return true;
     },
-    [candidateContext, workers],
+    [candidateContext, workers, effectiveAssignmentsByWorker],
   );
 
   useEffect(() => {
@@ -503,6 +506,7 @@ export function WorkersPanel({
 
   function handleDragOver(e: DragEvent, workerId: string) {
     if (!candidateContext) return;
+    if (isBaseConfReassignmentLocked(effectiveAssignmentsByWorker[workerId])) return;
     if (!e.dataTransfer.types.includes(CANDIDATE_DRAG_MIME)) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "copy";
@@ -517,6 +521,7 @@ export function WorkersPanel({
     e.preventDefault();
     setDragOverWorkerId(null);
     if (!candidateContext) return;
+    if (isBaseConfReassignmentLocked(effectiveAssignmentsByWorker[workerId])) return;
 
     const raw = e.dataTransfer.getData(CANDIDATE_DRAG_MIME);
     if (!raw) return;
@@ -921,6 +926,7 @@ export function WorkersPanel({
             const isOptimizing = Boolean(
               bestOk && isJobActive(bestOk.status, runStartedAt, runLimitSeconds, nowMs),
             );
+            const reassignmentLocked = isBaseConfReassignmentLocked(assignment);
             const trialTotalCount = trialTotal(bestOk ?? undefined, dispatchResult);
             const trialLabel =
               trialTotalCount || (bestOk?.trials_evaluated ?? 0) > 0
@@ -934,7 +940,7 @@ export function WorkersPanel({
             return (
               <article
                 key={worker.id}
-                className={`worker-card${dragOverWorkerId === worker.id ? " worker-card-drop-target" : ""}${assignment ? " worker-card-assigned worker-card-has-assignment" : ""}`}
+                className={`worker-card${dragOverWorkerId === worker.id ? " worker-card-drop-target" : ""}${assignment ? " worker-card-assigned worker-card-has-assignment" : ""}${reassignmentLocked ? " worker-card-reassignment-locked" : ""}`}
                 onDragOver={(e) => handleDragOver(e, worker.id)}
                 onDragLeave={() => handleDragLeave(worker.id)}
                 onDrop={(e) => handleDrop(e, worker.id)}
@@ -1151,7 +1157,7 @@ export function WorkersPanel({
                           </span>
                         )}
                       </span>
-                      {!autoManaged && (
+                      {!autoManaged && !reassignmentLocked && (
                         <button
                           type="button"
                           className="button ghost worker-assignment-clear"
@@ -1162,6 +1168,11 @@ export function WorkersPanel({
                         >
                           Clear
                         </button>
+                      )}
+                      {reassignmentLocked && (
+                        <span className="chip chip-muted worker-assignment-locked-tag">
+                          Base conf locked
+                        </span>
                       )}
                     </div>
 
@@ -1379,6 +1390,11 @@ export function WorkersPanel({
 
                 {!assignment && candidateContext && !autoModeEnabled && (
                   <p className="worker-drop-placeholder">Drop candidate here</p>
+                )}
+                {assignment && reassignmentLocked && !autoManaged && (
+                  <p className="worker-drop-placeholder worker-drop-placeholder--locked">
+                    Optimization started — base conf cannot be reassigned
+                  </p>
                 )}
               </article>
             );

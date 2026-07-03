@@ -138,6 +138,11 @@ export function CandidateFinderPanel({
 
   function handleAssignWorker(workerId: string, workerName: string) {
     if (selectedCandidateIndex == null || !onAssignCandidateToWorker) return;
+    const slot = workerAssignmentSummaries.find((item) => item.workerId === workerId);
+    if (slot?.reassignmentLocked) {
+      setAssignMessage(`Cannot reassign ${workerName} — optimization already started.`);
+      return;
+    }
     const ok = onAssignCandidateToWorker(workerId, selectedCandidateIndex);
     if (ok) {
       setAssignMessage(`Assigned candidate #${selectedCandidateIndex + 1} to ${workerName}.`);
@@ -349,12 +354,17 @@ function CandidateWorkerAssignPanel({
             const assignedHere = slot.candidateIndex === candidate.index;
             const assignedElsewhere =
               slot.candidateIndex != null && slot.candidateIndex !== candidate.index;
+            const locked = slot.reassignmentLocked;
             return (
               <li key={slot.workerId}>
                 <button
                   type="button"
-                  className={`candidate-worker-assign-btn${assignedHere ? " candidate-worker-assign-btn--here" : ""}`}
+                  disabled={locked}
+                  className={`candidate-worker-assign-btn${assignedHere ? " candidate-worker-assign-btn--here" : ""}${locked ? " candidate-worker-assign-btn--locked" : ""}`}
                   onClick={() => onAssign(slot.workerId, slot.workerName)}
+                  title={
+                    locked ? "Optimization started — base conf cannot be reassigned" : undefined
+                  }
                 >
                   <span className="candidate-worker-assign-btn-name">{slot.workerName}</span>
                   <span className="candidate-worker-assign-btn-status">
@@ -362,14 +372,17 @@ function CandidateWorkerAssignPanel({
                     {assignedElsewhere && (
                       <span className="chip chip-muted">#{slot.candidateIndex! + 1}</span>
                     )}
-                    {!assignedHere && !assignedElsewhere && (
+                    {!assignedHere && !assignedElsewhere && !locked && (
                       <span className="candidate-assignment-slot-empty">unassigned</span>
                     )}
+                    {locked && <span className="chip chip-muted">locked</span>}
                     {slot.autoManaged && assignedHere && (
                       <span className="chip chip-muted">auto</span>
                     )}
                   </span>
-                  <span className="candidate-worker-assign-btn-action">Assign</span>
+                  {!locked && (
+                    <span className="candidate-worker-assign-btn-action">Assign</span>
+                  )}
                 </button>
               </li>
             );

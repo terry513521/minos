@@ -189,6 +189,14 @@ export interface WorkerAssignmentSummary {
   workerName: string;
   candidateIndex: number | null;
   autoManaged: boolean;
+  /** True after optimization was dispatched — base conf cannot be reassigned. */
+  reassignmentLocked: boolean;
+}
+
+export function isBaseConfReassignmentLocked(
+  assignment: WorkerAssignment | undefined,
+): boolean {
+  return Boolean(assignment?.dispatchedAt);
 }
 
 export function buildWorkerAssignmentSummaries(
@@ -203,6 +211,7 @@ export function buildWorkerAssignmentSummaries(
         workerName: assignmentLabel(worker),
         candidateIndex: assignment?.candidate.index ?? null,
         autoManaged: Boolean(assignment?.autoManaged),
+        reassignmentLocked: isBaseConfReassignmentLocked(assignment),
       };
     })
     .sort((a, b) => a.workerName.localeCompare(b.workerName));

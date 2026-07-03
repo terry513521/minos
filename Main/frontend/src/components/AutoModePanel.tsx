@@ -35,6 +35,8 @@ export function AutoModePanel({ embedded = false }: AutoModePanelProps) {
   const [restarting, setRestarting] = useState(false);
   const [restartMessage, setRestartMessage] = useState<string | null>(null);
   const [editingParams, setEditingParams] = useState(false);
+  const editingParamsRef = useRef(false);
+  editingParamsRef.current = editingParams;
 
   const refresh = useCallback(() => {
     api
@@ -54,7 +56,9 @@ export function AutoModePanel({ embedded = false }: AutoModePanelProps) {
       refresh();
     }
     window.addEventListener(AUTO_MODE_CHANGED_EVENT, onChanged);
-    const intervalId = window.setInterval(refresh, 5000);
+    const intervalId = window.setInterval(() => {
+      if (!editingParamsRef.current) refresh();
+    }, 5000);
     return () => {
       window.removeEventListener(AUTO_MODE_CHANGED_EVENT, onChanged);
       window.clearInterval(intervalId);

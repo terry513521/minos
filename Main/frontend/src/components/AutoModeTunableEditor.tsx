@@ -54,21 +54,31 @@ export function AutoModeTunableEditor({
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const wasOpenRef = useRef(false);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      wasOpenRef.current = false;
+      return;
+    }
+    if (wasOpenRef.current) return;
+    wasOpenRef.current = true;
     setSelectedParams([...config.params]);
     setParamIntervals(paramIntervalsFromAutoConfig(config));
     setWorkerAlgorithms(workerAlgorithmsFromAutoConfig(config));
     setWorkerTrialThreads(workerTrialThreadsFromAutoConfig(config));
     setWorkerTrialMemoryGb(workerTrialMemoryGbFromAutoConfig(config));
     setError(null);
+  }, [open, config]);
+
+  useEffect(() => {
+    if (!open) return;
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [open, config, onClose]);
+  }, [open, onClose]);
 
   if (!open) return null;
 
