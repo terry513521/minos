@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import random
 import shutil
 import threading
 import time
@@ -11,19 +10,9 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any, Callable
 
-from app.optimization.adaptive_search import (
-    build_conf_from_params,
-    create_optuna_study,
-    resolve_search_specs,
-    suggest_optuna_params,
-    suggest_random_params,
-)
-from app.optimization.quasi_random import (
-    build_quasi_sample_confs,
-    seed_from_job_id,
-)
-from app.optimization.algorithms import is_optuna_algorithm, normalize_algorithm
-from app.benchmark import BenchmarkResult, conf_equals, run_benchmark, validate_benchmark_assets, validate_tool_supported
+from app.optimization.search_runners import run_adaptive_search
+from app.optimization.algorithms import normalize_algorithm
+from app.benchmark import BenchmarkResult, run_benchmark, validate_benchmark_assets, validate_tool_supported
 from app.config import Settings, get_settings
 from app.optimization.job_control import is_stop_requested
 from app.domain.schemas import OptimizeRequest, OptimizeResponse
@@ -194,110 +183,19 @@ def _run_adaptive_search(
     timed_out: Callable[[], bool],
     record_result: Callable[[BenchmarkResult, str], None],
 ) -> None:
-    specs = resolve_search_specs(request.tool, request.params, intervals)
-    seen: set[str] = set()
-    extra_done = 0
-    rng = random.Random()
-
-    def remember(conf: dict[str, Any]) -> bool:
-        key = str(conf)
-        if key in seen or conf_equals(conf, base_conf):
-            return False
-        seen.add(key)
-        return True
-
     evaluate = lambda conf: _evaluate_conf(request, conf, work_root, settings)
-
-    if algorithm == "random":
-        while not timed_out() and extra_done < max_trials:
-            batch: list[dict[str, Any]] = []
-            attempts = 0
-            while len(batch) < concurrency and attempts < concurrency * 20:
-                attempts += 1
-                params = suggest_random_params(rng, base_conf, request.tool, specs)
-                conf = build_conf_from_params(base_conf, request.tool, params)
-                if remember(conf):
-                    batch.append(conf)
-            if not batch:
-                logger.info("Random search exhausted unique configs")
-                break
-            before = extra_done
-            _run_parallel_grid(
-                candidate_variants=batch,
-                concurrency=min(concurrency, len(batch)),
-                timed_out=timed_out,
-                evaluate=evaluate,
-                record_result=record_result,
-                label="random",
-            )
-            extra_done += len(batch)
-            if extra_done == before:
-                break
-        return
-
-    if algorithm in ("sobol", "lhs"):
-        seed = seed_from_job_id(request.job_id)
-        param_sets = build_quasi_sample_confs(
-            algorithm,
-            n=max_trials,
-            base_conf=base_conf,
-            tool=request.tool,
-            specs=specs,
-            seed=seed,
-        )
-        idx = 0
-        while not timed_out() and extra_done < max_trials and idx < len(param_sets):
-            batch: list[dict[str, Any]] = []
-            while (
-                len(batch) < concurrency
-                and idx < len(param_sets)
-                and extra_done + len(batch) < max_trials
-            ):
-                conf = build_conf_from_params(base_conf, request.tool, param_sets[idx])
-                idx += 1
-                if remember(conf):
-                    batch.append(conf)
-            if not batch:
-                logger.info("%s search exhausted unique configs", algorithm.upper())
-                break
-            before = extra_done
-            _run_parallel_grid(
-                candidate_variants=batch,
-                concurrency=min(concurrency, len(batch)),
-                timed_out=timed_out,
-                evaluate=evaluate,
-                record_result=record_result,
-                label=algorithm,
-            )
-            extra_done += len(batch)
-            if extra_done == before:
-                break
-        return
-
-    if is_optuna_algorithm(algorithm):
-        import optuna
-
-        study = create_optuna_study(algorithm)
-        while not timed_out() and extra_done < max_trials:
-            trial = study.ask()
-            params = suggest_optuna_params(trial, base_conf, request.tool, specs)
-            conf = build_conf_from_params(base_conf, request.tool, params)
-            if not remember(conf):
-                study.tell(trial, state=optuna.trial.TrialState.FAIL)
-                continue
-            if timed_out():
-                study.tell(trial, state=optuna.trial.TrialState.FAIL)
-                break
-            result = evaluate(conf)
-            record_result(result, algorithm)
-            extra_done += 1
-            if result.success:
-                study.tell(trial, result.score)
-            else:
-                study.tell(trial, state=optuna.trial.TrialState.FAIL)
-        return
-
-    raise ValueError(f"Unhandled adaptive algorithm: {algorithm}")
+    run_adaptive_search(
+        request=request,
+        base_conf=base_conf,
+        intervals=intervals,
+        algorithm=algorithm,
+        concurrency=concurrency,
+        max_trials=max_trials,
+        timed_out=timed_out,
+        evaluate=evaluate,
+        record_result=record_result,
+        run_batch=_run_parallel_grid,
+    )
 
 
 def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> OptimizeResponse:
