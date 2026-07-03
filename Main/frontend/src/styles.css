@@ -1583,8 +1583,10 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
 }
 
 .modal-panel.modal-panel-auto-tunable .worker-conf-picker-list {
+  flex: 1;
+  min-height: 0;
   max-height: none;
-  overflow: visible;
+  overflow-y: auto;
 }
 
 .auto-mode-worker-algorithms {
@@ -1859,7 +1861,28 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   max-width: min(120rem, calc(100vw - 1rem));
   width: min(120rem, calc(100vw - 1rem));
   max-height: min(94vh, 72rem);
-  overflow: auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.modal-panel.modal-panel-auto-tunable .modal-form {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.modal-panel.modal-panel-auto-tunable .auto-mode-worker-algorithms {
+  flex-shrink: 0;
+}
+.modal-panel.modal-panel-auto-tunable .worker-conf-picker {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.modal-panel.modal-panel-auto-tunable .modal-actions {
+  flex-shrink: 0;
 }
 .modal-head {
   display: flex;
