@@ -730,6 +730,7 @@ code, .input-mono {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+  position: relative;
   min-height: 7.5rem;
   padding: 1rem 1.1rem;
   border-radius: var(--radius-sm);
@@ -740,11 +741,59 @@ code, .input-mono {
 .candidate-result-card:hover {
   border-color: rgba(167, 139, 250, 0.35);
 }
+.candidate-result-card--assignment-open {
+  border-color: rgba(167, 139, 250, 0.55);
+  box-shadow: 0 0 0 1px rgba(167, 139, 250, 0.15);
+  z-index: 5;
+}
 .candidate-draggable {
   cursor: grab;
 }
+.candidate-draggable[role="button"] {
+  cursor: pointer;
+}
 .candidate-draggable:active {
   cursor: grabbing;
+}
+.candidate-assignment-popover {
+  position: absolute;
+  left: 0.65rem;
+  right: 0.65rem;
+  top: calc(100% - 0.35rem);
+  z-index: 30;
+  padding: 0.65rem 0.75rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-solid);
+  box-shadow: var(--shadow);
+}
+.candidate-assignment-popover-title {
+  display: block;
+  margin-bottom: 0.45rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.candidate-assignment-popover-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.candidate-assignment-popover-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+.candidate-assignment-popover-empty {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--muted);
 }
 .candidate-draggable[draggable="true"]:hover {
   border-color: rgba(167, 139, 250, 0.55);

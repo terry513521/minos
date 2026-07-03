@@ -12,6 +12,7 @@ import { normalizeRegion, chromosomeFromWindow } from "../utils/window";
 import { AUTO_MODE_CHANGED_EVENT } from "./AutoModePanel";
 import { ConfTooltip } from "./ConfTooltip";
 import { DeferredNumberInput } from "./DeferredNumberInput";
+import { CandidateWorkerAssignment } from "../types/workerAssignment";
 
 const DEFAULT_REGION = "chr20:10000000-15000000";
 
@@ -19,11 +20,13 @@ const initialFinderState = loadCandidateFinderState();
 
 interface CandidateFinderPanelProps {
   onResultChange?: (result: FindCandidatesResponse | null) => void;
+  assignmentsByCandidate?: Record<number, CandidateWorkerAssignment[]>;
   embedded?: boolean;
 }
 
 export function CandidateFinderPanel({
   onResultChange,
+  assignmentsByCandidate = {},
   embedded = false,
 }: CandidateFinderPanelProps) {
   const regionInitializedRef = useRef(false);
@@ -40,6 +43,7 @@ export function CandidateFinderPanel({
     () => initialFinderState?.result ?? null,
   );
   const [autoModeEnabled, setAutoModeEnabled] = useState(false);
+  const [openAssignmentIndex, setOpenAssignmentIndex] = useState<number | null>(null);
 
   const refreshAutoMode = useCallback(() => {
     api
@@ -157,6 +161,12 @@ export function CandidateFinderPanel({
                 key={c.index}
                 candidate={c}
                 fallbackChrom={result.chromosome}
+                assignedWorkers={assignmentsByCandidate[c.index] ?? []}
+                assignmentOpen={openAssignmentIndex === c.index}
+                onAssignmentToggle={() =>
+                  setOpenAssignmentIndex((current) => (current === c.index ? null : c.index))
+                }
+                onAssignmentClose={() => setOpenAssignmentIndex(null)}
                 draggable
               />
             ))}
@@ -179,19 +189,48 @@ export function CandidateFinderPanel({
 function CandidateCard({
   candidate,
   fallbackChrom,
+  assignedWorkers,
+  assignmentOpen,
+  onAssignmentToggle,
+  onAssignmentClose,
   draggable = false,
 }: {
   candidate: CandidatePreview;
   fallbackChrom: string;
+  assignedWorkers: CandidateWorkerAssignment[];
+  assignmentOpen: boolean;
+  onAssignmentToggle: () => void;
+  onAssignmentClose: () => void;
   draggable?: boolean;
 }) {
+  const cardRef = useRef<HTMLElement>(null);
+  const draggedRef = useRef(false);
   const chrom = chromosomeFromWindow(candidate.source_window) ?? fallbackChrom;
   const score = candidate.history_score ?? candidate.rank_score;
   const composite = compositeCandidateScore(candidate);
   const region = candidate.source_window?.trim();
 
+  useEffect(() => {
+    if (!assignmentOpen) return;
+    function onPointerDown(e: MouseEvent) {
+      if (cardRef.current && !cardRef.current.contains(e.target as Node)) {
+        onAssignmentClose();
+      }
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onAssignmentClose();
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [assignmentOpen, onAssignmentClose]);
+
   function handleDragStart(e: DragEvent<HTMLElement>) {
     if (!draggable) return;
+    draggedRef.current = true;
     e.dataTransfer.setData(
       CANDIDATE_DRAG_MIME,
       JSON.stringify({ index: candidate.index }),
@@ -199,11 +238,31 @@ function CandidateCard({
     e.dataTransfer.effectAllowed = "copy";
   }
 
+  function handleCardClick() {
+    if (draggedRef.current) {
+      draggedRef.current = false;
+      return;
+    }
+    onAssignmentToggle();
+  }
+
   return (
     <article
-      className={`candidate-result-card${draggable ? " candidate-draggable" : ""}`}
+      ref={cardRef}
+      className={`candidate-result-card${draggable ? " candidate-draggable" : ""}${assignmentOpen ? " candidate-result-card--assignment-open" : ""}`}
       draggable={draggable}
       onDragStart={handleDragStart}
+      onClick={handleCardClick}
+      role="button"
+      tabIndex={0}
+      aria-expanded={assignmentOpen}
+      aria-label={`Candidate #${candidate.index + 1}${region ? `, ${region}` : ""}`}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onAssignmentToggle();
+        }
+      }}
     >
       <div className="candidate-result-top">
         <span className="candidate-result-chrom">{chrom}</span>
@@ -214,7 +273,28 @@ function CandidateCard({
       ) : (
         <span className="candidate-result-window-missing">No history region</span>
       )}
-      <div className="candidate-result-foot">
+      {assignmentOpen && (
+        <div
+          className="candidate-assignment-popover"
+          role="tooltip"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <span className="candidate-assignment-popover-title">Worker assignments</span>
+          {assignedWorkers.length > 0 ? (
+            <ul className="candidate-assignment-popover-list">
+              {assignedWorkers.map((slot) => (
+                <li key={slot.workerId}>
+                  <span className="chip chip-accent">{slot.workerName}</span>
+                  {slot.autoManaged && <span className="chip chip-muted">auto</span>}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="candidate-assignment-popover-empty">Not assigned to any worker.</p>
+          )}
+        </div>
+      )}
+      <div className="candidate-result-foot" onClick={(e) => e.stopPropagation()}>
         <span className="candidate-rank-badge">#{candidate.index + 1}</span>
         {candidate.similarity != null && (
           <span className="candidate-sim-tag">sim {candidate.similarity.toFixed(2)}</span>

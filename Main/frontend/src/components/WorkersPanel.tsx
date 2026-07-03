@@ -14,7 +14,9 @@ import { WorkerEndpointsEditor } from "./WorkerEndpointsEditor";
 import {
   ALGORITHM_OPTIONS,
   assignmentParamsForTool,
+  buildAssignmentsByCandidateIndex,
   buildDispatchBaseConf,
+  CandidateWorkerAssignment,
   clampTrialMemoryGb,
   clampTrialThreads,
   clampTotalTrials,
@@ -76,6 +78,9 @@ const BEST_POLL_INTERVAL_MS = 1000;
 
 interface WorkersPanelProps {
   candidateContext?: FindCandidatesResponse | null;
+  onAssignmentsByCandidateChange?: (
+    index: Record<number, CandidateWorkerAssignment[]>,
+  ) => void;
 }
 
 function isWorkerConnected(
@@ -192,7 +197,7 @@ function withoutLoadingHealth(
   );
 }
 
-export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
+export function WorkersPanel({ candidateContext = null, onAssignmentsByCandidateChange }: WorkersPanelProps) {
   const persistedRef = useRef(loadWorkerPanelState());
   const persisted = persistedRef.current;
   const persistedAutoRef = useRef(loadAutoModeState());
@@ -385,6 +390,13 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
       healthByWorker: withoutLoadingHealth(healthByWorker),
     });
   }, [assignments, baseConfByWorker, dispatchByWorker, bestByWorker, healthByWorker]);
+
+  useEffect(() => {
+    if (!onAssignmentsByCandidateChange) return;
+    onAssignmentsByCandidateChange(
+      buildAssignmentsByCandidateIndex(workers, effectiveAssignmentsByWorker),
+    );
+  }, [workers, effectiveAssignmentsByWorker, onAssignmentsByCandidateChange]);
 
   useEffect(() => {
     if (workers.length === 0) return;

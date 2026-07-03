@@ -173,3 +173,31 @@ export function assignmentParamsForTool(
 export function assignmentLabel(worker: WorkerRecord): string {
   return worker.name || worker.id.slice(0, 8);
 }
+
+export interface CandidateWorkerAssignment {
+  workerId: string;
+  workerName: string;
+  autoManaged: boolean;
+}
+
+export function buildAssignmentsByCandidateIndex(
+  workers: WorkerRecord[],
+  assignments: Record<string, WorkerAssignment>,
+): Record<number, CandidateWorkerAssignment[]> {
+  const index: Record<number, CandidateWorkerAssignment[]> = {};
+  for (const worker of workers) {
+    const assignment = assignments[worker.id];
+    if (!assignment) continue;
+    const candidateIndex = assignment.candidate.index;
+    if (!index[candidateIndex]) index[candidateIndex] = [];
+    index[candidateIndex].push({
+      workerId: worker.id,
+      workerName: assignmentLabel(worker),
+      autoManaged: Boolean(assignment.autoManaged),
+    });
+  }
+  for (const list of Object.values(index)) {
+    list.sort((a, b) => a.workerName.localeCompare(b.workerName));
+  }
+  return index;
+}
