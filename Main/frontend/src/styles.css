@@ -1555,6 +1555,19 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   font-size: 0.82rem;
 }
 
+.topbar-worker-bulk {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.topbar-start-all {
+  padding: 0.45rem 0.85rem;
+  font-size: 0.82rem;
+  border-color: rgba(120, 214, 164, 0.45);
+  color: #9be8c3;
+}
+
 .topbar-stop-all {
   padding: 0.45rem 0.85rem;
   font-size: 0.82rem;

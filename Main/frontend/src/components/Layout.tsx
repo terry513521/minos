@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { api, AutoModeStatus } from "../api/client";
-import { AddWorkerModal, WORKERS_CHANGED_EVENT, WORKERS_STOP_ALL_EVENT } from "./AddWorkerModal";
+import { AddWorkerModal, WORKERS_CHANGED_EVENT, WORKERS_START_ALL_EVENT, WORKERS_START_ALL_RESULT_EVENT, WORKERS_STOP_ALL_EVENT, WorkersStartAllResultDetail } from "./AddWorkerModal";
 import { AUTO_MODE_CHANGED_EVENT } from "./AutoModePanel";
 import { AutoModeTunableEditor } from "./AutoModeTunableEditor";
 import { saveAutoModeState } from "../utils/autoModeStorage";
@@ -30,6 +30,7 @@ export function Layout() {
   const [autoBusy, setAutoBusy] = useState(false);
   const [autoRestarting, setAutoRestarting] = useState(false);
   const [stoppingAllWorkers, setStoppingAllWorkers] = useState(false);
+  const [startingAllWorkers, setStartingAllWorkers] = useState(false);
   const [autoMessage, setAutoMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -119,6 +120,44 @@ export function Layout() {
     } finally {
       setAutoBusy(false);
     }
+  }
+
+  useEffect(() => {
+    function onStartAllResult(event: Event) {
+      const detail = (event as CustomEvent<WorkersStartAllResultDetail>).detail;
+      setStartingAllWorkers(false);
+      if (!detail) return;
+      if (detail.started === 0 && detail.failed === 0) {
+        setAutoMessage(
+          detail.skipped > 0
+            ? "No workers ready to start — assign candidates and ensure workers are idle."
+            : "No workers registered.",
+        );
+      } else if (detail.failed === 0) {
+        setAutoMessage(`Started optimization on ${detail.started} worker(s).`);
+      } else {
+        setAutoMessage(
+          `Started ${detail.started} worker(s), ${detail.failed} failed${
+            detail.skipped > 0 ? `, ${detail.skipped} skipped` : ""
+          }.`,
+        );
+      }
+    }
+    window.addEventListener(WORKERS_START_ALL_RESULT_EVENT, onStartAllResult);
+    return () => window.removeEventListener(WORKERS_START_ALL_RESULT_EVENT, onStartAllResult);
+  }, []);
+
+  function handleStartAllWorkers() {
+    if (
+      !window.confirm(
+        "Start optimization on all workers with manual assignments?",
+      )
+    ) {
+      return;
+    }
+    setStartingAllWorkers(true);
+    setAutoMessage(null);
+    window.dispatchEvent(new Event(WORKERS_START_ALL_EVENT));
   }
 
   async function handleStopAllWorkers() {
@@ -212,20 +251,41 @@ export function Layout() {
           </nav>
         </div>
         <div className="topbar-right">
-          <button
-            type="button"
-            className="button ghost topbar-stop-all"
-            onClick={() => void handleStopAllWorkers()}
-            disabled={stoppingAllWorkers || autoBusy || autoRestarting}
-            title="Stop optimization on every registered worker"
-          >
-            {stoppingAllWorkers ? "Stopping…" : "Stop all"}
-          </button>
+          <div className="topbar-worker-bulk">
+            <button
+              type="button"
+              className="button ghost topbar-start-all"
+              onClick={() => void handleStartAllWorkers()}
+              disabled={
+                startingAllWorkers ||
+                stoppingAllWorkers ||
+                autoBusy ||
+                autoRestarting ||
+                autoEnabled
+              }
+              title={
+                autoEnabled
+                  ? "Disable auto mode to start workers manually"
+                  : "Start optimization on every worker with an assignment"
+              }
+            >
+              {startingAllWorkers ? "Starting…" : "Start all"}
+            </button>
+            <button
+              type="button"
+              className="button ghost topbar-stop-all"
+              onClick={() => void handleStopAllWorkers()}
+              disabled={stoppingAllWorkers || startingAllWorkers || autoBusy || autoRestarting}
+              title="Stop optimization on every registered worker"
+            >
+              {stoppingAllWorkers ? "Stopping…" : "Stop all"}
+            </button>
+          </div>
           <button
             type="button"
             className={`button ghost topbar-auto-mode${autoEnabled ? " is-on" : ""}`}
             onClick={handleToggleAutoMode}
-            disabled={autoBusy || autoRestarting || stoppingAllWorkers}
+            disabled={autoBusy || autoRestarting || stoppingAllWorkers || startingAllWorkers}
             aria-pressed={autoEnabled}
             title={
               autoEnabled
@@ -241,7 +301,7 @@ export function Layout() {
               type="button"
               className="button ghost topbar-auto-restart"
               onClick={() => void handleRestartAutoMode()}
-              disabled={autoRestarting || autoBusy || stoppingAllWorkers}
+              disabled={autoRestarting || autoBusy || stoppingAllWorkers || startingAllWorkers}
               title="Stop workers and clear session so POST /api/v1/auto/start works again"
             >
               {autoRestarting ? "Restarting…" : "Restart session"}

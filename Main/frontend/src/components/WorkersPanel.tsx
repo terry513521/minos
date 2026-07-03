@@ -44,7 +44,7 @@ import {
   ParamInterval,
 } from "../utils/paramBounds";
 import { parseToolOptionValue, setToolOption } from "../utils/confEdit";
-import { WORKERS_CHANGED_EVENT, WORKERS_STOP_ALL_EVENT } from "./AddWorkerModal";
+import { WORKERS_CHANGED_EVENT, WORKERS_STOP_ALL_EVENT, WORKERS_START_ALL_EVENT, WORKERS_START_ALL_RESULT_EVENT } from "./AddWorkerModal";
 import { ConfParamPicker } from "./ConfParamPicker";
 import { ConfManualEditor } from "./ConfManualEditor";
 import { ConfTooltip } from "./ConfTooltip";
@@ -130,7 +130,7 @@ function formatTrialProgress(
   const planned = total && total > 0 ? total : null;
   if (planned) {
     if (status === "optimizing") return `Trial ${done} / ${planned}`;
-    return `${done} / ${planned} trials`;
+    return `${done} / ${planned}`;
   }
   if (done > 0) return `${done} trial${done === 1 ? "" : "s"}`;
   return "";
@@ -307,6 +307,8 @@ export function WorkersPanel({
 
   const bestByWorkerRef = useRef(bestByWorker);
   bestByWorkerRef.current = bestByWorker;
+  const assignmentsRef = useRef(assignments);
+  assignmentsRef.current = assignments;
   const effectiveAssignmentsRef = useRef(effectiveAssignmentsByWorker);
   effectiveAssignmentsRef.current = effectiveAssignmentsByWorker;
 
@@ -847,12 +849,57 @@ export function WorkersPanel({
       void waitForAllWorkersIdle();
     }
     window.addEventListener(WORKERS_STOP_ALL_EVENT, onStopAll);
-    return () => window.removeEventListener(WORKERS_STOP_ALL_EVENT, onStopAll);
+
+    async function onStartAll() {
+      const results = { started: 0, failed: 0, skipped: 0 };
+      for (const worker of workers) {
+        const assignment = assignmentsRef.current[worker.id];
+        if (!assignment || assignment.autoManaged) {
+          results.skipped += 1;
+          continue;
+        }
+        if (!worker.base_url || assignment.selectedParams.length === 0) {
+          results.skipped += 1;
+          continue;
+        }
+        if (assignment.dispatching) {
+          results.skipped += 1;
+          continue;
+        }
+        const best = bestByWorkerRef.current[worker.id];
+        if (
+          best &&
+          best !== "loading" &&
+          best.ok &&
+          best.status &&
+          isJobActive(best.status)
+        ) {
+          results.skipped += 1;
+          continue;
+        }
+        const ok = await handleDispatchRef.current(worker.id);
+        if (ok) results.started += 1;
+        else results.failed += 1;
+      }
+      window.dispatchEvent(
+        new CustomEvent(WORKERS_START_ALL_RESULT_EVENT, { detail: results }),
+      );
+    }
+
+    function onStartAllEvent() {
+      void onStartAll();
+    }
+    window.addEventListener(WORKERS_START_ALL_EVENT, onStartAllEvent);
+
+    return () => {
+      window.removeEventListener(WORKERS_STOP_ALL_EVENT, onStopAll);
+      window.removeEventListener(WORKERS_START_ALL_EVENT, onStartAllEvent);
+    };
   }, [workers]);
 
-  async function handleDispatch(workerId: string) {
+  async function handleDispatch(workerId: string): Promise<boolean> {
     const assignment = assignments[workerId];
-    if (!assignment || assignment.selectedParams.length === 0) return;
+    if (!assignment || assignment.selectedParams.length === 0) return false;
 
     updateAssignment(workerId, { dispatching: true, dispatchError: null });
     try {
@@ -899,13 +946,18 @@ export function WorkersPanel({
         });
         void pollWorkerBest(workerId, true);
       }
+      return result.ok;
     } catch (err) {
       updateAssignment(workerId, {
         dispatching: false,
         dispatchError: err instanceof Error ? err.message : "Dispatch failed",
       });
+      return false;
     }
   }
+
+  const handleDispatchRef = useRef(handleDispatch);
+  handleDispatchRef.current = handleDispatch;
 
   function toggleParam(workerId: string, param: string) {
     const assignment = assignments[workerId];
