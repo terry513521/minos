@@ -208,151 +208,192 @@ export function Layout() {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <div className="topbar-left">
-          <div className="brand">
-            <img
-              src="/effortless-avatar.png"
-              alt=""
-              className="brand-avatar"
-              width={36}
-              height={36}
-            />
-            <div className="brand-text">
-              <span className="brand-mark">Effortless</span>
-              <span className="brand-sub">Candidate Finder</span>
+        <div className="topbar-primary">
+          <div className="topbar-left">
+            <div className="brand">
+              <img
+                src="/effortless-avatar.png"
+                alt=""
+                className="brand-avatar"
+                width={36}
+                height={36}
+              />
+              <div className="brand-text">
+                <span className="brand-mark">Effortless</span>
+                <span className="brand-sub">Candidate Finder</span>
+              </div>
+            </div>
+            <nav className="section-nav" aria-label="Sections">
+              {sections.map((s) => (
+                <a
+                  key={s.hash}
+                  href={s.hash}
+                  className={`section-nav-link${activeHash === s.hash ? " active" : ""}`}
+                >
+                  {s.label}
+                </a>
+              ))}
+            </nav>
+          </div>
+          <div className="topbar-primary-actions">
+            <span className={`status-pill status-pill-compact ${health === "ok" ? "ok" : "bad"}`}>
+              <span className="status-dot" />
+              API {health}
+            </span>
+            <button
+              type="button"
+              className="button primary topbar-add-worker"
+              onClick={() => setWorkerModalOpen(true)}
+            >
+              Add worker
+            </button>
+          </div>
+        </div>
+
+        <details className="topbar-actions-menu">
+          <summary className="topbar-actions-menu-toggle">
+            <span>Controls</span>
+            <span className="topbar-actions-menu-chevron" aria-hidden />
+          </summary>
+          <div className="topbar-actions-menu-body">
+            <div className="topbar-worker-bulk">
+              <span className="topbar-action-group-label">Workers</span>
+              <div className="topbar-action-group-buttons">
+                <button
+                  type="button"
+                  className="button ghost topbar-check-all"
+                  onClick={handleCheckAllWorkers}
+                  disabled={
+                    checkingAllWorkers ||
+                    startingAllWorkers ||
+                    stoppingAllWorkers ||
+                    autoBusy ||
+                    autoRestarting
+                  }
+                  title="Run health check on every registered worker"
+                >
+                  {checkingAllWorkers ? "Checking…" : "Check all"}
+                </button>
+                <button
+                  type="button"
+                  className="button ghost topbar-start-all"
+                  onClick={() => void handleStartAllWorkers()}
+                  disabled={
+                    checkingAllWorkers ||
+                    startingAllWorkers ||
+                    stoppingAllWorkers ||
+                    autoBusy ||
+                    autoRestarting ||
+                    autoEnabled
+                  }
+                  title={
+                    autoEnabled
+                      ? "Disable auto mode to start workers manually"
+                      : "Start optimization on every worker with an assignment"
+                  }
+                >
+                  {startingAllWorkers ? "Starting…" : "Start all"}
+                </button>
+                <button
+                  type="button"
+                  className="button ghost topbar-clear-all"
+                  onClick={handleClearAllWorkers}
+                  disabled={
+                    checkingAllWorkers ||
+                    startingAllWorkers ||
+                    stoppingAllWorkers ||
+                    autoBusy ||
+                    autoRestarting
+                  }
+                  title="Clear candidate assignments on every worker"
+                >
+                  Clear all
+                </button>
+                <button
+                  type="button"
+                  className="button ghost topbar-stop-all"
+                  onClick={() => void handleStopAllWorkers()}
+                  disabled={
+                    checkingAllWorkers ||
+                    stoppingAllWorkers ||
+                    startingAllWorkers ||
+                    autoBusy ||
+                    autoRestarting
+                  }
+                  title="Stop optimization on every registered worker"
+                >
+                  {stoppingAllWorkers ? "Stopping…" : "Stop all"}
+                </button>
+              </div>
+            </div>
+            <div className="topbar-auto-actions">
+              <span className="topbar-action-group-label">Auto mode</span>
+              <div className="topbar-action-group-buttons">
+                {!autoEnabled && (
+                  <button
+                    type="button"
+                    className="button ghost topbar-auto-configure"
+                    onClick={() => setConfigureAutoOpen(true)}
+                    disabled={
+                      autoBusy ||
+                      autoRestarting ||
+                      stoppingAllWorkers ||
+                      startingAllWorkers ||
+                      checkingAllWorkers
+                    }
+                    title="Edit auto mode parameters before enabling"
+                  >
+                    Configure
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className={`button ghost topbar-auto-mode${autoEnabled ? " is-on" : ""}`}
+                  onClick={() => void handleToggleAutoMode()}
+                  disabled={
+                    autoBusy ||
+                    autoRestarting ||
+                    stoppingAllWorkers ||
+                    startingAllWorkers ||
+                    checkingAllWorkers
+                  }
+                  aria-pressed={autoEnabled}
+                  title={
+                    autoEnabled
+                      ? "Disable auto mode"
+                      : "Enable auto mode for unattended overnight runs"
+                  }
+                >
+                  {autoBusy ? "Auto…" : autoEnabled ? "Auto on" : "Auto off"}
+                  {autoRunning ? " · running" : ""}
+                </button>
+                {(autoRunning || autoEnabled) && (
+                  <button
+                    type="button"
+                    className="button ghost topbar-auto-restart"
+                    onClick={() => void handleRestartAutoMode()}
+                    disabled={
+                      autoRestarting ||
+                      autoBusy ||
+                      stoppingAllWorkers ||
+                      startingAllWorkers ||
+                      checkingAllWorkers
+                    }
+                    title="Stop workers and clear session so POST /api/v1/auto/start works again"
+                  >
+                    {autoRestarting ? "Restarting…" : "Restart session"}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
-          <nav className="section-nav" aria-label="Sections">
-            {sections.map((s) => (
-              <a
-                key={s.hash}
-                href={s.hash}
-                className={`section-nav-link${activeHash === s.hash ? " active" : ""}`}
-              >
-                {s.label}
-              </a>
-            ))}
-          </nav>
-        </div>
-        <div className="topbar-right">
-          <div className="topbar-worker-bulk">
-            <button
-              type="button"
-              className="button ghost topbar-check-all"
-              onClick={handleCheckAllWorkers}
-              disabled={
-                checkingAllWorkers ||
-                startingAllWorkers ||
-                stoppingAllWorkers ||
-                autoBusy ||
-                autoRestarting
-              }
-              title="Run health check on every registered worker"
-            >
-              {checkingAllWorkers ? "Checking…" : "Check all"}
-            </button>
-            <button
-              type="button"
-              className="button ghost topbar-start-all"
-              onClick={() => void handleStartAllWorkers()}
-              disabled={
-                checkingAllWorkers ||
-                startingAllWorkers ||
-                stoppingAllWorkers ||
-                autoBusy ||
-                autoRestarting ||
-                autoEnabled
-              }
-              title={
-                autoEnabled
-                  ? "Disable auto mode to start workers manually"
-                  : "Start optimization on every worker with an assignment"
-              }
-            >
-              {startingAllWorkers ? "Starting…" : "Start all"}
-            </button>
-            <button
-              type="button"
-              className="button ghost topbar-clear-all"
-              onClick={handleClearAllWorkers}
-              disabled={
-                checkingAllWorkers ||
-                startingAllWorkers ||
-                stoppingAllWorkers ||
-                autoBusy ||
-                autoRestarting
-              }
-              title="Clear candidate assignments on every worker"
-            >
-              Clear all
-            </button>
-            <button
-              type="button"
-              className="button ghost topbar-stop-all"
-              onClick={() => void handleStopAllWorkers()}
-              disabled={
-                checkingAllWorkers ||
-                stoppingAllWorkers ||
-                startingAllWorkers ||
-                autoBusy ||
-                autoRestarting
-              }
-              title="Stop optimization on every registered worker"
-            >
-              {stoppingAllWorkers ? "Stopping…" : "Stop all"}
-            </button>
-          </div>
-          {!autoEnabled && (
-            <button
-              type="button"
-              className="button ghost topbar-auto-configure"
-              onClick={() => setConfigureAutoOpen(true)}
-              disabled={autoBusy || autoRestarting || stoppingAllWorkers || startingAllWorkers || checkingAllWorkers}
-              title="Edit auto mode parameters before enabling"
-            >
-              Configure
-            </button>
-          )}
-          <button
-            type="button"
-            className={`button ghost topbar-auto-mode${autoEnabled ? " is-on" : ""}`}
-            onClick={() => void handleToggleAutoMode()}
-            disabled={autoBusy || autoRestarting || stoppingAllWorkers || startingAllWorkers || checkingAllWorkers}
-            aria-pressed={autoEnabled}
-            title={
-              autoEnabled
-                ? "Disable auto mode"
-                : "Enable auto mode for unattended overnight runs"
-            }
-          >
-            {autoBusy ? "Auto…" : autoEnabled ? "Auto mode on" : "Auto mode off"}
-            {autoRunning ? " · running" : ""}
-          </button>
-          {(autoRunning || autoEnabled) && (
-            <button
-              type="button"
-              className="button ghost topbar-auto-restart"
-              onClick={() => void handleRestartAutoMode()}
-              disabled={autoRestarting || autoBusy || stoppingAllWorkers || startingAllWorkers || checkingAllWorkers}
-              title="Stop workers and clear session so POST /api/v1/auto/start works again"
-            >
-              {autoRestarting ? "Restarting…" : "Restart session"}
-            </button>
-          )}
-          <button
-            type="button"
-            className="button primary topbar-add-worker"
-            onClick={() => setWorkerModalOpen(true)}
-          >
-            Add worker
-          </button>
-          <span className={`status-pill ${health === "ok" ? "ok" : "bad"}`}>
-            <span className="status-dot" />
-            API {health}
-          </span>
-        </div>
+        </details>
       </header>
-      {autoMessage && <div className="auto-mode-banner">{autoMessage}</div>}
+      {autoMessage && (
+        <div className="auto-mode-banner-wrap">
+          <div className="auto-mode-banner">{autoMessage}</div>
+        </div>
+      )}
       <AddWorkerModal open={workerModalOpen} onClose={() => setWorkerModalOpen(false)} />
       {autoModeStatus && (
         <AutoModeTunableEditor

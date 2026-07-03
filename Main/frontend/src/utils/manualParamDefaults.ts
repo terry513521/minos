@@ -1,5 +1,6 @@
 import { AutoModeConfig } from "../api/client";
 import { loadAutoModeState } from "./autoModeStorage";
+import { syncPerWorkerTunablesFromAutoConfig } from "./workerTunableStorage";
 import {
   paramIntervalsFromAutoConfig,
   workerAlgorithmsFromAutoConfig,
@@ -160,11 +161,14 @@ export function getEffectiveManualWorkerDefaults(): ManualWorkerDefaults | null 
 
 /** Seed manual defaults from cached auto-mode config when dedicated defaults are missing. */
 export function ensureManualDefaultsHydrated(): ManualWorkerDefaults | null {
-  const effective = getEffectiveManualWorkerDefaults();
-  if (effective && !loadManualWorkerDefaults()) {
-    saveManualWorkerDefaults(effective);
-  }
-  return effective ?? loadManualWorkerDefaults();
+  const saved = loadManualWorkerDefaults();
+  if (saved) return saved;
+  const cachedConfig = loadAutoModeState()?.status?.config;
+  if (!cachedConfig || cachedConfig.params.length === 0) return null;
+  const effective = manualWorkerDefaultsFromAutoConfig(cachedConfig);
+  saveManualWorkerDefaults(effective);
+  syncPerWorkerTunablesFromAutoConfig(cachedConfig);
+  return effective;
 }
 
 export function saveManualWorkerDefaults(defaults: ManualWorkerDefaults): void {
@@ -193,6 +197,7 @@ export function saveManualWorkerDefaults(defaults: ManualWorkerDefaults): void {
 export function syncManualParamDefaultsFromAutoConfig(config: AutoModeConfig): void {
   if (config.params.length === 0) return;
   saveManualWorkerDefaults(manualWorkerDefaultsFromAutoConfig(config));
+  syncPerWorkerTunablesFromAutoConfig(config);
 }
 
 /** @deprecated Use loadManualWorkerDefaults */

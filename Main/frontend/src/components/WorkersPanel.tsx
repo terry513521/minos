@@ -40,6 +40,7 @@ import {
 } from "../utils/candidateAssign";
 import {
   buildDispatchParamIntervals,
+  clampParamInterval,
   defaultParamInterval,
   ParamInterval,
 } from "../utils/paramBounds";
@@ -65,6 +66,7 @@ import {
   previewAssignmentsFromAutoConfig,
 } from "../utils/autoModeSync";
 import { syncManualParamDefaultsFromAutoConfig, ensureManualDefaultsHydrated } from "../utils/manualParamDefaults";
+import { getWorkerTunableDefaults, saveWorkerTunableDefaults } from "../utils/workerTunableStorage";
 import { loadAutoModeState, saveAutoModeState } from "../utils/autoModeStorage";
 import {
   isWorkerJobRunning,
@@ -518,7 +520,12 @@ export function WorkersPanel({
     setAssignments((prev) => {
       const current = prev[workerId];
       if (!current) return prev;
-      return { ...prev, [workerId]: { ...current, ...patch } };
+      const next = { ...current, ...patch };
+      const worker = workers.find((item) => item.id === workerId);
+      if (worker && !next.autoManaged && next.selectedParams.length > 0) {
+        saveWorkerTunableDefaults(worker, next);
+      }
+      return { ...prev, [workerId]: next };
     });
   }
 
@@ -991,6 +998,10 @@ export function WorkersPanel({
         dispatchedAt: result.ok ? new Date().toISOString() : assignment.dispatchedAt ?? null,
       });
       if (result.ok) {
+        const worker = workers.find((item) => item.id === workerId);
+        if (worker) {
+          saveWorkerTunableDefaults(worker, assignment);
+        }
         setBaseConfByWorker((prev) => ({
           ...prev,
           [workerId]: assignment.candidate.base_conf,
@@ -1035,11 +1046,19 @@ export function WorkersPanel({
       return;
     }
 
+    const worker = workers.find((item) => item.id === workerId);
+    const saved = worker
+      ? getWorkerTunableDefaults(worker, assignment.tool)?.paramIntervals[param]
+      : undefined;
+    const interval = saved
+      ? clampParamInterval(assignment.tool, param, saved)
+      : defaultParamInterval(assignment.tool, param, baseValue);
+
     updateAssignment(workerId, {
       selectedParams: [...assignment.selectedParams, param],
       paramIntervals: {
         ...assignment.paramIntervals,
-        [param]: defaultParamInterval(assignment.tool, param, baseValue),
+        [param]: interval,
       },
     });
   }
@@ -1508,6 +1527,7 @@ export function WorkersPanel({
                               ...assignmentParamsForTool(
                                 assignment,
                                 e.target.value as ToolkitOption,
+                                worker,
                               ),
                             })
                           }

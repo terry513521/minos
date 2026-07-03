@@ -1,11 +1,13 @@
 import { AutoModeStatus, CandidatePreview, FindCandidatesResponse, WorkerRecord } from "../api/client";
 import { defaultSelectedParams, listToolOptionKeys } from "../utils/candidateAssign";
 import {
+  applyWorkerTunableDefaults,
+  paramIntervalsForWorker,
+  selectedParamsForWorker,
+} from "../utils/workerTunableStorage";
+import {
   buildSelectedParamIntervals,
   ensureManualDefaultsHydrated,
-  savedDefaultConcurrency,
-  savedDefaultLimitSeconds,
-  savedDefaultTrialCount,
   workerDefaultAlgorithm,
   workerDefaultConcurrency,
   workerDefaultTrialMemoryGb,
@@ -160,24 +162,39 @@ export function createAssignment(
   const tool = (context.tool?.toLowerCase() as ToolkitOption) || DEFAULT_TOOLKIT;
   const resolvedTool = TOOLKIT_OPTIONS.includes(tool) ? tool : DEFAULT_TOOLKIT;
   const keys = listToolOptionKeys(candidate.base_conf, resolvedTool);
-  const selectedParams = defaultSelectedParams(resolvedTool, keys);
+  const workerRef = worker ? { id: worker.id, name: worker.name } : undefined;
+  const fromWorker = workerRef
+    ? selectedParamsForWorker(workerRef, resolvedTool, keys)
+    : [];
+  const selectedParams =
+    fromWorker.length > 0 ? fromWorker : defaultSelectedParams(resolvedTool, keys);
+  const tunableDefaults = applyWorkerTunableDefaults(
+    workerRef,
+    resolvedTool,
+    candidate.base_conf,
+    selectedParams,
+  );
   const workerName = worker?.name?.trim() ?? "";
   return {
     candidate,
     window: resolveAssignmentWindow(candidate, context.window),
     tool: resolvedTool,
-    algorithm: workerName ? workerDefaultAlgorithm(workerName) : DEFAULT_ALGORITHM,
-    selectedParams,
-    paramIntervals: buildSelectedParamIntervals(
-      resolvedTool,
-      candidate.base_conf,
-      selectedParams,
-    ),
-    concurrency: workerName ? workerDefaultConcurrency(workerName) : savedDefaultConcurrency(),
-    limitSeconds: savedDefaultLimitSeconds(),
-    trialThreads: workerName ? workerDefaultTrialThreads(workerName) : DEFAULT_TRIAL_THREADS,
-    trialMemoryGb: workerName ? workerDefaultTrialMemoryGb(workerName) : DEFAULT_TRIAL_MEMORY_GB,
-    trialCount: savedDefaultTrialCount(),
+    algorithm: workerName
+      ? tunableDefaults.algorithm || workerDefaultAlgorithm(workerName)
+      : tunableDefaults.algorithm,
+    selectedParams: tunableDefaults.selectedParams,
+    paramIntervals: tunableDefaults.paramIntervals,
+    concurrency: workerName
+      ? tunableDefaults.concurrency || workerDefaultConcurrency(workerName)
+      : tunableDefaults.concurrency,
+    limitSeconds: tunableDefaults.limitSeconds,
+    trialThreads: workerName
+      ? tunableDefaults.trialThreads || workerDefaultTrialThreads(workerName)
+      : tunableDefaults.trialThreads,
+    trialMemoryGb: workerName
+      ? tunableDefaults.trialMemoryGb || workerDefaultTrialMemoryGb(workerName)
+      : tunableDefaults.trialMemoryGb,
+    trialCount: tunableDefaults.trialCount,
     dispatching: false,
     dispatchError: null,
   };
@@ -186,17 +203,24 @@ export function createAssignment(
 export function assignmentParamsForTool(
   assignment: WorkerAssignment,
   tool: ToolkitOption,
+  worker?: Pick<WorkerRecord, "id" | "name">,
 ): Pick<WorkerAssignment, "tool" | "selectedParams" | "paramIntervals"> {
   const keys = listToolOptionKeys(assignment.candidate.base_conf, tool);
-  const selectedParams = defaultSelectedParams(tool, keys);
+  const workerRef = worker ? { id: worker.id, name: worker.name } : undefined;
+  const fromWorker = workerRef ? selectedParamsForWorker(workerRef, tool, keys) : [];
+  const selectedParams =
+    fromWorker.length > 0 ? fromWorker : defaultSelectedParams(tool, keys);
   return {
     tool,
     selectedParams,
-    paramIntervals: buildSelectedParamIntervals(
-      tool,
-      assignment.candidate.base_conf,
-      selectedParams,
-    ),
+    paramIntervals: workerRef
+      ? paramIntervalsForWorker(
+          workerRef,
+          tool,
+          assignment.candidate.base_conf,
+          selectedParams,
+        )
+      : buildSelectedParamIntervals(tool, assignment.candidate.base_conf, selectedParams),
   };
 }
 
