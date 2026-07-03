@@ -1399,9 +1399,9 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
 }
 
 .modal-panel-auto-tunable {
-  max-width: min(76rem, calc(100vw - 1.5rem));
-  width: min(76rem, calc(100vw - 1.5rem));
-  max-height: min(92vh, 56rem);
+  max-width: min(96rem, calc(100vw - 0.75rem));
+  width: min(96rem, calc(100vw - 0.75rem));
+  max-height: min(94vh, 68rem);
   overflow: auto;
 }
 

@@ -64,6 +64,17 @@ export function AutoModePanel() {
     status.assignments.length > 0 ||
     Boolean(status.last_started_region);
 
+  const showPanel =
+    status.enabled ||
+    status.running ||
+    status.assignments.length > 0 ||
+    status.found_candidates.length > 0 ||
+    Boolean(status.last_started_region);
+
+  if (!showPanel) {
+    return null;
+  }
+
   async function handleRestartSession() {
     if (
       !window.confirm(
@@ -126,11 +137,7 @@ export function AutoModePanel() {
           Auto mode is <strong>off</strong>. Worker optimizations from the last auto start{" "}
           <strong>continue</strong> — use the worker cards below for live scores.
         </p>
-      ) : (
-        <p className="auto-mode-panel-lead">
-          Auto mode is off. Enable it to arm overnight orchestration.
-        </p>
-      )}
+      ) : null}
 
       <div className="auto-mode-section">
         <div className="auto-mode-section-head">
