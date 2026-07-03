@@ -214,6 +214,12 @@ class WorkerDispatchRequest(BaseModel):
     concurrency: int = Field(default=1, ge=1, le=32)
     algorithm: str = "grid"
     limit_seconds: int = Field(default=1800, ge=60, le=86400)
+    adaptive_max_trials: int = Field(
+        default=44,
+        ge=1,
+        le=1000,
+        description="Adaptive search trials after base benchmark (total trials = 1 + this value)",
+    )
     candidate_index: int | None = None
 
 
@@ -314,9 +320,8 @@ class AutoModeConfig(BaseModel):
     worker_names: list[str]
     worker_algorithms: dict[str, str] = Field(default_factory=dict)
     assignment_strategy: str = "score_similarity_composite"
-    algorithm_optuna_ratio: int = 2
-    algorithm_random_ratio: int = 1
     limit_seconds: int
+    adaptive_max_trials: int
     concurrency: int
     find_k: int
     select_k: int

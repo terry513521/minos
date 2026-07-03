@@ -38,9 +38,16 @@ from app.paths import WORKER_ROOT
 logger = logging.getLogger(__name__)
 
 
+def resolve_adaptive_max_trials(request: OptimizeRequest, settings: Settings) -> int:
+    if request.adaptive_max_trials is not None:
+        return max(1, int(request.adaptive_max_trials))
+    return settings.adaptive_max_trials
+
+
 def validate_optimize_request(request: OptimizeRequest, settings: Settings | None = None) -> int:
     """Validate payload and return search space size (no benchmarks)."""
     settings = settings or get_settings()
+    adaptive_max_trials = resolve_adaptive_max_trials(request, settings)
     validate_tool_supported(request.tool)
     algorithm = normalize_algorithm(request.algorithm)
     _parse_limit_seconds(request.limit)
@@ -67,7 +74,7 @@ def validate_optimize_request(request: OptimizeRequest, settings: Settings | Non
         concurrency=concurrency,
         param_split=param_split,
         algorithm=algorithm,
-        adaptive_max_trials=settings.adaptive_max_trials,
+        adaptive_max_trials=adaptive_max_trials,
     )
 
 
@@ -314,6 +321,7 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
     settings = settings or get_settings()
     worker_name = settings.name
     algorithm = normalize_algorithm(request.algorithm)
+    adaptive_max_trials = resolve_adaptive_max_trials(request, settings)
     benchmark_window, source_window = resolve_benchmark_window(
         request.window, settings.benchmark_subwindow_mb, seed=request.job_id
     )
@@ -339,7 +347,7 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
         param_split=use_param_split,
         limit_seconds=limit_seconds,
         algorithm=algorithm,
-        adaptive_max_trials=settings.adaptive_max_trials,
+        adaptive_max_trials=adaptive_max_trials,
         vcf_cache_enabled=True,
         gatk_persistent_container=False,
         benchmark_window=benchmark_window
@@ -439,7 +447,7 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
                 logger.info(
                     "Starting %s search: up to %s trials after base",
                     algorithm,
-                    settings.adaptive_max_trials,
+                    adaptive_max_trials,
                 )
                 _run_adaptive_search(
                     request=job_request,
@@ -447,7 +455,7 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
                     intervals=intervals,
                     algorithm=algorithm,
                     concurrency=concurrency,
-                    max_trials=settings.adaptive_max_trials,
+                    max_trials=adaptive_max_trials,
                     work_root=work_root,
                     settings=settings,
                     timed_out=timed_out,

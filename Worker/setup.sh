@@ -79,9 +79,9 @@ echo
 echo "Tune Worker/.env before the asset step if needed:"
 echo "  WORKER_CHROMOSOMES=chr20,chr21"
 echo "  WORKER_BENCHMARK_HF_REPO=TerryStewart/minos"
-echo "  WORKER_BENCHMARK_SUBWINDOW_MB=3     # random 3M slice inside 5M round (faster search)"
+echo "  WORKER_BENCHMARK_SUBWINDOW_MB=5     # full 5M round (0 = entire dispatched window)"
 echo "  WORKER_TRIAL_THREADS=4                # CPUs per concurrent slot"
-echo "  WORKER_TRIAL_MEMORY_GB=7            # RAM per concurrent slot"
+echo "  WORKER_TRIAL_MEMORY_GB=6            # RAM per concurrent slot"
 echo "  WORKER_VCF_CACHE_ENABLED=true"
 echo "  WORKER_GATK_PERSISTENT_CONTAINER=true"
 echo

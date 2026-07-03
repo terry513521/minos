@@ -9,7 +9,7 @@ from app.schemas import (
     AutoStartRequest,
     AutoStartResponse,
 )
-from app.services.auto_mode import auto_mode_store, collect_best_and_stop, start_auto_mode
+from app.services.auto_mode import auto_mode_store, collect_best_and_stop, restart_auto_mode_session, start_auto_mode
 
 router = APIRouter(prefix="/auto", tags=["auto"])
 
@@ -35,6 +35,11 @@ async def start_auto(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.post("/best", response_model=AutoBestResponse)
+@router.post("/restart", response_model=AutoModeStatus)
+async def restart_auto(db: AsyncSession = Depends(get_db)) -> AutoModeStatus:
+    return await restart_auto_mode_session(db)
+
+
+@router.get("/best", response_model=AutoBestResponse)
 async def export_auto_best(db: AsyncSession = Depends(get_db)) -> AutoBestResponse:
     return await collect_best_and_stop(db)

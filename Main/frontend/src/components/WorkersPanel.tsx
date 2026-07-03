@@ -14,8 +14,16 @@ import { WorkerEndpointsEditor } from "./WorkerEndpointsEditor";
 import {
   ALGORITHM_OPTIONS,
   assignmentParamsForTool,
+  buildDispatchBaseConf,
+  clampTrialMemoryGb,
+  clampTrialThreads,
+  clampTotalTrials,
   createAssignment,
+  adaptiveMaxTrialsFromTotal,
+  DEFAULT_ADAPTIVE_MAX_TRIALS,
+  isAdaptiveAlgorithm,
   limitMinutesToSeconds,
+  normalizeWorkerAssignment,
   secondsToLimitMinutes,
   TOOLKIT_OPTIONS,
   ToolkitOption,
@@ -189,7 +197,12 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [assignments, setAssignments] = useState<Record<string, WorkerAssignment>>(() => {
-    const base = persisted?.assignments ?? {};
+    const base = Object.fromEntries(
+      Object.entries(persisted?.assignments ?? {}).map(([workerId, assignment]) => [
+        workerId,
+        normalizeWorkerAssignment(assignment),
+      ]),
+    );
     if (!initialAutoStatus) return base;
     return { ...base, ...manualAssignmentsFromEndedAuto(initialAutoStatus) };
   });
@@ -577,7 +590,11 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
       const result = await api.dispatchToWorker(workerId, {
         window: assignment.window,
         tool: assignment.tool,
-        base_conf: assignment.candidate.base_conf,
+        base_conf: buildDispatchBaseConf(
+          assignment.candidate.base_conf,
+          assignment.trialThreads,
+          assignment.trialMemoryGb,
+        ),
         params: assignment.selectedParams,
         param_intervals: buildDispatchParamIntervals(
           assignment.tool,
@@ -587,6 +604,9 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
         concurrency: assignment.concurrency,
         algorithm: assignment.algorithm,
         limit_seconds: assignment.limitSeconds,
+        adaptive_max_trials: isAdaptiveAlgorithm(assignment.algorithm)
+          ? adaptiveMaxTrialsFromTotal(assignment.trialCount)
+          : DEFAULT_ADAPTIVE_MAX_TRIALS,
         candidate_index: assignment.candidate.index,
       });
       setDispatchByWorker((prev) => ({ ...prev, [workerId]: result }));
@@ -1115,6 +1135,28 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
                         </select>
                       </label>
 
+                      {isAdaptiveAlgorithm(assignment.algorithm) && (
+                        <label className="worker-assignment-field">
+                          <span className="worker-assignment-label">Trials</span>
+                          <div className="worker-duration-input">
+                            <input
+                              type="number"
+                              min={2}
+                              max={1001}
+                              step={1}
+                              disabled={autoManaged}
+                              value={assignment.trialCount}
+                              onChange={(e) =>
+                                updateAssignment(worker.id, {
+                                  trialCount: clampTotalTrials(Number(e.target.value)),
+                                })
+                              }
+                              aria-label="Total trials including base benchmark"
+                            />
+                          </div>
+                        </label>
+                      )}
+
                       <label className="worker-assignment-field">
                         <span className="worker-assignment-label">Time limit</span>
                         <div className="worker-duration-input">
@@ -1133,6 +1175,47 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
                             aria-label="Time limit in minutes"
                           />
                           <span className="worker-duration-unit">min</span>
+                        </div>
+                      </label>
+
+                      <label className="worker-assignment-field">
+                        <span className="worker-assignment-label">CPUs / trial</span>
+                        <div className="worker-duration-input">
+                          <input
+                            type="number"
+                            min={1}
+                            max={32}
+                            step={1}
+                            disabled={autoManaged}
+                            value={assignment.trialThreads}
+                            onChange={(e) =>
+                              updateAssignment(worker.id, {
+                                trialThreads: clampTrialThreads(Number(e.target.value)),
+                              })
+                            }
+                            aria-label="CPU threads per trial"
+                          />
+                        </div>
+                      </label>
+
+                      <label className="worker-assignment-field">
+                        <span className="worker-assignment-label">RAM (GB) / trial</span>
+                        <div className="worker-duration-input">
+                          <input
+                            type="number"
+                            min={4}
+                            max={128}
+                            step={1}
+                            disabled={autoManaged}
+                            value={assignment.trialMemoryGb}
+                            onChange={(e) =>
+                              updateAssignment(worker.id, {
+                                trialMemoryGb: clampTrialMemoryGb(Number(e.target.value)),
+                              })
+                            }
+                            aria-label="Memory in GB per trial"
+                          />
+                          <span className="worker-duration-unit">GB</span>
                         </div>
                       </label>
 

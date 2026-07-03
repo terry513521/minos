@@ -15,6 +15,10 @@ export const DEFAULT_TOOLKIT: ToolkitOption = "gatk";
 export const DEFAULT_ALGORITHM: AlgorithmOption = "grid";
 export const DEFAULT_LIMIT_SECONDS = 1800;
 export const DEFAULT_LIMIT_MINUTES = 30;
+export const DEFAULT_ADAPTIVE_MAX_TRIALS = 44;
+export const DEFAULT_TOTAL_TRIALS = 45;
+export const DEFAULT_TRIAL_THREADS = 4;
+export const DEFAULT_TRIAL_MEMORY_GB = 6;
 
 export interface WorkerAssignment {
   candidate: CandidatePreview;
@@ -26,6 +30,12 @@ export interface WorkerAssignment {
   paramIntervals: Record<string, ParamInterval>;
   concurrency: number;
   limitSeconds: number;
+  /** GATK Docker CPUs per trial slot (sent as base_conf.threads). */
+  trialThreads: number;
+  /** GATK Docker RAM in GB per trial slot (sent as base_conf.memory_gb). */
+  trialMemoryGb: number;
+  /** Total trials for random/optuna (1 base + search). Ignored for grid. */
+  trialCount: number;
   dispatching: boolean;
   dispatchError: string | null;
   /** ISO timestamp when optimization was last dispatched to this worker. */
@@ -42,6 +52,53 @@ export function limitMinutesToSeconds(minutes: number): number {
   const parsed = Number(minutes);
   if (!Number.isFinite(parsed) || parsed <= 0) return 60;
   return Math.max(60, Math.round(parsed) * 60);
+}
+
+export function isAdaptiveAlgorithm(algorithm: AlgorithmOption | string): boolean {
+  return algorithm === "random" || algorithm === "optuna";
+}
+
+export function clampTotalTrials(value: number): number {
+  const parsed = Math.round(Number(value));
+  if (!Number.isFinite(parsed)) return DEFAULT_TOTAL_TRIALS;
+  return Math.min(1001, Math.max(2, parsed));
+}
+
+export function adaptiveMaxTrialsFromTotal(totalTrials: number): number {
+  return Math.max(1, clampTotalTrials(totalTrials) - 1);
+}
+
+export function clampTrialThreads(value: number): number {
+  const parsed = Math.round(Number(value));
+  if (!Number.isFinite(parsed)) return DEFAULT_TRIAL_THREADS;
+  return Math.min(32, Math.max(1, parsed));
+}
+
+export function clampTrialMemoryGb(value: number): number {
+  const parsed = Math.round(Number(value));
+  if (!Number.isFinite(parsed)) return DEFAULT_TRIAL_MEMORY_GB;
+  return Math.min(128, Math.max(4, parsed));
+}
+
+export function buildDispatchBaseConf(
+  baseConf: Record<string, unknown>,
+  trialThreads: number,
+  trialMemoryGb: number,
+): Record<string, unknown> {
+  return {
+    ...baseConf,
+    threads: clampTrialThreads(trialThreads),
+    memory_gb: clampTrialMemoryGb(trialMemoryGb),
+  };
+}
+
+export function normalizeWorkerAssignment(assignment: WorkerAssignment): WorkerAssignment {
+  return {
+    ...assignment,
+    trialThreads: clampTrialThreads(assignment.trialThreads ?? DEFAULT_TRIAL_THREADS),
+    trialMemoryGb: clampTrialMemoryGb(assignment.trialMemoryGb ?? DEFAULT_TRIAL_MEMORY_GB),
+    trialCount: clampTotalTrials(assignment.trialCount ?? DEFAULT_TOTAL_TRIALS),
+  };
 }
 
 export function buildDefaultParamIntervals(
@@ -90,6 +147,9 @@ export function createAssignment(
     ),
     concurrency: 1,
     limitSeconds: DEFAULT_LIMIT_SECONDS,
+    trialThreads: DEFAULT_TRIAL_THREADS,
+    trialMemoryGb: DEFAULT_TRIAL_MEMORY_GB,
+    trialCount: DEFAULT_TOTAL_TRIALS,
     dispatching: false,
     dispatchError: null,
   };

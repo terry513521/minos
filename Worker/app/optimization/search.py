@@ -185,7 +185,7 @@ def count_search_trials(
     concurrency: int = 1,
     param_split: bool = True,
     algorithm: str = "grid",
-    adaptive_max_trials: int = 30,
+    adaptive_max_trials: int = 44,
 ) -> int:
     """Trials to run: 1 base + search variants (grid, param-split, or adaptive cap)."""
     algo = normalize_algorithm(algorithm)
@@ -256,7 +256,7 @@ def build_optimization_plan(
     param_split: bool,
     limit_seconds: int,
     algorithm: str,
-    adaptive_max_trials: int = 30,
+    adaptive_max_trials: int = 44,
     vcf_cache_enabled: bool = False,
     gatk_persistent_container: bool = False,
     benchmark_window: str | None = None,

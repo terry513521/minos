@@ -42,14 +42,16 @@ WORKER_SELECTION_RULES: tuple[tuple[str, SelectionReason], ...] = (
     ("Big", "most_similar"),
     ("Igno", "best_composite"),
 )
-AUTO_ALGORITHM_OPTUNA_WEIGHT = 2
-AUTO_ALGORITHM_RANDOM_WEIGHT = 1
+AUTO_ALGORITHM = "optuna"
 AUTO_FIND_K = 6
 AUTO_SELECT_K = 3
-AUTO_LIMIT_SECONDS = 45 * 60
+AUTO_LIMIT_SECONDS = 50 * 60
+AUTO_ADAPTIVE_MAX_TRIALS = 44
 AUTO_SCORE_WEIGHT = 0.4
 AUTO_SIMILARITY_WEIGHT = 0.6
 AUTO_CONCURRENCY = 1
+AUTO_TRIAL_THREADS = 4
+AUTO_TRIAL_MEMORY_GB = 6
 AUTO_TOOL = "gatk"
 AUTO_PARAMS = [
     "standard_min_confidence_threshold_for_calling",
@@ -71,7 +73,6 @@ AUTO_PARAM_INTERVALS: dict[str, ParamIntervalSpec] = {
 class SelectedCandidateSlot:
     worker_name: str
     candidate: CandidatePreview
-    algorithm: str
     selection_reason: SelectionReason = "top_score"
 
 
@@ -95,9 +96,8 @@ def auto_mode_config() -> AutoModeConfig:
         worker_names=list(AUTO_WORKER_NAMES),
         worker_algorithms={},
         assignment_strategy=AUTO_ASSIGNMENT_STRATEGY,
-        algorithm_optuna_ratio=AUTO_ALGORITHM_OPTUNA_WEIGHT,
-        algorithm_random_ratio=AUTO_ALGORITHM_RANDOM_WEIGHT,
         limit_seconds=AUTO_LIMIT_SECONDS,
+        adaptive_max_trials=AUTO_ADAPTIVE_MAX_TRIALS,
         concurrency=AUTO_CONCURRENCY,
         find_k=AUTO_FIND_K,
         select_k=AUTO_SELECT_K,
@@ -111,7 +111,6 @@ def _selected_candidate_models(slots: list[SelectedCandidateSlot]) -> list[AutoS
         AutoSelectedCandidate(
             index=slot.candidate.index,
             worker_name=slot.worker_name,
-            algorithm=slot.algorithm,
             selection_reason=slot.selection_reason,
             composite_score=composite_candidate_score(slot.candidate),
             history_score=slot.candidate.history_score,
@@ -131,10 +130,10 @@ class AutoModeStore:
 
     def status(self) -> AutoModeStatus:
         session = self.session
+        _end_session_if_time_limit_reached(session)
         time_remaining_seconds = None
         if session and session.running:
-            elapsed = (datetime.now(timezone.utc) - session.started_at).total_seconds()
-            time_remaining_seconds = max(0, int(AUTO_LIMIT_SECONDS - elapsed))
+            time_remaining_seconds = _session_time_remaining_seconds(session)
         return AutoModeStatus(
             enabled=self.enabled,
             running=bool(session and session.running),
@@ -155,6 +154,12 @@ class AutoModeStore:
     def set_enabled(self, enabled: bool) -> AutoModeStatus:
         """Arm or disarm auto mode. Does not start or stop worker optimizations."""
         self.enabled = enabled
+        return self.status()
+
+    def end_session(self) -> AutoModeStatus:
+        """Clear in-memory auto session so a new /auto/start can run."""
+        self.session = None
+        self.last_started_region = None
         return self.status()
 
 
@@ -279,21 +284,6 @@ async def find_auto_candidate_pool(
     ]
 
 
-def _algorithm_pool(
-    worker_count: int,
-    *,
-    optuna_weight: int = AUTO_ALGORITHM_OPTUNA_WEIGHT,
-    random_weight: int = AUTO_ALGORITHM_RANDOM_WEIGHT,
-) -> list[str]:
-    """Build a shuffled algorithm list with optuna:random ratio (default 2:1)."""
-    if worker_count <= 0:
-        return []
-    total_weight = optuna_weight + random_weight
-    optuna_count = (worker_count * optuna_weight) // total_weight
-    random_count = worker_count - optuna_count
-    return ["optuna"] * optuna_count + ["random"] * random_count
-
-
 def assign_workers_by_metric(
     candidates: list[CandidatePreview],
     worker_names: tuple[str, ...] = AUTO_WORKER_NAMES,
@@ -302,7 +292,6 @@ def assign_workers_by_metric(
     if not candidates or not worker_names:
         return []
 
-    algorithms = _algorithm_pool(len(worker_names))
     score_fns: dict[SelectionReason, Callable[[CandidatePreview], float]] = {
         "top_score": candidate_history_score,
         "most_similar": candidate_similarity_score,
@@ -312,11 +301,7 @@ def assign_workers_by_metric(
     used_indices: set[int] = set()
     slots: list[SelectedCandidateSlot] = []
 
-    for (worker_name, reason), algorithm in zip(
-        WORKER_SELECTION_RULES,
-        algorithms,
-        strict=True,
-    ):
+    for worker_name, reason in WORKER_SELECTION_RULES:
         if worker_name not in worker_names:
             continue
         score_fn = score_fns[reason]
@@ -329,7 +314,6 @@ def assign_workers_by_metric(
             SelectedCandidateSlot(
                 worker_name=worker_name,
                 candidate=pick,
-                algorithm=algorithm,
                 selection_reason=reason,
             )
         )
@@ -375,23 +359,31 @@ def candidate_dispatch_window(candidate: CandidatePreview, fallback: str) -> str
         return fallback
 
 
+def with_trial_resources(base_conf: dict[str, Any]) -> dict[str, Any]:
+    """Attach per-trial Docker CPU/RAM for GATK benchmarks."""
+    merged = dict(base_conf)
+    merged["threads"] = AUTO_TRIAL_THREADS
+    merged["memory_gb"] = AUTO_TRIAL_MEMORY_GB
+    return merged
+
+
 def build_dispatch_request(
     *,
     window: str,
     tool: str,
     base_conf: dict[str, Any],
-    algorithm: str,
     candidate_index: int,
 ) -> WorkerDispatchRequest:
     return WorkerDispatchRequest(
         window=window,
         tool=tool,
-        base_conf=base_conf,
+        base_conf=with_trial_resources(base_conf),
         params=list(AUTO_PARAMS),
         param_intervals=dict(AUTO_PARAM_INTERVALS),
         concurrency=AUTO_CONCURRENCY,
-        algorithm=algorithm,
+        algorithm=AUTO_ALGORITHM,
         limit_seconds=AUTO_LIMIT_SECONDS,
+        adaptive_max_trials=AUTO_ADAPTIVE_MAX_TRIALS,
         candidate_index=candidate_index,
     )
 
@@ -415,6 +407,19 @@ async def stop_all_auto_workers(db: AsyncSession) -> list[dict[str, Any]]:
     return stop_results
 
 
+def _session_time_remaining_seconds(session: AutoSession) -> int:
+    elapsed = (datetime.now(timezone.utc) - session.started_at).total_seconds()
+    return max(0, int(AUTO_LIMIT_SECONDS - elapsed))
+
+
+def _end_session_if_time_limit_reached(session: AutoSession | None) -> None:
+    """Mark session finished when the auto time limit has elapsed."""
+    if session is None or not session.running:
+        return
+    if _session_time_remaining_seconds(session) <= 0:
+        session.running = False
+
+
 async def start_auto_mode(
     db: AsyncSession,
     *,
@@ -423,6 +428,8 @@ async def start_auto_mode(
 ) -> AutoStartResponse:
     if not auto_mode_store.enabled:
         raise ValueError("Auto mode is disabled")
+
+    _end_session_if_time_limit_reached(auto_mode_store.session)
 
     if auto_mode_store.session and auto_mode_store.session.running:
         raise ValueError("Auto mode session already running")
@@ -461,14 +468,13 @@ async def start_auto_mode(
     for slot in selected_slots:
         worker_name = slot.worker_name
         candidate = slot.candidate
-        algorithm = slot.algorithm
+        algorithm = AUTO_ALGORITHM
         worker = workers[worker_name]
         dispatch_window = candidate_dispatch_window(candidate, window)
         dispatch_body = build_dispatch_request(
             window=dispatch_window,
             tool=tool,
             base_conf=candidate.base_conf,
-            algorithm=algorithm,
             candidate_index=candidate.index,
         )
         response = await dispatch_to_worker(db, worker.id, dispatch_body)
@@ -481,12 +487,13 @@ async def start_auto_mode(
             composite_score=composite_candidate_score(candidate),
             history_score=candidate.history_score,
             similarity=candidate.similarity,
-            base_conf=candidate.base_conf,
+            base_conf=with_trial_resources(candidate.base_conf),
             window=dispatch_window,
             params=list(AUTO_PARAMS),
             param_intervals=dict(AUTO_PARAM_INTERVALS),
             concurrency=AUTO_CONCURRENCY,
             limit_seconds=AUTO_LIMIT_SECONDS,
+        adaptive_max_trials=AUTO_ADAPTIVE_MAX_TRIALS,
             dispatch_ok=response.ok,
             dispatch_error=response.error,
             job_id=(response.result or {}).get("job_id") if response.result else None,
@@ -527,6 +534,14 @@ async def start_auto_mode(
             else "Auto mode failed: no workers accepted dispatch"
         ),
     )
+
+
+async def restart_auto_mode_session(db: AsyncSession) -> AutoModeStatus:
+    """Stop auto workers and clear session state so POST /auto/start can run again."""
+    await stop_all_auto_workers(db)
+    auto_mode_store.end_session()
+    await set_control_plane_setting(db, LAST_AUTO_START_REGION_KEY, None)
+    return auto_mode_store.status()
 
 
 async def collect_best_and_stop(db: AsyncSession) -> AutoBestResponse:

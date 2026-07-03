@@ -2,11 +2,11 @@ from datetime import datetime, timezone
 
 from app.schemas import AutoDispatchAssignment, CandidatePreview
 from app.services.auto_mode import (
+    AUTO_ALGORITHM,
     AUTO_SCORE_WEIGHT,
     AUTO_SIMILARITY_WEIGHT,
     AutoModeStore,
     AutoSession,
-    _algorithm_pool,
     assign_workers_by_metric,
     build_diverse_candidate_pool,
     candidate_dispatch_window,
@@ -42,12 +42,6 @@ def test_composite_candidate_score():
     )
     expected = AUTO_SCORE_WEIGHT * 0.8 + AUTO_SIMILARITY_WEIGHT * 0.5
     assert composite_candidate_score(candidate) == expected
-
-
-def test_algorithm_pool_uses_two_to_one_ratio():
-    assert _algorithm_pool(3) == ["optuna", "optuna", "random"]
-    assert _algorithm_pool(3).count("optuna") == 2
-    assert _algorithm_pool(3).count("random") == 1
 
 
 def test_build_diverse_candidate_pool_prioritizes_score_similarity_composite():
@@ -118,9 +112,24 @@ def test_assign_workers_by_metric_maps_vm_big_igno():
     assert slots[1].selection_reason == "most_similar"
     assert slots[1].candidate.history_id == "high-sim"
     assert slots[2].selection_reason == "best_composite"
-    assert slots[2].algorithm == "random"
-    assert slots[0].algorithm == "optuna"
-    assert slots[1].algorithm == "optuna"
+
+
+def test_auto_dispatch_uses_fixed_algorithm():
+    from app.services.auto_mode import build_dispatch_request, with_trial_resources
+
+    body = build_dispatch_request(
+        window="chr21:1-100",
+        tool="gatk",
+        base_conf={"gatk_options": {}},
+        candidate_index=0,
+    )
+    assert body.algorithm == AUTO_ALGORITHM
+    assert body.base_conf["threads"] == 4
+    assert body.base_conf["memory_gb"] == 6
+
+    merged = with_trial_resources({"gatk_options": {"x": 1}, "threads": 8})
+    assert merged["threads"] == 4
+    assert merged["memory_gb"] == 7
 
 
 def test_disable_auto_mode_keeps_session_running():
@@ -169,6 +178,25 @@ def test_auto_mode_status_includes_last_started_region():
     store = AutoModeStore()
     store.last_started_region = "chr21:35444092-40444092"
     assert store.status().last_started_region == "chr21:35444092-40444092"
+
+
+def test_end_session_clears_running_session():
+    store = AutoModeStore()
+    store.enabled = True
+    store.session = AutoSession(
+        region="chr21:1-100",
+        tool="gatk",
+        started_at=datetime.now(timezone.utc),
+        running=True,
+    )
+    store.last_started_region = "chr21:1-100"
+
+    status = store.end_session()
+
+    assert store.session is None
+    assert store.last_started_region is None
+    assert status.running is False
+    assert status.assignments == []
 
 
 def test_skipped_start_response_shape():

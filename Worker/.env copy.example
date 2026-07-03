@@ -11,14 +11,15 @@ WORKER_CHROMOSOMES=chr20,chr21
 WORKER_PARAM_SPLIT_CONCURRENCY=true
 
 # random / optuna: trials after base benchmark (grid uses full search space instead).
-WORKER_ADAPTIVE_MAX_TRIALS=30
+# Main dispatch can override this per job via adaptive_max_trials in the /optimize payload.
+WORKER_ADAPTIVE_MAX_TRIALS=44
 
-# Faster benchmark: random N Mb slice inside dispatched round (3 = 3M inside 5M round).
-WORKER_BENCHMARK_SUBWINDOW_MB=3
+# Benchmark region: 5 = full 5M round (original size); 0 = entire dispatched window.
+WORKER_BENCHMARK_SUBWINDOW_MB=5
 
 # Per concurrent trial slot (GATK Docker --cpus / --memory).
 WORKER_TRIAL_THREADS=4
-WORKER_TRIAL_MEMORY_GB=7
+WORKER_TRIAL_MEMORY_GB=6
 
 # Layout (created by setup / first benchmark):
 #   datasets/reference/{chr}/{chr}.fa + .fai + .sdf

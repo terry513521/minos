@@ -19,6 +19,8 @@ export function AutoModePanel() {
     () => persistedAutoRef.current?.status ?? null,
   );
   const [error, setError] = useState<string | null>(null);
+  const [restarting, setRestarting] = useState(false);
+  const [restartMessage, setRestartMessage] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     api
@@ -52,6 +54,35 @@ export function AutoModePanel() {
   const paramIntervals = paramIntervalsFromAutoConfig(config);
   const selectionByIndex = selectionSlotsByIndex(status.selected_candidates);
   const foundCount = status.found_candidates.length || status.candidates_found;
+  const canRestartSession =
+    status.enabled ||
+    status.running ||
+    status.assignments.length > 0 ||
+    Boolean(status.last_started_region);
+
+  async function handleRestartSession() {
+    if (
+      !window.confirm(
+        "Stop all auto workers and clear the session? POST /auto/start will work again.",
+      )
+    ) {
+      return;
+    }
+    setRestarting(true);
+    setRestartMessage(null);
+    setError(null);
+    try {
+      const next = await api.restartAutoMode();
+      saveAutoModeState(next);
+      setStatus(next);
+      setRestartMessage("Session cleared — you can call POST /api/v1/auto/start again.");
+      window.dispatchEvent(new Event(AUTO_MODE_CHANGED_EVENT));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to restart auto mode");
+    } finally {
+      setRestarting(false);
+    }
+  }
 
   return (
     <div className={`auto-mode-panel${status.enabled ? " auto-mode-panel--on" : ""}`}>
@@ -63,14 +94,28 @@ export function AutoModePanel() {
           </span>
           {status.running && <span className="badge running">Running</span>}
         </div>
+        {canRestartSession && (
+          <button
+            type="button"
+            className="button ghost auto-mode-restart-btn"
+            onClick={() => void handleRestartSession()}
+            disabled={restarting}
+          >
+            {restarting ? "Restarting…" : "Restart session"}
+          </button>
+        )}
       </div>
+
+      {error && <div className="alert error">{error}</div>}
+      {restartMessage && <div className="alert ok">{restartMessage}</div>}
 
       {status.enabled ? (
         <p className="auto-mode-panel-lead">
           Overnight orchestration for <strong>VM</strong>, <strong>Big</strong>, and{" "}
           <strong>Igno</strong>. Workers run only after{" "}
           <code>POST /api/v1/auto/start</code> with the round region. Stop and export via{" "}
-          <code>POST /api/v1/auto/best</code>.
+          <code>GET /api/v1/auto/best</code>. If start returns &quot;session already running&quot;, use{" "}
+          <strong>Restart session</strong>.
         </p>
       ) : status.running ? (
         <p className="auto-mode-panel-lead">
@@ -90,8 +135,6 @@ export function AutoModePanel() {
               <span className="auto-mode-card-label">Selection</span>
               <p>
                 Find {config.find_k} candidates → VM top score, Big most similar, Igno best composite.
-                Algorithms: {config.algorithm_optuna_ratio}:{config.algorithm_random_ratio}{" "}
-                optuna:random.
               </p>
               {status.region && (
                 <p>
@@ -109,6 +152,7 @@ export function AutoModePanel() {
               <span className="auto-mode-card-label">Run settings</span>
               <p>Tool: {config.tool}</p>
               <p>Time limit: {Math.round(config.limit_seconds / 60)} min</p>
+              <p>Trials: {config.adaptive_max_trials + 1} (1 base + {config.adaptive_max_trials} search)</p>
               {status.running && status.started_at && (
                 <p className="auto-mode-limit-row">
                   <LimitCountdownBadge
@@ -140,47 +184,6 @@ export function AutoModePanel() {
                       <td>{formatParamInterval(paramIntervals[param] ?? {})}</td>
                     </tr>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div className="auto-mode-section">
-            <span className="auto-mode-section-title">Algorithm distribution</span>
-            <div className="auto-mode-worker-table-wrap">
-              <table className="auto-mode-param-table">
-                <thead>
-                  <tr>
-                    <th>Setting</th>
-                    <th>Value</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>Assignment</td>
-                    <td>VM top score · Big most similar · Igno best composite</td>
-                  </tr>
-                  <tr>
-                    <td>Ratio</td>
-                    <td>
-                      {config.algorithm_optuna_ratio}:{config.algorithm_random_ratio} optuna:random
-                    </td>
-                  </tr>
-                  {status.assignments.length > 0 ? (
-                    status.assignments.map((item) => (
-                      <tr key={item.worker_id}>
-                        <td>{item.worker_name}</td>
-                        <td><code>{item.algorithm}</code></td>
-                      </tr>
-                    ))
-                  ) : (
-                    config.worker_names.map((name) => (
-                      <tr key={name}>
-                        <td>{name}</td>
-                        <td className="auto-mode-muted">assigned at start</td>
-                      </tr>
-                    ))
-                  )}
                 </tbody>
               </table>
             </div>
@@ -218,7 +221,6 @@ export function AutoModePanel() {
                       <th>Worker</th>
                       <th>Candidate</th>
                       <th>Region</th>
-                      <th>Algorithm</th>
                       <th>Dispatch</th>
                     </tr>
                   </thead>
@@ -230,7 +232,6 @@ export function AutoModePanel() {
                         <td>
                           {item.window ? <code>{item.window}</code> : "—"}
                         </td>
-                        <td><code>{item.algorithm}</code></td>
                         <td>
                           {item.dispatch_ok ? (
                             <span className="chip chip-ok">accepted</span>
@@ -296,13 +297,12 @@ function AutoModeFoundCandidateCard({
         <div className="auto-mode-found-selections">
           {selectionSlots.map((slot) => (
             <div
-              key={`${slot.worker_name ?? "worker"}-${slot.algorithm ?? "algo"}`}
+              key={`${slot.worker_name ?? "worker"}-${slot.selection_reason ?? "pick"}`}
               className="auto-mode-found-selection-row"
             >
               {slot.worker_name && (
                 <span className="chip chip-accent">{slot.worker_name}</span>
               )}
-              {slot.algorithm && <code>{slot.algorithm}</code>}
             </div>
           ))}
         </div>
