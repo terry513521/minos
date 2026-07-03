@@ -1,5 +1,7 @@
 """Shared default configs (no service imports)."""
 
+MAX_TRIAL_THREADS = 100
+
 DEFAULT_GATK_CONF = {
     "gatk_options": {
         "pcr_indel_model": "NONE",

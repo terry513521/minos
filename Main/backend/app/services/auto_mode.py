@@ -26,7 +26,7 @@ from app.schemas import (
 from app.selector import parse_window
 from app.services.candidate_finder import load_history_entries, scored_pool_to_previews
 from app.engine.candidate_finder import CandidateFinderEngine
-from app.defaults import default_tool_conf
+from app.defaults import default_tool_conf, MAX_TRIAL_THREADS
 from app.services.control_plane_settings import (
     AUTO_MODE_TUNABLE_CONFIG_KEY,
     LAST_AUTO_START_REGION_KEY,
@@ -54,7 +54,6 @@ AUTO_SIMILARITY_WEIGHT = 0.6
 AUTO_CONCURRENCY = 1
 AUTO_TRIAL_THREADS = 4
 AUTO_TRIAL_MEMORY_GB = 6
-MAX_TRIAL_THREADS = 100
 AUTO_TOOL = "gatk"
 AUTO_PARAMS = [
     "standard_min_confidence_threshold_for_calling",

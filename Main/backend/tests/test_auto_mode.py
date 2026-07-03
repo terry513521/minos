@@ -146,6 +146,17 @@ def test_auto_dispatch_uses_configured_algorithm():
     assert custom["memory_gb"] == 12
 
 
+def test_worker_trial_threads_limit_is_100():
+    from app.defaults import MAX_TRIAL_THREADS
+    from app.services.auto_mode import clamp_trial_threads, validate_worker_trial_resources
+
+    assert MAX_TRIAL_THREADS == 100
+    assert clamp_trial_threads(64) == 64
+    assert clamp_trial_threads(100) == 100
+    assert clamp_trial_threads(101) == 100
+    validate_worker_trial_resources({"VM": 64}, {"VM": 8}, ["VM"])
+
+
 def test_update_auto_tunable_config_persists():
     from unittest.mock import AsyncMock, patch
 
