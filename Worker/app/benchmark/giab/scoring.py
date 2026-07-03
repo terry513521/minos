@@ -55,8 +55,9 @@ def score_giab(
     chrom: str,
     *,
     use_metrics_cache: bool = True,
-) -> Dict[str, float]:
+) -> Optional[Dict[str, float]]:
     ensure_repo_imports()
+    from base.genomics_config import GENOMICS_CONFIG
     from utils.scoring import AdvancedScorer, HappyScorer
 
     if use_metrics_cache:
@@ -65,7 +66,9 @@ def score_giab(
             return dict(cached)
 
     sdf = ensure_sdf(chrom)
-    metrics = HappyScorer().score_vcf(
+    metrics = HappyScorer(
+        docker_image=GENOMICS_CONFIG.get("happy_docker_image"),
+    ).score_vcf(
         truth_vcf=str(truth_vcf),
         query_vcf=str(query_vcf),
         reference_fasta=str(ref),
@@ -74,7 +77,7 @@ def score_giab(
         reference_sdf=str(sdf),
     )
     if not metrics:
-        return {"advanced_score": 0.0, "f1_snp": 0.0, "f1_indel": 0.0}
+        return None
     score = AdvancedScorer.compute_advanced_score(metrics)
     metrics["advanced_score"] = score
     if use_metrics_cache:
