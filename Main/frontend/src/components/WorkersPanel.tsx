@@ -50,7 +50,9 @@ import { ConfManualEditor } from "./ConfManualEditor";
 import { ConfTooltip } from "./ConfTooltip";
 import {
   clearWorkerPanelEntry,
+  clearAllWorkerPanelAssignments,
   clearDismissedWorkerAssignments,
+  dismissAllWorkerAssignments,
   dismissWorkerAssignment,
   loadDismissedWorkerAssignments,
   loadWorkerPanelState,
@@ -544,6 +546,22 @@ export function WorkersPanel({
     clearWorkerPanelEntry(workerId);
   }
 
+  function clearAllAssignments() {
+    const workerIds = workers.map((worker) => worker.id);
+    if (workerIds.length === 0) return;
+
+    dismissAllWorkerAssignments(workerIds);
+    setDismissedWorkers(new Set(workerIds));
+    setAssignments({});
+    setDispatchByWorker({});
+    setBaseConfByWorker({});
+    setAutoAssignmentsByWorker({});
+    clearAllWorkerPanelAssignments();
+  }
+
+  const clearAllAssignmentsRef = useRef(clearAllAssignments);
+  clearAllAssignmentsRef.current = clearAllAssignments;
+
   const assignCandidateToWorker = useCallback(
     (workerId: string, candidateIndex: number): boolean => {
       if (!candidateContext) return false;
@@ -825,6 +843,7 @@ export function WorkersPanel({
     }
 
     function onStopAll() {
+      clearAllAssignmentsRef.current();
       void waitForAllWorkersIdle();
     }
     window.addEventListener(WORKERS_STOP_ALL_EVENT, onStopAll);

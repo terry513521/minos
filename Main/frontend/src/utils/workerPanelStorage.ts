@@ -106,6 +106,21 @@ export function dismissWorkerAssignment(workerId: string): void {
   saveDismissedWorkerAssignments(next);
 }
 
+export function dismissAllWorkerAssignments(workerIds: string[]): void {
+  saveDismissedWorkerAssignments(new Set(workerIds));
+}
+
+export function clearAllWorkerPanelAssignments(): void {
+  const current = loadWorkerPanelState();
+  if (!current) return;
+  saveWorkerPanelState({
+    ...current,
+    assignments: {},
+    baseConfByWorker: {},
+    dispatchByWorker: {},
+  });
+}
+
 export function restoreWorkerAssignment(workerId: string): void {
   const next = loadDismissedWorkerAssignments();
   next.delete(workerId);
