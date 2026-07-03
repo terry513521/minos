@@ -583,6 +583,7 @@ code, .input-mono {
 }
 .chip-accent { color: var(--accent); border-color: rgba(167, 139, 250, 0.3); background: var(--accent-dim); }
 .chip-warn { color: var(--warn); border-color: rgba(251, 191, 36, 0.32); }
+.chip-pending { color: #93c5fd; border-color: rgba(147, 197, 253, 0.35); }
 .chip-muted { color: var(--muted); }
 .metric-pill {
   font-size: 0.78rem;

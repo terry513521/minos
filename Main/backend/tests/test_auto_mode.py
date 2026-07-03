@@ -280,3 +280,95 @@ def test_skipped_start_response_shape():
     assert response.skipped is True
     assert response.ok is False
     assert response.workers_dispatched == 0
+
+
+def test_retry_failed_auto_dispatches_succeeds_when_worker_recovers():
+    import asyncio
+    from unittest.mock import AsyncMock, patch
+
+    from app.schemas import WorkerDispatchResponse
+    from app.services.auto_mode import (
+        AutoSession,
+        auto_mode_store,
+        retry_failed_auto_dispatches,
+    )
+
+    auto_mode_store.session = AutoSession(
+        region="chr21:1-100",
+        tool="gatk",
+        started_at=datetime.now(timezone.utc),
+        assignments=[
+            AutoDispatchAssignment(
+                worker_id="w1",
+                worker_name="VM",
+                algorithm="optuna",
+                candidate_index=0,
+                composite_score=0.5,
+                base_conf={"threads": 4, "memory_gb": 6},
+                window="chr21:1-100",
+                params=["standard_min_confidence_threshold_for_calling"],
+                dispatch_ok=False,
+                dispatch_error="connection refused",
+            )
+        ],
+        running=True,
+    )
+    auto_mode_store.last_started_region = None
+
+    mock_response = WorkerDispatchResponse(
+        worker_id="w1",
+        ok=True,
+        result={"job_id": "job-123", "status": "accepted"},
+    )
+
+    async def _run():
+        with patch(
+            "app.services.auto_mode.dispatch_to_worker",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ):
+            succeeded = await retry_failed_auto_dispatches(AsyncMock())
+            assert succeeded == 1
+            assignment = auto_mode_store.session.assignments[0]
+            assert assignment.dispatch_ok is True
+            assert assignment.dispatch_error is None
+            assert assignment.job_id == "job-123"
+            assert auto_mode_store.last_started_region == "chr21:1-100"
+
+    asyncio.run(_run())
+
+
+def test_retry_failed_auto_dispatches_skips_when_session_not_running():
+    import asyncio
+    from unittest.mock import AsyncMock, patch
+
+    from app.services.auto_mode import AutoSession, auto_mode_store, retry_failed_auto_dispatches
+
+    auto_mode_store.session = AutoSession(
+        region="chr21:1-100",
+        tool="gatk",
+        started_at=datetime.now(timezone.utc),
+        assignments=[
+            AutoDispatchAssignment(
+                worker_id="w1",
+                worker_name="VM",
+                algorithm="optuna",
+                candidate_index=0,
+                composite_score=0.5,
+                dispatch_ok=False,
+                dispatch_error="down",
+            )
+        ],
+        running=False,
+    )
+
+    async def _run():
+        with patch(
+            "app.services.auto_mode.dispatch_to_worker",
+            new_callable=AsyncMock,
+        ) as mock_dispatch:
+            succeeded = await retry_failed_auto_dispatches(AsyncMock())
+            assert succeeded == 0
+            mock_dispatch.assert_not_called()
+
+    asyncio.run(_run())

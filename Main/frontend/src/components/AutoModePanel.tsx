@@ -318,6 +318,17 @@ export function AutoModePanel({ embedded = false }: AutoModePanelProps) {
                         <td>
                           {item.dispatch_ok ? (
                             <span className="chip chip-ok">accepted</span>
+                          ) : status.running ? (
+                            <span
+                              className="chip chip-pending"
+                              title={
+                                item.dispatch_error
+                                  ? `${item.dispatch_error} — retrying while session runs`
+                                  : "Waiting for worker — retrying while session runs"
+                              }
+                            >
+                              pending
+                            </span>
                           ) : (
                             <span className="chip chip-warn" title={item.dispatch_error ?? undefined}>
                               failed

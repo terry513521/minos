@@ -15,6 +15,7 @@ from app.services.auto_mode import (
     collect_best_and_stop,
     get_registered_worker_names,
     restart_auto_mode_session,
+    retry_failed_auto_dispatches,
     set_auto_mode_enabled,
     start_auto_mode,
     update_auto_mode_tunable_config,
@@ -26,6 +27,7 @@ router = APIRouter(prefix="/auto", tags=["auto"])
 @router.get("/mode", response_model=AutoModeStatus)
 async def get_auto_mode(db: AsyncSession = Depends(get_db)) -> AutoModeStatus:
     worker_names = await get_registered_worker_names(db)
+    await retry_failed_auto_dispatches(db)
     return auto_mode_store.status(worker_names)
 
 

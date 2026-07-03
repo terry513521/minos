@@ -898,6 +898,81 @@ def build_dispatch_request(
     )
 
 
+def _dispatch_body_from_assignment(
+    assignment: AutoDispatchAssignment,
+    *,
+    tool: str,
+) -> WorkerDispatchRequest:
+    """Rebuild a worker dispatch payload from a stored auto assignment."""
+    params = list(assignment.params) if assignment.params else effective_auto_params()
+    intervals = (
+        dict(assignment.param_intervals)
+        if assignment.param_intervals
+        else effective_auto_param_intervals()
+    )
+    return WorkerDispatchRequest(
+        window=(assignment.window or "").strip(),
+        tool=tool.strip(),
+        base_conf=dict(assignment.base_conf),
+        params=params,
+        param_intervals=intervals,
+        concurrency=assignment.concurrency,
+        algorithm=assignment.algorithm,
+        limit_seconds=assignment.limit_seconds,
+        adaptive_max_trials=assignment.adaptive_max_trials,
+        candidate_index=assignment.candidate_index,
+    )
+
+
+def _assignment_after_dispatch(
+    assignment: AutoDispatchAssignment,
+    response,
+) -> AutoDispatchAssignment:
+    return assignment.model_copy(
+        update={
+            "dispatch_ok": response.ok,
+            "dispatch_error": None if response.ok else response.error,
+            "job_id": (
+                (response.result or {}).get("job_id")
+                if response.ok and response.result
+                else assignment.job_id
+            ),
+        }
+    )
+
+
+async def retry_failed_auto_dispatches(db: AsyncSession) -> int:
+    """Re-dispatch workers that rejected the initial auto start (e.g. worker was down)."""
+    session = auto_mode_store.session
+    if session is None or not session.running:
+        return 0
+
+    _end_session_if_time_limit_reached(session)
+    if not session.running:
+        return 0
+
+    pending_indexes = [
+        index for index, assignment in enumerate(session.assignments) if not assignment.dispatch_ok
+    ]
+    if not pending_indexes:
+        return 0
+
+    succeeded = 0
+    for index in pending_indexes:
+        assignment = session.assignments[index]
+        body = _dispatch_body_from_assignment(assignment, tool=session.tool)
+        response = await dispatch_to_worker(db, assignment.worker_id, body)
+        session.assignments[index] = _assignment_after_dispatch(assignment, response)
+        if response.ok:
+            succeeded += 1
+
+    if succeeded > 0 and auto_mode_store.last_started_region is None:
+        auto_mode_store.last_started_region = session.region
+        await set_control_plane_setting(db, LAST_AUTO_START_REGION_KEY, session.region)
+
+    return succeeded
+
+
 async def stop_all_auto_workers(db: AsyncSession) -> list[dict[str, Any]]:
     """Stop optimization on every registered worker."""
     return await stop_all_workers_optimization(db)
@@ -1015,10 +1090,11 @@ async def start_auto_mode(
             concurrency=concurrency,
             limit_seconds=limit_seconds,
             adaptive_max_trials=adaptive_max_trials,
-            dispatch_ok=response.ok,
-            dispatch_error=response.error,
-            job_id=(response.result or {}).get("job_id") if response.result else None,
+            dispatch_ok=False,
+            dispatch_error=None,
+            job_id=None,
         )
+        assignment = _assignment_after_dispatch(assignment, response)
         assignments.append(assignment)
         dispatch_results.append(assignment)
 
