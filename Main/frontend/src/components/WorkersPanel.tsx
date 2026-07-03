@@ -44,7 +44,7 @@ import {
   ParamInterval,
 } from "../utils/paramBounds";
 import { parseToolOptionValue, setToolOption } from "../utils/confEdit";
-import { WORKERS_CHANGED_EVENT, WORKERS_CLEAR_ALL_EVENT, WORKERS_STOP_ALL_EVENT, WORKERS_START_ALL_EVENT, WORKERS_START_ALL_RESULT_EVENT } from "./AddWorkerModal";
+import { WORKERS_CHANGED_EVENT, WORKERS_CHECK_ALL_HEALTH_EVENT, WORKERS_CHECK_ALL_HEALTH_RESULT_EVENT, WORKERS_CLEAR_ALL_EVENT, WORKERS_STOP_ALL_EVENT, WORKERS_START_ALL_EVENT, WORKERS_START_ALL_RESULT_EVENT } from "./AddWorkerModal";
 import { ConfParamPicker } from "./ConfParamPicker";
 import { ConfManualEditor } from "./ConfManualEditor";
 import { ConfTooltip } from "./ConfTooltip";
@@ -895,10 +895,64 @@ export function WorkersPanel({
     }
     window.addEventListener(WORKERS_START_ALL_EVENT, onStartAllEvent);
 
+    async function onCheckAllHealth() {
+      const workerList = workers;
+      if (workerList.length === 0) {
+        window.dispatchEvent(
+          new CustomEvent(WORKERS_CHECK_ALL_HEALTH_RESULT_EVENT, {
+            detail: { total: 0, ok: 0, failed: 0 },
+          }),
+        );
+        return;
+      }
+
+      setHealthByWorker((prev) => ({
+        ...prev,
+        ...Object.fromEntries(workerList.map((worker) => [worker.id, "loading" as const])),
+      }));
+
+      let ok = 0;
+      let failed = 0;
+      await Promise.all(
+        workerList.map(async (worker) => {
+          try {
+            const result = await api.checkWorkerHealth(worker.id);
+            setHealthByWorker((prev) => ({ ...prev, [worker.id]: result }));
+            if (result.ok) ok += 1;
+            else failed += 1;
+          } catch (err) {
+            failed += 1;
+            setHealthByWorker((prev) => ({
+              ...prev,
+              [worker.id]: {
+                worker_id: worker.id,
+                ok: false,
+                status_code: null,
+                health: null,
+                error: err instanceof Error ? err.message : "Health check failed",
+              },
+            }));
+          }
+        }),
+      );
+
+      window.dispatchEvent(
+        new CustomEvent(WORKERS_CHECK_ALL_HEALTH_RESULT_EVENT, {
+          detail: { total: workerList.length, ok, failed },
+        }),
+      );
+    }
+
+    function onCheckAllHealthEvent() {
+      void onCheckAllHealth();
+    }
+    window.addEventListener(WORKERS_CHECK_ALL_HEALTH_EVENT, onCheckAllHealthEvent);
+
     return () => {
       window.removeEventListener(WORKERS_STOP_ALL_EVENT, onStopAll);
       window.removeEventListener(WORKERS_CLEAR_ALL_EVENT, onClearAll);
       window.removeEventListener(WORKERS_START_ALL_EVENT, onStartAllEvent);
+      window.removeEventListener(WORKERS_CHECK_ALL_HEALTH_EVENT, onCheckAllHealthEvent);
     };
   }, [workers]);
 

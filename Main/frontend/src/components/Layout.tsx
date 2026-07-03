@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { api, AutoModeStatus } from "../api/client";
-import { AddWorkerModal, WORKERS_CHANGED_EVENT, WORKERS_CLEAR_ALL_EVENT, WORKERS_START_ALL_EVENT, WORKERS_START_ALL_RESULT_EVENT, WORKERS_STOP_ALL_EVENT, WorkersStartAllResultDetail } from "./AddWorkerModal";
+import { AddWorkerModal, WORKERS_CHANGED_EVENT, WORKERS_CHECK_ALL_HEALTH_EVENT, WORKERS_CHECK_ALL_HEALTH_RESULT_EVENT, WORKERS_CLEAR_ALL_EVENT, WORKERS_START_ALL_EVENT, WORKERS_START_ALL_RESULT_EVENT, WORKERS_STOP_ALL_EVENT, WorkersCheckAllHealthResultDetail, WorkersStartAllResultDetail } from "./AddWorkerModal";
 import { AUTO_MODE_CHANGED_EVENT } from "./AutoModePanel";
 import { AutoModeTunableEditor } from "./AutoModeTunableEditor";
 import { saveAutoModeState } from "../utils/autoModeStorage";
@@ -31,6 +31,7 @@ export function Layout() {
   const [autoRestarting, setAutoRestarting] = useState(false);
   const [stoppingAllWorkers, setStoppingAllWorkers] = useState(false);
   const [startingAllWorkers, setStartingAllWorkers] = useState(false);
+  const [checkingAllWorkers, setCheckingAllWorkers] = useState(false);
   const [autoMessage, setAutoMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -146,6 +147,32 @@ export function Layout() {
     window.addEventListener(WORKERS_START_ALL_RESULT_EVENT, onStartAllResult);
     return () => window.removeEventListener(WORKERS_START_ALL_RESULT_EVENT, onStartAllResult);
   }, []);
+
+  useEffect(() => {
+    function onCheckAllHealthResult(event: Event) {
+      const detail = (event as CustomEvent<WorkersCheckAllHealthResultDetail>).detail;
+      setCheckingAllWorkers(false);
+      if (!detail) return;
+      if (detail.total === 0) {
+        setAutoMessage("No workers registered.");
+      } else if (detail.failed === 0) {
+        setAutoMessage(`All ${detail.ok} worker(s) passed health check.`);
+      } else {
+        setAutoMessage(
+          `Health check: ${detail.ok}/${detail.total} passed, ${detail.failed} failed.`,
+        );
+      }
+    }
+    window.addEventListener(WORKERS_CHECK_ALL_HEALTH_RESULT_EVENT, onCheckAllHealthResult);
+    return () =>
+      window.removeEventListener(WORKERS_CHECK_ALL_HEALTH_RESULT_EVENT, onCheckAllHealthResult);
+  }, []);
+
+  function handleCheckAllWorkers() {
+    setCheckingAllWorkers(true);
+    setAutoMessage(null);
+    window.dispatchEvent(new Event(WORKERS_CHECK_ALL_HEALTH_EVENT));
+  }
 
   function handleClearAllWorkers() {
     if (
@@ -267,9 +294,25 @@ export function Layout() {
           <div className="topbar-worker-bulk">
             <button
               type="button"
+              className="button ghost topbar-check-all"
+              onClick={handleCheckAllWorkers}
+              disabled={
+                checkingAllWorkers ||
+                startingAllWorkers ||
+                stoppingAllWorkers ||
+                autoBusy ||
+                autoRestarting
+              }
+              title="Run health check on every registered worker"
+            >
+              {checkingAllWorkers ? "Checking…" : "Check all"}
+            </button>
+            <button
+              type="button"
               className="button ghost topbar-start-all"
               onClick={() => void handleStartAllWorkers()}
               disabled={
+                checkingAllWorkers ||
                 startingAllWorkers ||
                 stoppingAllWorkers ||
                 autoBusy ||
@@ -288,7 +331,13 @@ export function Layout() {
               type="button"
               className="button ghost topbar-clear-all"
               onClick={handleClearAllWorkers}
-              disabled={startingAllWorkers || stoppingAllWorkers || autoBusy || autoRestarting}
+              disabled={
+                checkingAllWorkers ||
+                startingAllWorkers ||
+                stoppingAllWorkers ||
+                autoBusy ||
+                autoRestarting
+              }
               title="Clear candidate assignments on every worker"
             >
               Clear all
@@ -297,7 +346,13 @@ export function Layout() {
               type="button"
               className="button ghost topbar-stop-all"
               onClick={() => void handleStopAllWorkers()}
-              disabled={stoppingAllWorkers || startingAllWorkers || autoBusy || autoRestarting}
+              disabled={
+                checkingAllWorkers ||
+                stoppingAllWorkers ||
+                startingAllWorkers ||
+                autoBusy ||
+                autoRestarting
+              }
               title="Stop optimization on every registered worker"
             >
               {stoppingAllWorkers ? "Stopping…" : "Stop all"}
@@ -307,7 +362,7 @@ export function Layout() {
             type="button"
             className={`button ghost topbar-auto-mode${autoEnabled ? " is-on" : ""}`}
             onClick={handleToggleAutoMode}
-            disabled={autoBusy || autoRestarting || stoppingAllWorkers || startingAllWorkers}
+            disabled={autoBusy || autoRestarting || stoppingAllWorkers || startingAllWorkers || checkingAllWorkers}
             aria-pressed={autoEnabled}
             title={
               autoEnabled
@@ -323,7 +378,7 @@ export function Layout() {
               type="button"
               className="button ghost topbar-auto-restart"
               onClick={() => void handleRestartAutoMode()}
-              disabled={autoRestarting || autoBusy || stoppingAllWorkers || startingAllWorkers}
+              disabled={autoRestarting || autoBusy || stoppingAllWorkers || startingAllWorkers || checkingAllWorkers}
               title="Stop workers and clear session so POST /api/v1/auto/start works again"
             >
               {autoRestarting ? "Restarting…" : "Restart session"}
