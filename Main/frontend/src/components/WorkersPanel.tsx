@@ -81,6 +81,9 @@ interface WorkersPanelProps {
   onWorkerAssignmentSummariesChange?: (summaries: WorkerAssignmentSummary[]) => void;
   /** Parent section provides header and panel chrome. */
   sectionChild?: boolean;
+  onAssignHandlerReady?: (
+    handler: (workerId: string, candidateIndex: number) => boolean,
+  ) => void;
 }
 
 function isWorkerConnected(
@@ -201,6 +204,7 @@ export function WorkersPanel({
   candidateContext = null,
   onWorkerAssignmentSummariesChange,
   sectionChild = false,
+  onAssignHandlerReady,
 }: WorkersPanelProps) {
   const persistedRef = useRef(loadWorkerPanelState());
   const persisted = persistedRef.current;
@@ -461,6 +465,40 @@ export function WorkersPanel({
     clearWorkerPanelEntry(workerId);
   }
 
+  const assignCandidateToWorker = useCallback(
+    (workerId: string, candidateIndex: number): boolean => {
+      if (!candidateContext) return false;
+
+      const candidate = candidateContext.candidates.find((c) => c.index === candidateIndex);
+      if (!candidate) return false;
+
+      restoreWorkerAssignment(workerId);
+      setDismissedWorkers((prev) => {
+        if (!prev.has(workerId)) return prev;
+        const next = new Set(prev);
+        next.delete(workerId);
+        return next;
+      });
+
+      setAssignments((prev) => ({
+        ...prev,
+        [workerId]: createAssignment(candidate, candidateContext),
+      }));
+      setDispatchByWorker((prev) => {
+        const next = { ...prev };
+        delete next[workerId];
+        return next;
+      });
+      return true;
+    },
+    [candidateContext],
+  );
+
+  useEffect(() => {
+    if (!onAssignHandlerReady) return;
+    onAssignHandlerReady(assignCandidateToWorker);
+  }, [assignCandidateToWorker, onAssignHandlerReady]);
+
   function handleDragOver(e: DragEvent, workerId: string) {
     if (!candidateContext) return;
     if (!e.dataTransfer.types.includes(CANDIDATE_DRAG_MIME)) return;
@@ -488,26 +526,7 @@ export function WorkersPanel({
       return;
     }
 
-    const candidate = candidateContext.candidates.find((c) => c.index === payload.index);
-    if (!candidate) return;
-
-    restoreWorkerAssignment(workerId);
-    setDismissedWorkers((prev) => {
-      if (!prev.has(workerId)) return prev;
-      const next = new Set(prev);
-      next.delete(workerId);
-      return next;
-    });
-
-    setAssignments((prev) => ({
-      ...prev,
-      [workerId]: createAssignment(candidate, candidateContext),
-    }));
-    setDispatchByWorker((prev) => {
-      const next = { ...prev };
-      delete next[workerId];
-      return next;
-    });
+    assignCandidateToWorker(workerId, payload.index);
   }
 
   async function handleHealthCheck(workerId: string) {

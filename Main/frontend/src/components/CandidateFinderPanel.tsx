@@ -21,12 +21,14 @@ const initialFinderState = loadCandidateFinderState();
 interface CandidateFinderPanelProps {
   onResultChange?: (result: FindCandidatesResponse | null) => void;
   workerAssignmentSummaries?: WorkerAssignmentSummary[];
+  onAssignCandidateToWorker?: (workerId: string, candidateIndex: number) => boolean;
   embedded?: boolean;
 }
 
 export function CandidateFinderPanel({
   onResultChange,
   workerAssignmentSummaries = [],
+  onAssignCandidateToWorker,
   embedded = false,
 }: CandidateFinderPanelProps) {
   const regionInitializedRef = useRef(false);
@@ -43,7 +45,8 @@ export function CandidateFinderPanel({
     () => initialFinderState?.result ?? null,
   );
   const [autoModeEnabled, setAutoModeEnabled] = useState(false);
-  const [openAssignmentIndex, setOpenAssignmentIndex] = useState<number | null>(null);
+  const [selectedCandidateIndex, setSelectedCandidateIndex] = useState<number | null>(null);
+  const [assignMessage, setAssignMessage] = useState<string | null>(null);
 
   const refreshAutoMode = useCallback(() => {
     api
@@ -79,8 +82,29 @@ export function CandidateFinderPanel({
 
     setResult(null);
     setError(null);
+    setSelectedCandidateIndex(null);
+    setAssignMessage(null);
     onResultChange?.(null);
   }, [region, onResultChange]);
+
+  useEffect(() => {
+    if (!result) {
+      setSelectedCandidateIndex(null);
+      return;
+    }
+    if (
+      selectedCandidateIndex != null &&
+      !result.candidates.some((candidate) => candidate.index === selectedCandidateIndex)
+    ) {
+      setSelectedCandidateIndex(null);
+    }
+  }, [result, selectedCandidateIndex]);
+
+  useEffect(() => {
+    if (!assignMessage) return;
+    const timerId = window.setTimeout(() => setAssignMessage(null), 2400);
+    return () => window.clearTimeout(timerId);
+  }, [assignMessage]);
 
   async function handleFind(e: FormEvent) {
     e.preventDefault();
@@ -95,6 +119,8 @@ export function CandidateFinderPanel({
         k_candidates: kCandidates,
       });
       setResult(data);
+      setSelectedCandidateIndex(null);
+      setAssignMessage(null);
       onResultChange?.(data);
     } catch (err) {
       setResult(null);
@@ -104,6 +130,24 @@ export function CandidateFinderPanel({
       setLoading(false);
     }
   }
+
+  function handleSelectCandidate(index: number) {
+    setAssignMessage(null);
+    setSelectedCandidateIndex((current) => (current === index ? null : index));
+  }
+
+  function handleAssignWorker(workerId: string, workerName: string) {
+    if (selectedCandidateIndex == null || !onAssignCandidateToWorker) return;
+    const ok = onAssignCandidateToWorker(workerId, selectedCandidateIndex);
+    if (ok) {
+      setAssignMessage(`Assigned candidate #${selectedCandidateIndex + 1} to ${workerName}.`);
+    }
+  }
+
+  const selectedCandidate =
+    selectedCandidateIndex != null
+      ? result?.candidates.find((candidate) => candidate.index === selectedCandidateIndex) ?? null
+      : null;
 
   const body = (
     <>
@@ -161,16 +205,21 @@ export function CandidateFinderPanel({
                 key={c.index}
                 candidate={c}
                 fallbackChrom={result.chromosome}
-                workerSlots={workerAssignmentSummaries}
-                assignmentOpen={openAssignmentIndex === c.index}
-                onAssignmentToggle={() =>
-                  setOpenAssignmentIndex((current) => (current === c.index ? null : c.index))
-                }
-                onAssignmentClose={() => setOpenAssignmentIndex(null)}
+                selected={selectedCandidateIndex === c.index}
+                onSelect={() => handleSelectCandidate(c.index)}
                 draggable
               />
             ))}
           </div>
+
+          {selectedCandidate && (
+            <CandidateWorkerAssignPanel
+              candidate={selectedCandidate}
+              workerSlots={workerAssignmentSummaries}
+              assignMessage={assignMessage}
+              onAssign={handleAssignWorker}
+            />
+          )}
         </div>
       )}
     </>
@@ -189,44 +238,21 @@ export function CandidateFinderPanel({
 function CandidateCard({
   candidate,
   fallbackChrom,
-  workerSlots,
-  assignmentOpen,
-  onAssignmentToggle,
-  onAssignmentClose,
+  selected,
+  onSelect,
   draggable = false,
 }: {
   candidate: CandidatePreview;
   fallbackChrom: string;
-  workerSlots: WorkerAssignmentSummary[];
-  assignmentOpen: boolean;
-  onAssignmentToggle: () => void;
-  onAssignmentClose: () => void;
+  selected: boolean;
+  onSelect: () => void;
   draggable?: boolean;
 }) {
-  const cardRef = useRef<HTMLElement>(null);
   const draggedRef = useRef(false);
   const chrom = chromosomeFromWindow(candidate.source_window) ?? fallbackChrom;
   const score = candidate.history_score ?? candidate.rank_score;
   const composite = compositeCandidateScore(candidate);
   const region = candidate.source_window?.trim();
-
-  useEffect(() => {
-    if (!assignmentOpen) return;
-    function onPointerDown(e: MouseEvent) {
-      if (cardRef.current && !cardRef.current.contains(e.target as Node)) {
-        onAssignmentClose();
-      }
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onAssignmentClose();
-    }
-    document.addEventListener("mousedown", onPointerDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [assignmentOpen, onAssignmentClose]);
 
   function handleDragStart(e: DragEvent<HTMLElement>) {
     if (!draggable) return;
@@ -243,24 +269,23 @@ function CandidateCard({
       draggedRef.current = false;
       return;
     }
-    onAssignmentToggle();
+    onSelect();
   }
 
   return (
     <article
-      ref={cardRef}
-      className={`candidate-result-card${draggable ? " candidate-draggable" : ""}${assignmentOpen ? " candidate-result-card--assignment-open" : ""}`}
+      className={`candidate-result-card${draggable ? " candidate-draggable" : ""}${selected ? " candidate-result-card--selected" : ""}`}
       draggable={draggable}
       onDragStart={handleDragStart}
       onClick={handleCardClick}
       role="button"
       tabIndex={0}
-      aria-expanded={assignmentOpen}
+      aria-pressed={selected}
       aria-label={`Candidate #${candidate.index + 1}${region ? `, ${region}` : ""}`}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          onAssignmentToggle();
+          onSelect();
         }
       }}
     >
@@ -273,44 +298,6 @@ function CandidateCard({
       ) : (
         <span className="candidate-result-window-missing">No history region</span>
       )}
-      {assignmentOpen && (
-        <div
-          className="candidate-assignment-popover"
-          role="tooltip"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <span className="candidate-assignment-popover-title">Workers</span>
-          {workerSlots.length > 0 ? (
-            <ul className="candidate-assignment-popover-list">
-              {workerSlots.map((slot) => {
-                const assignedHere = slot.candidateIndex === candidate.index;
-                const assignedElsewhere =
-                  slot.candidateIndex != null && slot.candidateIndex !== candidate.index;
-                return (
-                  <li
-                    key={slot.workerId}
-                    className={assignedHere ? "candidate-assignment-row--here" : undefined}
-                  >
-                    <span className="chip chip-accent">{slot.workerName}</span>
-                    {assignedHere && <span className="chip chip-ok">this candidate</span>}
-                    {assignedElsewhere && (
-                      <span className="chip chip-muted">#{slot.candidateIndex! + 1}</span>
-                    )}
-                    {!assignedHere && !assignedElsewhere && (
-                      <span className="candidate-assignment-slot-empty">unassigned</span>
-                    )}
-                    {slot.autoManaged && assignedHere && (
-                      <span className="chip chip-muted">auto</span>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          ) : (
-            <p className="candidate-assignment-popover-empty">No workers registered.</p>
-          )}
-        </div>
-      )}
       <div className="candidate-result-foot" onClick={(e) => e.stopPropagation()}>
         <span className="candidate-rank-badge">#{candidate.index + 1}</span>
         {candidate.similarity != null && (
@@ -322,5 +309,75 @@ function CandidateCard({
         <ConfTooltip conf={candidate.base_conf} label="Conf" />
       </div>
     </article>
+  );
+}
+
+function CandidateWorkerAssignPanel({
+  candidate,
+  workerSlots,
+  assignMessage,
+  onAssign,
+}: {
+  candidate: CandidatePreview;
+  workerSlots: WorkerAssignmentSummary[];
+  assignMessage: string | null;
+  onAssign: (workerId: string, workerName: string) => void;
+}) {
+  const region = candidate.source_window?.trim();
+
+  return (
+    <section className="candidate-worker-assign-panel" aria-label="Assign candidate to worker">
+      <div className="candidate-worker-assign-head">
+        <div>
+          <span className="candidate-worker-assign-title">
+            Assign candidate #{candidate.index + 1}
+          </span>
+          {region ? (
+            <code className="candidate-worker-assign-region">{region}</code>
+          ) : (
+            <span className="candidate-worker-assign-region-missing">No history region</span>
+          )}
+        </div>
+        <span className="candidate-worker-assign-hint">Click a worker to assign this base conf.</span>
+      </div>
+
+      {assignMessage && <div className="alert ok candidate-worker-assign-message">{assignMessage}</div>}
+
+      {workerSlots.length > 0 ? (
+        <ul className="candidate-worker-assign-list">
+          {workerSlots.map((slot) => {
+            const assignedHere = slot.candidateIndex === candidate.index;
+            const assignedElsewhere =
+              slot.candidateIndex != null && slot.candidateIndex !== candidate.index;
+            return (
+              <li key={slot.workerId}>
+                <button
+                  type="button"
+                  className={`candidate-worker-assign-btn${assignedHere ? " candidate-worker-assign-btn--here" : ""}`}
+                  onClick={() => onAssign(slot.workerId, slot.workerName)}
+                >
+                  <span className="candidate-worker-assign-btn-name">{slot.workerName}</span>
+                  <span className="candidate-worker-assign-btn-status">
+                    {assignedHere && <span className="chip chip-ok">this candidate</span>}
+                    {assignedElsewhere && (
+                      <span className="chip chip-muted">#{slot.candidateIndex! + 1}</span>
+                    )}
+                    {!assignedHere && !assignedElsewhere && (
+                      <span className="candidate-assignment-slot-empty">unassigned</span>
+                    )}
+                    {slot.autoManaged && assignedHere && (
+                      <span className="chip chip-muted">auto</span>
+                    )}
+                  </span>
+                  <span className="candidate-worker-assign-btn-action">Assign</span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="candidate-assignment-popover-empty">No workers registered.</p>
+      )}
+    </section>
   );
 }

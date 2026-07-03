@@ -763,10 +763,109 @@ code, .input-mono {
 .candidate-result-card:hover {
   border-color: rgba(167, 139, 250, 0.35);
 }
-.candidate-result-card--assignment-open {
+.candidate-result-card--assignment-open,
+.candidate-result-card--selected {
   border-color: rgba(167, 139, 250, 0.55);
   box-shadow: 0 0 0 1px rgba(167, 139, 250, 0.15);
   z-index: 5;
+}
+.candidate-worker-assign-panel {
+  margin-top: 1rem;
+  padding: 1rem 1.1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-solid);
+}
+.candidate-worker-assign-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.85rem;
+}
+.candidate-worker-assign-title {
+  display: block;
+  font-size: 0.92rem;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+.candidate-worker-assign-region {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--muted);
+  word-break: break-all;
+}
+.candidate-worker-assign-region-missing {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.candidate-worker-assign-hint {
+  font-size: 0.82rem;
+  color: var(--muted);
+  max-width: 16rem;
+  text-align: right;
+}
+.candidate-worker-assign-message {
+  margin-bottom: 0.75rem;
+}
+.candidate-worker-assign-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.candidate-worker-assign-btn {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(8rem, 1fr) minmax(10rem, 1.4fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--inset-bg);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.candidate-worker-assign-btn:hover {
+  border-color: rgba(167, 139, 250, 0.45);
+  background: rgba(167, 139, 250, 0.06);
+}
+.candidate-worker-assign-btn--here {
+  border-color: rgba(52, 211, 153, 0.45);
+  background: rgba(52, 211, 153, 0.08);
+}
+.candidate-worker-assign-btn-name {
+  font-weight: 600;
+}
+.candidate-worker-assign-btn-status {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+.candidate-worker-assign-btn-action {
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+@media (max-width: 720px) {
+  .candidate-worker-assign-btn {
+    grid-template-columns: 1fr;
+    gap: 0.4rem;
+  }
+  .candidate-worker-assign-hint {
+    text-align: left;
+    max-width: none;
+  }
 }
 .candidate-draggable {
   cursor: grab;

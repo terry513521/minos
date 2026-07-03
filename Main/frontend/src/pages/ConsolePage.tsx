@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, FindCandidatesResponse } from "../api/client";
 import { CandidateFinderPanel } from "../components/CandidateFinderPanel";
 import { AutoModePanel, AUTO_MODE_CHANGED_EVENT } from "../components/AutoModePanel";
@@ -15,11 +15,27 @@ export function ConsolePage() {
   const [autoModeEnabled, setAutoModeEnabled] = useState(
     () => loadAutoModeState()?.status?.enabled ?? false,
   );
+  const assignCandidateRef = useRef<
+    ((workerId: string, candidateIndex: number) => boolean) | null
+  >(null);
 
   const handleWorkerAssignmentSummariesChange = useCallback(
     (summaries: WorkerAssignmentSummary[]) => {
       setWorkerAssignmentSummaries(summaries);
     },
+    [],
+  );
+
+  const handleAssignHandlerReady = useCallback(
+    (handler: (workerId: string, candidateIndex: number) => boolean) => {
+      assignCandidateRef.current = handler;
+    },
+    [],
+  );
+
+  const handleAssignCandidateToWorker = useCallback(
+    (workerId: string, candidateIndex: number) =>
+      assignCandidateRef.current?.(workerId, candidateIndex) ?? false,
     [],
   );
 
@@ -52,11 +68,12 @@ export function ConsolePage() {
             <SectionHeader
               step={1}
               title="Find base candidates"
-              lead="Same tool → similar coordinates → best score from history."
+              lead="Select a candidate, then click a worker to assign its base conf."
             />
             <CandidateFinderPanel
               onResultChange={setCandidateContext}
               workerAssignmentSummaries={workerAssignmentSummaries}
+              onAssignCandidateToWorker={handleAssignCandidateToWorker}
               embedded
             />
           </section>
@@ -69,12 +86,13 @@ export function ConsolePage() {
             lead={
               autoModeEnabled
                 ? "Live scores and controls for VM, Big, and Igno during auto runs."
-                : "Drag a candidate card onto a worker to assign base conf and tune params."
+                : "Assigned base conf appears here — tune params and dispatch optimization."
             }
           />
           <WorkersPanel
             candidateContext={candidateContext}
             onWorkerAssignmentSummariesChange={handleWorkerAssignmentSummariesChange}
+            onAssignHandlerReady={handleAssignHandlerReady}
             sectionChild
           />
         </section>
