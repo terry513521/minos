@@ -8,6 +8,7 @@ import {
   clampTrialThreads,
   DEFAULT_ALGORITHM,
   DEFAULT_LIMIT_SECONDS,
+  DEFAULT_AUTO_TOTAL_TRIALS,
   DEFAULT_TOTAL_TRIALS,
   DEFAULT_TRIAL_MEMORY_GB,
   DEFAULT_TRIAL_THREADS,
@@ -317,7 +318,7 @@ export function syncPerWorkerTunablesFromAutoConfig(config: AutoModeConfig): voi
         workerSettingForName(trialMemoryGb, workerName) ?? DEFAULT_TRIAL_MEMORY_GB,
       ),
       trialCount: clampTotalTrials(
-        workerSettingForName(trialCounts, workerName) ?? DEFAULT_TOTAL_TRIALS,
+        workerSettingForName(trialCounts, workerName) ?? DEFAULT_AUTO_TOTAL_TRIALS,
       ),
     };
   }

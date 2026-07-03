@@ -1,4 +1,4 @@
-import { AlgorithmOption, adaptiveMaxTrialsFromTotal, clampTotalTrials, DEFAULT_TOTAL_TRIALS } from "../types/workerAssignment";
+import { AlgorithmOption, adaptiveMaxTrialsFromTotal, clampTotalTrials, DEFAULT_AUTO_TOTAL_TRIALS } from "../types/workerAssignment";
 import { getToolOptions, parseToolOptionValue, setToolOptions } from "./confEdit";
 import { confToDotConf, downloadConfFile } from "./confDisplay";
 import { clampParamInterval, ParamInterval, buildGatkReferenceConf } from "./paramBounds";
@@ -188,7 +188,7 @@ export function buildAutoModeTunableFile(input: {
     worker_adaptive_max_trials: Object.fromEntries(
       input.workerNames.map((name) => [
         name,
-        adaptiveMaxTrialsFromTotal(input.workerTrialCounts[name] ?? DEFAULT_TOTAL_TRIALS),
+        adaptiveMaxTrialsFromTotal(input.workerTrialCounts[name] ?? DEFAULT_AUTO_TOTAL_TRIALS),
       ]),
     ),
     conf_dot: confToDotConf(base_conf),

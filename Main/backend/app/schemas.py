@@ -215,7 +215,7 @@ class WorkerDispatchRequest(BaseModel):
     algorithm: str = "optuna"
     limit_seconds: int = Field(default=1800, ge=60, le=86400)
     adaptive_max_trials: int = Field(
-        default=44,
+        default=4,
         ge=1,
         le=1000,
         description="Adaptive search trials after base benchmark (total trials = 1 + this value)",
@@ -380,7 +380,7 @@ class AutoDispatchAssignment(BaseModel):
     param_intervals: dict[str, ParamIntervalSpec] = Field(default_factory=dict)
     concurrency: int = 1
     limit_seconds: int = 1800
-    adaptive_max_trials: int = 44
+    adaptive_max_trials: int = 49
     dispatch_ok: bool = False
     dispatch_error: str | None = None
     job_id: str | None = None

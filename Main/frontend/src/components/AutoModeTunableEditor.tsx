@@ -25,8 +25,8 @@ import {
   clampTrialThreads,
   clampTotalTrials,
   CONCURRENCY_OPTIONS,
+  DEFAULT_AUTO_TOTAL_TRIALS,
   DEFAULT_LIMIT_MINUTES,
-  DEFAULT_TOTAL_TRIALS,
   limitMinutesToSeconds,
   MAX_TRIAL_THREADS,
   secondsToLimitMinutes,
@@ -153,7 +153,7 @@ export function AutoModeTunableEditor({
           name,
           clampTotalTrials(
             workerSettingForName(workerTrialCountsFromAutoConfig(nextConfig), name) ??
-              DEFAULT_TOTAL_TRIALS,
+              DEFAULT_AUTO_TOTAL_TRIALS,
           ),
         ]),
       ),
@@ -303,7 +303,7 @@ export function AutoModeTunableEditor({
         Object.fromEntries(
           workerNames.map((name) => [
             name,
-            clampTotalTrials(data.workerTrialCounts?.[name] ?? workerTrialCounts[name] ?? DEFAULT_TOTAL_TRIALS),
+            clampTotalTrials(data.workerTrialCounts?.[name] ?? workerTrialCounts[name] ?? DEFAULT_AUTO_TOTAL_TRIALS),
           ]),
         ),
       );
@@ -402,7 +402,7 @@ export function AutoModeTunableEditor({
         workerNames.map((name) => [name, limitMinutesToSeconds(DEFAULT_LIMIT_MINUTES)]),
       ),
       worker_adaptive_max_trials: Object.fromEntries(
-        workerNames.map((name) => [name, adaptiveMaxTrialsFromTotal(DEFAULT_TOTAL_TRIALS)]),
+        workerNames.map((name) => [name, adaptiveMaxTrialsFromTotal(DEFAULT_AUTO_TOTAL_TRIALS)]),
       ),
     };
     applyConfigToState(defaults, workerNames);
@@ -436,7 +436,7 @@ export function AutoModeTunableEditor({
         worker_adaptive_max_trials: Object.fromEntries(
           workerNames.map((name) => [
             name,
-            adaptiveMaxTrialsFromTotal(workerTrialCounts[name] ?? DEFAULT_TOTAL_TRIALS),
+            adaptiveMaxTrialsFromTotal(workerTrialCounts[name] ?? DEFAULT_AUTO_TOTAL_TRIALS),
           ]),
         ),
       });
@@ -621,14 +621,14 @@ export function AutoModeTunableEditor({
                       <td>
                         <DeferredNumberInput
                           className="auto-mode-worker-resource-input input-mono"
-                          value={workerTrialCounts[workerName] ?? DEFAULT_TOTAL_TRIALS}
+                          value={workerTrialCounts[workerName] ?? DEFAULT_AUTO_TOTAL_TRIALS}
                           min={1}
                           max={1001}
                           step={1}
                           onCommit={(value) =>
                             setWorkerTrialCounts({
                               ...workerTrialCounts,
-                              [workerName]: clampTotalTrials(value ?? DEFAULT_TOTAL_TRIALS),
+                              [workerName]: clampTotalTrials(value ?? DEFAULT_AUTO_TOTAL_TRIALS),
                             })
                           }
                           disabled={hydrating || loading}
