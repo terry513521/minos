@@ -1582,13 +1582,6 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   max-height: none;
 }
 
-.modal-panel.modal-panel-auto-tunable .worker-conf-picker-list {
-  flex: 1;
-  min-height: 0;
-  max-height: none;
-  overflow-y: auto;
-}
-
 .auto-mode-worker-algorithms {
   margin-bottom: 1.25rem;
   padding-bottom: 1.1rem;
@@ -1860,10 +1853,15 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
 .modal-panel.modal-panel-auto-tunable {
   max-width: min(120rem, calc(100vw - 1rem));
   width: min(120rem, calc(100vw - 1rem));
-  max-height: min(94vh, 72rem);
+  max-height: min(96vh, 80rem);
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+.modal-panel.modal-panel-auto-tunable .modal-lead,
+.modal-panel.modal-panel-auto-tunable .modal-head,
+.modal-panel.modal-panel-auto-tunable > .alert {
+  flex-shrink: 0;
 }
 .modal-panel.modal-panel-auto-tunable .modal-form {
   flex: 1;
@@ -1876,10 +1874,16 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   flex-shrink: 0;
 }
 .modal-panel.modal-panel-auto-tunable .worker-conf-picker {
-  flex: 1;
-  min-height: 0;
+  flex: 1 1 auto;
+  min-height: min(62vh, 720px);
   display: flex;
   flex-direction: column;
+}
+.modal-panel.modal-panel-auto-tunable .worker-conf-picker-list {
+  flex: 1 1 auto;
+  min-height: min(52vh, 620px);
+  max-height: none;
+  overflow-y: auto;
 }
 .modal-panel.modal-panel-auto-tunable .modal-actions {
   flex-shrink: 0;
