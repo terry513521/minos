@@ -8,7 +8,11 @@ import {
 } from "../utils/candidateSelection";
 import { loadAutoModeState, saveAutoModeState } from "../utils/autoModeStorage";
 import { syncManualParamDefaultsFromAutoConfig } from "../utils/manualParamDefaults";
-import { formatParamInterval, paramIntervalsFromAutoConfig } from "../utils/autoModeSync";
+import {
+  formatParamInterval,
+  paramIntervalsFromAutoConfig,
+  workerAlgorithmsFromAutoConfig,
+} from "../utils/autoModeSync";
 import { ConfTooltip } from "./ConfTooltip";
 import { LimitCountdownBadge } from "./LimitCountdownBadge";
 import { AutoModeTunableEditor } from "./AutoModeTunableEditor";
@@ -56,6 +60,7 @@ export function AutoModePanel() {
 
   const config = status.config;
   const paramIntervals = paramIntervalsFromAutoConfig(config);
+  const workerAlgorithms = workerAlgorithmsFromAutoConfig(config);
   const selectionByIndex = selectionSlotsByIndex(status.selected_candidates);
   const foundCount = status.found_candidates.length || status.candidates_found;
   const canRestartSession =
@@ -171,6 +176,17 @@ export function AutoModePanel() {
         </div>
       </div>
 
+      <div className="auto-mode-section">
+        <span className="auto-mode-section-title">Worker algorithms</span>
+        <div className="auto-mode-worker-algorithm-summary">
+          {config.worker_names.map((workerName) => (
+            <span key={workerName} className="chip chip-muted">
+              {workerName}: {workerAlgorithms[workerName]}
+            </span>
+          ))}
+        </div>
+      </div>
+
       {(status.enabled || status.assignments.length > 0 || status.found_candidates.length > 0) && (
         <>
           <div className="auto-mode-grid">
@@ -240,6 +256,7 @@ export function AutoModePanel() {
                   <thead>
                     <tr>
                       <th>Worker</th>
+                      <th>Algorithm</th>
                       <th>Candidate</th>
                       <th>Region</th>
                       <th>Dispatch</th>
@@ -249,6 +266,7 @@ export function AutoModePanel() {
                     {status.assignments.map((item) => (
                       <tr key={item.worker_id}>
                         <td>{item.worker_name}</td>
+                        <td><code>{item.algorithm}</code></td>
                         <td>#{item.candidate_index + 1}</td>
                         <td>
                           {item.window ? <code>{item.window}</code> : "—"}

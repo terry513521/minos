@@ -338,6 +338,7 @@ class AutoModeTunableConfigUpdate(BaseModel):
 
     params: list[str] = Field(..., min_length=1)
     param_intervals: dict[str, ParamIntervalSpec]
+    worker_algorithms: dict[str, str] | None = None
 
 
 class AutoDispatchAssignment(BaseModel):

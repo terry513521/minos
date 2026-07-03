@@ -191,6 +191,7 @@ export interface PlatformRound {
 export interface AutoModeTunableConfigUpdate {
   params: string[];
   param_intervals: Record<string, ParamIntervalPayload>;
+  worker_algorithms?: Record<string, string>;
 }
 
 export interface AutoModeConfig {

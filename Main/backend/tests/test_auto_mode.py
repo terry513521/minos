@@ -114,7 +114,7 @@ def test_assign_workers_by_metric_maps_vm_big_igno():
     assert slots[2].selection_reason == "best_composite"
 
 
-def test_auto_dispatch_uses_fixed_algorithm():
+def test_auto_dispatch_uses_configured_algorithm():
     from app.services.auto_mode import build_dispatch_request, with_trial_resources
 
     body = build_dispatch_request(
@@ -122,10 +122,19 @@ def test_auto_dispatch_uses_fixed_algorithm():
         tool="gatk",
         base_conf={"gatk_options": {}},
         candidate_index=0,
+        algorithm="gp",
     )
-    assert body.algorithm == AUTO_ALGORITHM
+    assert body.algorithm == "gp"
     assert body.base_conf["threads"] == 4
     assert body.base_conf["memory_gb"] == 6
+
+    default_body = build_dispatch_request(
+        window="chr21:1-100",
+        tool="gatk",
+        base_conf={"gatk_options": {}},
+        candidate_index=0,
+    )
+    assert default_body.algorithm == AUTO_ALGORITHM
 
     merged = with_trial_resources({"gatk_options": {"x": 1}, "threads": 8})
     assert merged["threads"] == 4
@@ -153,9 +162,13 @@ def test_update_auto_tunable_config_persists():
                 param_intervals={
                     "min_base_quality_score": ParamIntervalSpec(min=8.0, max=18.0, step=2.0),
                 },
+                worker_algorithms={"VM": "gp", "Big": "random", "Igno": "sobol"},
             )
             assert status.config.params == ["min_base_quality_score"]
             assert status.config.param_intervals["min_base_quality_score"].min == 8.0
+            assert status.config.worker_algorithms["VM"] == "gp"
+            assert status.config.worker_algorithms["Big"] == "random"
+            assert status.config.worker_algorithms["Igno"] == "sobol"
 
     import asyncio
 

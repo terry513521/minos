@@ -11,6 +11,7 @@ import {
   clampTrialMemoryGb,
   clampTrialThreads,
   clampTotalTrials,
+  DEFAULT_ALGORITHM,
   DEFAULT_TRIAL_MEMORY_GB,
   DEFAULT_TRIAL_THREADS,
   ToolkitOption,
@@ -32,6 +33,17 @@ function trialResourcesFromConf(baseConf: Record<string, unknown>) {
 
 function trialCountFromAutoConfig(config: AutoModeConfig): number {
   return clampTotalTrials(config.adaptive_max_trials + 1);
+}
+
+export function workerAlgorithmsFromAutoConfig(
+  config: AutoModeConfig,
+): Record<string, AlgorithmOption> {
+  const algorithms: Record<string, AlgorithmOption> = {};
+  for (const workerName of config.worker_names) {
+    const raw = config.worker_algorithms[workerName] ?? DEFAULT_ALGORITHM;
+    algorithms[workerName] = raw as AlgorithmOption;
+  }
+  return algorithms;
 }
 
 export function paramIntervalsFromAutoConfig(

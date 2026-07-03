@@ -41,6 +41,7 @@ async def set_auto_mode_config(
             db,
             params=body.params,
             param_intervals=body.param_intervals,
+            worker_algorithms=body.worker_algorithms,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
