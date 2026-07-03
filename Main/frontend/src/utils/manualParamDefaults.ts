@@ -197,7 +197,7 @@ export function saveManualWorkerDefaults(defaults: ManualWorkerDefaults): void {
 export function syncManualParamDefaultsFromAutoConfig(config: AutoModeConfig): void {
   if (config.params.length === 0) return;
   saveManualWorkerDefaults(manualWorkerDefaultsFromAutoConfig(config));
-  syncPerWorkerTunablesFromAutoConfig(config);
+  void syncPerWorkerTunablesFromAutoConfig(config);
 }
 
 /** @deprecated Use loadManualWorkerDefaults */

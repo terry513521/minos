@@ -9,6 +9,7 @@ import { useAutoModeEnabled } from "../hooks/useAutoModeEnabled";
 import { WorkerAssignmentSummary } from "../types/workerAssignment";
 import { WorkerLiveStatus } from "../utils/workerLiveStatus";
 import { ApplyConfImportResult } from "../utils/workerConfImport";
+import { ensureWorkerTunablesHydrated } from "../utils/workerTunableStorage";
 
 export function ConsolePage() {
   const [candidateContext, setCandidateContext] = useState<FindCandidatesResponse | null>(null);
@@ -64,6 +65,10 @@ export function ConsolePage() {
         skipped: 0,
       }
     );
+  }, []);
+
+  useEffect(() => {
+    void ensureWorkerTunablesHydrated();
   }, []);
 
   useEffect(() => {

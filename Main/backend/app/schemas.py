@@ -468,3 +468,43 @@ class AutoModeRoundRecord(BaseModel):
     winner_score: float | None = None
     winner_conf: dict[str, Any] = Field(default_factory=dict)
     worker_results: list[AutoModeWorkerRoundResult] = Field(default_factory=list)
+
+
+class WorkerTunableParamInterval(BaseModel):
+    min: float | None = None
+    max: float | None = None
+    step: float | None = None
+    values: list[str] | None = None
+
+
+class WorkerTunableProfileBody(BaseModel):
+    tool: str = "gatk"
+    selected_params: list[str] = Field(..., min_length=1)
+    param_intervals: dict[str, WorkerTunableParamInterval] = Field(default_factory=dict)
+    algorithm: str = "optuna"
+    concurrency: int = Field(1, ge=1, le=32)
+    limit_seconds: int = Field(1800, ge=60, le=86400)
+    trial_threads: int = Field(4, ge=1, le=100)
+    trial_memory_gb: int = Field(6, ge=4, le=128)
+    trial_count: int = Field(5, ge=2, le=1001)
+
+
+class WorkerTunableDefaultsResponse(BaseModel):
+    worker_id: str
+    worker_name: str
+    profile: WorkerTunableProfileBody
+    updated_at: datetime | None = None
+
+
+class WorkerTunableDefaultsListResponse(BaseModel):
+    items: list[WorkerTunableDefaultsResponse] = Field(default_factory=list)
+
+
+class WorkerTunableBulkItem(BaseModel):
+    worker_id: str | None = None
+    worker_name: str | None = None
+    profile: WorkerTunableProfileBody
+
+
+class WorkerTunableBulkUpdate(BaseModel):
+    items: list[WorkerTunableBulkItem] = Field(..., min_length=1)

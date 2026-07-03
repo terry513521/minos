@@ -20,6 +20,10 @@ from app.schemas import (
     WorkerStatus,
     WorkerStopResponse,
     WorkersStopAllResponse,
+    WorkerTunableBulkUpdate,
+    WorkerTunableDefaultsListResponse,
+    WorkerTunableDefaultsResponse,
+    WorkerTunableProfileBody,
     WorkerUpdate,
 )
 from app.serializers import worker_to_response
@@ -29,6 +33,12 @@ from app.services.worker_proxy import (
     get_worker,
     stop_all_workers_optimization,
     stop_worker_optimization,
+)
+from app.services.worker_tunable_defaults import (
+    bulk_save_worker_tunable_defaults,
+    get_worker_tunable_defaults,
+    list_worker_tunable_defaults,
+    save_worker_tunable_defaults,
 )
 from app.worker_urls import normalize_worker_urls, resolve_worker_base_url
 
@@ -90,6 +100,47 @@ async def register_worker(body: WorkerCreate, db: AsyncSession = Depends(get_db)
 
     token = secrets.token_urlsafe(32)
     return WorkerRegisterResponse(worker=worker_to_response(worker), registration_token=token)
+
+
+@router.get("/tunable-defaults", response_model=WorkerTunableDefaultsListResponse)
+async def list_worker_tunable_defaults_endpoint(
+    db: AsyncSession = Depends(get_db),
+) -> WorkerTunableDefaultsListResponse:
+    return await list_worker_tunable_defaults(db)
+
+
+@router.put("/tunable-defaults/bulk", response_model=WorkerTunableDefaultsListResponse)
+async def bulk_update_worker_tunable_defaults(
+    body: WorkerTunableBulkUpdate,
+    db: AsyncSession = Depends(get_db),
+) -> WorkerTunableDefaultsListResponse:
+    try:
+        return await bulk_save_worker_tunable_defaults(db, body.items)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/{worker_id}/tunable-defaults", response_model=WorkerTunableDefaultsResponse)
+async def get_worker_tunable_defaults_endpoint(
+    worker_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> WorkerTunableDefaultsResponse:
+    row = await get_worker_tunable_defaults(db, worker_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Worker tunable defaults not found")
+    return row
+
+
+@router.put("/{worker_id}/tunable-defaults", response_model=WorkerTunableDefaultsResponse)
+async def update_worker_tunable_defaults(
+    worker_id: str,
+    body: WorkerTunableProfileBody,
+    db: AsyncSession = Depends(get_db),
+) -> WorkerTunableDefaultsResponse:
+    try:
+        return await save_worker_tunable_defaults(db, worker_id, body)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.delete("/{worker_id}")

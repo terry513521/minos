@@ -138,3 +138,17 @@ class AutoModeRound(Base):
     winner_conf: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     worker_results: Mapped[list] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class WorkerTunableDefaults(Base):
+    """Per-worker manual tunable defaults (params, intervals, runtime settings)."""
+
+    __tablename__ = "worker_tunable_defaults"
+
+    worker_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("workers.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    profile: Mapped[dict] = mapped_column(JSON, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)

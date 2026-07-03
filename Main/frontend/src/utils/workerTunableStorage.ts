@@ -1,4 +1,4 @@
-import { AutoModeConfig } from "../api/client";
+import { AutoModeConfig, api, WorkerTunableProfilePayload } from "../api/client";
 import {
   AlgorithmOption,
   ALGORITHM_OPTIONS,
@@ -28,7 +28,7 @@ import {
 import { buildSelectedParamIntervals } from "./manualParamDefaults";
 import { clampParamInterval, defaultParamInterval, ParamInterval } from "./paramBounds";
 
-const STORAGE_KEY = "effortless:per-worker-tunable:v1";
+const LEGACY_STORAGE_KEY = "effortless:per-worker-tunable:v1";
 
 export interface WorkerTunableDefaults {
   tool: string;
@@ -48,6 +48,9 @@ interface StoredPerWorkerTunables {
   byWorkerId: Record<string, WorkerTunableDefaults>;
 }
 
+let serverCache: StoredPerWorkerTunables = emptyStore();
+let hydratePromise: Promise<void> | null = null;
+
 function normalizeAlgorithm(raw: string | undefined): AlgorithmOption {
   if (raw && ALGORITHM_OPTIONS.includes(raw as AlgorithmOption)) {
     return raw as AlgorithmOption;
@@ -62,16 +65,18 @@ function normalizeTool(raw: string | undefined): ToolkitOption {
 
 function normalizeProfile(raw: unknown): WorkerTunableDefaults | null {
   if (!raw || typeof raw !== "object") return null;
-  const parsed = raw as Partial<WorkerTunableDefaults>;
-  if (!Array.isArray(parsed.selectedParams)) return null;
-  const selectedParams = parsed.selectedParams.filter(
+  const parsed = raw as Partial<WorkerTunableDefaults> & Partial<WorkerTunableProfilePayload>;
+  const selectedParamsRaw = parsed.selectedParams ?? parsed.selected_params;
+  if (!Array.isArray(selectedParamsRaw)) return null;
+  const selectedParams = selectedParamsRaw.filter(
     (param): param is string => typeof param === "string" && param.length > 0,
   );
   if (selectedParams.length === 0) return null;
 
+  const intervalsRaw = parsed.paramIntervals ?? parsed.param_intervals;
   const paramIntervals: Record<string, ParamInterval> = {};
-  if (parsed.paramIntervals && typeof parsed.paramIntervals === "object") {
-    for (const [name, interval] of Object.entries(parsed.paramIntervals)) {
+  if (intervalsRaw && typeof intervalsRaw === "object") {
+    for (const [name, interval] of Object.entries(intervalsRaw)) {
       if (!interval || typeof interval !== "object") continue;
       paramIntervals[name] = interval as ParamInterval;
     }
@@ -83,10 +88,19 @@ function normalizeProfile(raw: unknown): WorkerTunableDefaults | null {
     paramIntervals,
     algorithm: normalizeAlgorithm(parsed.algorithm),
     concurrency: clampConcurrency(Number(parsed.concurrency) || 1),
-    limitSeconds: Math.max(60, Math.round(Number(parsed.limitSeconds) || DEFAULT_LIMIT_SECONDS)),
-    trialThreads: clampTrialThreads(Number(parsed.trialThreads) || DEFAULT_TRIAL_THREADS),
-    trialMemoryGb: clampTrialMemoryGb(Number(parsed.trialMemoryGb) || DEFAULT_TRIAL_MEMORY_GB),
-    trialCount: clampTotalTrials(Number(parsed.trialCount) || DEFAULT_TOTAL_TRIALS),
+    limitSeconds: Math.max(
+      60,
+      Math.round(Number(parsed.limitSeconds ?? parsed.limit_seconds) || DEFAULT_LIMIT_SECONDS),
+    ),
+    trialThreads: clampTrialThreads(
+      Number(parsed.trialThreads ?? parsed.trial_threads) || DEFAULT_TRIAL_THREADS,
+    ),
+    trialMemoryGb: clampTrialMemoryGb(
+      Number(parsed.trialMemoryGb ?? parsed.trial_memory_gb) || DEFAULT_TRIAL_MEMORY_GB,
+    ),
+    trialCount: clampTotalTrials(
+      Number(parsed.trialCount ?? parsed.trial_count) || DEFAULT_TOTAL_TRIALS,
+    ),
   };
 }
 
@@ -94,9 +108,9 @@ function emptyStore(): StoredPerWorkerTunables {
   return { version: 1, byWorkerName: {}, byWorkerId: {} };
 }
 
-function loadStore(): StoredPerWorkerTunables {
+function loadLegacyLocalStore(): StoredPerWorkerTunables {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(LEGACY_STORAGE_KEY);
     if (!raw) return emptyStore();
     const parsed = JSON.parse(raw) as Partial<StoredPerWorkerTunables>;
     if (!parsed || typeof parsed !== "object") return emptyStore();
@@ -120,17 +134,104 @@ function loadStore(): StoredPerWorkerTunables {
   }
 }
 
-function saveStore(store: StoredPerWorkerTunables): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
-  } catch {
-    // Ignore quota / private-mode errors.
-  }
-}
-
 function workerNameKey(workerName: string | undefined | null): string | null {
   const trimmed = workerName?.trim();
   return trimmed ? trimmed : null;
+}
+
+function profileToPayload(profile: WorkerTunableDefaults): WorkerTunableProfilePayload {
+  return {
+    tool: profile.tool,
+    selected_params: [...profile.selectedParams],
+    param_intervals: { ...profile.paramIntervals },
+    algorithm: profile.algorithm,
+    concurrency: profile.concurrency,
+    limit_seconds: profile.limitSeconds,
+    trial_threads: profile.trialThreads,
+    trial_memory_gb: profile.trialMemoryGb,
+    trial_count: profile.trialCount,
+  };
+}
+
+function applyProfileToCache(
+  worker: { id: string; name?: string | null },
+  profile: WorkerTunableDefaults,
+): void {
+  const nameKey = workerNameKey(worker.name);
+  if (nameKey) {
+    serverCache.byWorkerName[nameKey] = profile;
+    const lower = nameKey.toLowerCase();
+    const matched = Object.keys(serverCache.byWorkerName).find((key) => key.toLowerCase() === lower);
+    if (matched && matched !== nameKey) {
+      delete serverCache.byWorkerName[matched];
+    }
+  }
+  if (worker.id) {
+    serverCache.byWorkerId[worker.id] = profile;
+  }
+}
+
+function applyServerListToCache(
+  items: Array<{
+    worker_id: string;
+    worker_name: string;
+    profile: WorkerTunableProfilePayload;
+  }>,
+): void {
+  serverCache = emptyStore();
+  for (const item of items) {
+    const profile = normalizeProfile(item.profile);
+    if (!profile) continue;
+    applyProfileToCache({ id: item.worker_id, name: item.worker_name }, profile);
+  }
+}
+
+async function migrateLegacyLocalStoreIfNeeded(): Promise<void> {
+  const legacy = loadLegacyLocalStore();
+  const hasLegacy =
+    Object.keys(legacy.byWorkerId).length > 0 || Object.keys(legacy.byWorkerName).length > 0;
+  if (!hasLegacy) return;
+
+  const serverList = await api.listWorkerTunableDefaults();
+  if (serverList.items.length > 0) {
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
+    return;
+  }
+
+  const workers = await api.listWorkers();
+  const items: Array<{ worker_id?: string; worker_name?: string; profile: WorkerTunableProfilePayload }> =
+    [];
+
+  for (const worker of workers) {
+    const profile =
+      legacy.byWorkerId[worker.id] ??
+      legacy.byWorkerName[worker.name] ??
+      Object.entries(legacy.byWorkerName).find(
+        ([name]) => name.toLowerCase() === worker.name.toLowerCase(),
+      )?.[1];
+    if (profile) {
+      items.push({ worker_id: worker.id, profile: profileToPayload(profile) });
+    }
+  }
+
+  if (items.length > 0) {
+    await api.bulkSaveWorkerTunableDefaults(items);
+  }
+  localStorage.removeItem(LEGACY_STORAGE_KEY);
+}
+
+export function ensureWorkerTunablesHydrated(): Promise<void> {
+  if (hydratePromise) return hydratePromise;
+  hydratePromise = (async () => {
+    try {
+      await migrateLegacyLocalStoreIfNeeded();
+      const response = await api.listWorkerTunableDefaults();
+      applyServerListToCache(response.items);
+    } catch {
+      serverCache = loadLegacyLocalStore();
+    }
+  })();
+  return hydratePromise;
 }
 
 export function profileFromAssignment(assignment: WorkerAssignment): WorkerTunableDefaults {
@@ -153,41 +254,30 @@ export function saveWorkerTunableDefaults(
 ): void {
   if (assignment.autoManaged || assignment.selectedParams.length === 0) return;
   const profile = profileFromAssignment(assignment);
-  const store = loadStore();
-  const nameKey = workerNameKey(worker.name);
-  if (nameKey) {
-    store.byWorkerName[nameKey] = profile;
-    const lower = nameKey.toLowerCase();
-    const matched = Object.keys(store.byWorkerName).find((key) => key.toLowerCase() === lower);
-    if (matched && matched !== nameKey) {
-      delete store.byWorkerName[matched];
-    }
-  }
-  if (worker.id) {
-    store.byWorkerId[worker.id] = profile;
-  }
-  saveStore(store);
+  applyProfileToCache(worker, profile);
+  void api.saveWorkerTunableDefaults(worker.id, profileToPayload(profile)).catch(() => {
+    // Keep in-memory cache; server may be temporarily unavailable.
+  });
 }
 
 export function getWorkerTunableDefaults(
   worker: { id: string; name?: string | null },
   tool?: string,
 ): WorkerTunableDefaults | null {
-  const store = loadStore();
   const toolKey = tool?.toLowerCase().trim();
   const nameKey = workerNameKey(worker.name);
   const candidates: WorkerTunableDefaults[] = [];
-  if (nameKey && store.byWorkerName[nameKey]) {
-    candidates.push(store.byWorkerName[nameKey]);
+  if (nameKey && serverCache.byWorkerName[nameKey]) {
+    candidates.push(serverCache.byWorkerName[nameKey]);
   } else if (nameKey) {
     const lower = nameKey.toLowerCase();
-    const matched = Object.entries(store.byWorkerName).find(
+    const matched = Object.entries(serverCache.byWorkerName).find(
       ([key]) => key.toLowerCase() === lower,
     );
     if (matched) candidates.push(matched[1]);
   }
-  if (worker.id && store.byWorkerId[worker.id]) {
-    candidates.push(store.byWorkerId[worker.id]);
+  if (worker.id && serverCache.byWorkerId[worker.id]) {
+    candidates.push(serverCache.byWorkerId[worker.id]);
   }
   if (candidates.length === 0) return null;
   if (!toolKey) return candidates[0];
@@ -277,15 +367,9 @@ export function applyWorkerTunableDefaults(
   };
 }
 
-export function syncPerWorkerTunablesFromAutoConfig(config: AutoModeConfig): void {
+export async function syncPerWorkerTunablesFromAutoConfig(config: AutoModeConfig): Promise<void> {
   if (config.params.length === 0) return;
-  const store = loadStore();
-  const algorithms = workerAlgorithmsFromAutoConfig(config);
-  const trialThreads = workerTrialThreadsFromAutoConfig(config);
-  const trialMemoryGb = workerTrialMemoryGbFromAutoConfig(config);
-  const concurrency = workerConcurrencyFromAutoConfig(config);
-  const limitSeconds = workerLimitSecondsFromAutoConfig(config);
-  const trialCounts = workerTrialCountsFromAutoConfig(config);
+
   const paramIntervals = Object.fromEntries(
     Object.entries(config.param_intervals).map(([name, spec]) => [
       name,
@@ -297,9 +381,29 @@ export function syncPerWorkerTunablesFromAutoConfig(config: AutoModeConfig): voi
       },
     ]),
   );
+  const algorithms = workerAlgorithmsFromAutoConfig(config);
+  const trialThreads = workerTrialThreadsFromAutoConfig(config);
+  const trialMemoryGb = workerTrialMemoryGbFromAutoConfig(config);
+  const concurrency = workerConcurrencyFromAutoConfig(config);
+  const limitSeconds = workerLimitSecondsFromAutoConfig(config);
+  const trialCounts = workerTrialCountsFromAutoConfig(config);
+
+  let workers: Array<{ id: string; name: string }> = [];
+  try {
+    workers = await api.listWorkers();
+  } catch {
+    workers = [];
+  }
+
+  const workerByName = new Map(
+    workers.map((worker) => [worker.name.toLowerCase(), worker]),
+  );
+
+  const items: Array<{ worker_id?: string; worker_name: string; profile: WorkerTunableProfilePayload }> =
+    [];
 
   for (const workerName of config.worker_names) {
-    store.byWorkerName[workerName] = {
+    const profile: WorkerTunableDefaults = {
       tool: config.tool.toLowerCase().trim(),
       selectedParams: [...config.params],
       paramIntervals: { ...paramIntervals },
@@ -321,6 +425,24 @@ export function syncPerWorkerTunablesFromAutoConfig(config: AutoModeConfig): voi
         workerSettingForName(trialCounts, workerName) ?? DEFAULT_AUTO_TOTAL_TRIALS,
       ),
     };
+
+    const worker = workerByName.get(workerName.toLowerCase());
+    if (worker) {
+      applyProfileToCache(worker, profile);
+    }
+    items.push({
+      worker_id: worker?.id,
+      worker_name: workerName,
+      profile: profileToPayload(profile),
+    });
   }
-  saveStore(store);
+
+  try {
+    if (items.length > 0) {
+      const saved = await api.bulkSaveWorkerTunableDefaults(items);
+      applyServerListToCache(saved.items);
+    }
+  } catch {
+    // Cache already updated locally for known workers.
+  }
 }

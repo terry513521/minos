@@ -66,7 +66,7 @@ import {
   previewAssignmentsFromAutoConfig,
 } from "../utils/autoModeSync";
 import { syncManualParamDefaultsFromAutoConfig, ensureManualDefaultsHydrated } from "../utils/manualParamDefaults";
-import { getWorkerTunableDefaults, saveWorkerTunableDefaults } from "../utils/workerTunableStorage";
+import { getWorkerTunableDefaults, saveWorkerTunableDefaults, ensureWorkerTunablesHydrated } from "../utils/workerTunableStorage";
 import {
   assignmentPatchFromImportedTunable,
   ApplyConfImportResult,
@@ -372,6 +372,10 @@ export function WorkersPanel({
     window.addEventListener(WORKERS_CHANGED_EVENT, onChanged);
     return () => window.removeEventListener(WORKERS_CHANGED_EVENT, onChanged);
   }, [refresh]);
+
+  useEffect(() => {
+    void ensureWorkerTunablesHydrated();
+  }, []);
 
   useEffect(() => {
     if (initialAutoStatus?.config?.params?.length) {

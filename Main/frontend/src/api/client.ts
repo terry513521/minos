@@ -332,6 +332,36 @@ export interface AutoModeRoundRecord {
   worker_results: AutoModeWorkerRoundResult[];
 }
 
+export interface WorkerTunableParamInterval {
+  min?: number;
+  max?: number;
+  step?: number;
+  values?: string[];
+}
+
+export interface WorkerTunableProfilePayload {
+  tool: string;
+  selected_params: string[];
+  param_intervals: Record<string, WorkerTunableParamInterval>;
+  algorithm: string;
+  concurrency: number;
+  limit_seconds: number;
+  trial_threads: number;
+  trial_memory_gb: number;
+  trial_count: number;
+}
+
+export interface WorkerTunableDefaultsRecord {
+  worker_id: string;
+  worker_name: string;
+  profile: WorkerTunableProfilePayload;
+  updated_at: string | null;
+}
+
+export interface WorkerTunableDefaultsListResponse {
+  items: WorkerTunableDefaultsRecord[];
+}
+
 export const api = {
   health: () => request<{ status: string }>("/health"),
   getPlatformRound: () => request<PlatformRound>("/platform/round"),
@@ -358,6 +388,24 @@ export const api = {
       { method: "POST" },
     ),
   listWorkers: () => request<WorkerRecord[]>("/workers"),
+  listWorkerTunableDefaults: () =>
+    request<WorkerTunableDefaultsListResponse>("/workers/tunable-defaults"),
+  saveWorkerTunableDefaults: (workerId: string, profile: WorkerTunableProfilePayload) =>
+    request<WorkerTunableDefaultsRecord>(`/workers/${workerId}/tunable-defaults`, {
+      method: "PUT",
+      body: JSON.stringify(profile),
+    }),
+  bulkSaveWorkerTunableDefaults: (
+    items: Array<{
+      worker_id?: string;
+      worker_name?: string;
+      profile: WorkerTunableProfilePayload;
+    }>,
+  ) =>
+    request<WorkerTunableDefaultsListResponse>("/workers/tunable-defaults/bulk", {
+      method: "PUT",
+      body: JSON.stringify({ items }),
+    }),
   registerWorker: (body: WorkerRegisterPayload) =>
     request<WorkerRegisterResult>("/workers/register", {
       method: "POST",
