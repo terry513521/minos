@@ -4,17 +4,17 @@ import { CandidateFinderPanel } from "../components/CandidateFinderPanel";
 import { AutoModePanel } from "../components/AutoModePanel";
 import { SectionHeader } from "../components/SectionHeader";
 import { WorkersPanel } from "../components/WorkersPanel";
-import { CandidateWorkerAssignment } from "../types/workerAssignment";
+import { WorkerAssignmentSummary } from "../types/workerAssignment";
 
 export function ConsolePage() {
   const [candidateContext, setCandidateContext] = useState<FindCandidatesResponse | null>(null);
-  const [assignmentsByCandidate, setAssignmentsByCandidate] = useState<
-    Record<number, CandidateWorkerAssignment[]>
-  >({});
+  const [workerAssignmentSummaries, setWorkerAssignmentSummaries] = useState<
+    WorkerAssignmentSummary[]
+  >([]);
 
-  const handleAssignmentsByCandidateChange = useCallback(
-    (index: Record<number, CandidateWorkerAssignment[]>) => {
-      setAssignmentsByCandidate(index);
+  const handleWorkerAssignmentSummariesChange = useCallback(
+    (summaries: WorkerAssignmentSummary[]) => {
+      setWorkerAssignmentSummaries(summaries);
     },
     [],
   );
@@ -30,13 +30,13 @@ export function ConsolePage() {
           />
           <CandidateFinderPanel
             onResultChange={setCandidateContext}
-            assignmentsByCandidate={assignmentsByCandidate}
+            workerAssignmentSummaries={workerAssignmentSummaries}
             embedded
           />
           <AutoModePanel />
           <WorkersPanel
             candidateContext={candidateContext}
-            onAssignmentsByCandidateChange={handleAssignmentsByCandidateChange}
+            onWorkerAssignmentSummariesChange={handleWorkerAssignmentSummariesChange}
           />
         </section>
       </div>

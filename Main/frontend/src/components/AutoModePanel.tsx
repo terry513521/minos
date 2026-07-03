@@ -64,12 +64,7 @@ export function AutoModePanel() {
     status.assignments.length > 0 ||
     Boolean(status.last_started_region);
 
-  const showPanel =
-    status.enabled ||
-    status.running ||
-    status.assignments.length > 0 ||
-    status.found_candidates.length > 0 ||
-    Boolean(status.last_started_region);
+  const showPanel = status.enabled;
 
   if (!showPanel) {
     return null;

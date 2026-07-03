@@ -12,7 +12,7 @@ import { normalizeRegion, chromosomeFromWindow } from "../utils/window";
 import { AUTO_MODE_CHANGED_EVENT } from "./AutoModePanel";
 import { ConfTooltip } from "./ConfTooltip";
 import { DeferredNumberInput } from "./DeferredNumberInput";
-import { CandidateWorkerAssignment } from "../types/workerAssignment";
+import { WorkerAssignmentSummary } from "../types/workerAssignment";
 
 const DEFAULT_REGION = "chr20:10000000-15000000";
 
@@ -20,13 +20,13 @@ const initialFinderState = loadCandidateFinderState();
 
 interface CandidateFinderPanelProps {
   onResultChange?: (result: FindCandidatesResponse | null) => void;
-  assignmentsByCandidate?: Record<number, CandidateWorkerAssignment[]>;
+  workerAssignmentSummaries?: WorkerAssignmentSummary[];
   embedded?: boolean;
 }
 
 export function CandidateFinderPanel({
   onResultChange,
-  assignmentsByCandidate = {},
+  workerAssignmentSummaries = [],
   embedded = false,
 }: CandidateFinderPanelProps) {
   const regionInitializedRef = useRef(false);
@@ -161,7 +161,7 @@ export function CandidateFinderPanel({
                 key={c.index}
                 candidate={c}
                 fallbackChrom={result.chromosome}
-                assignedWorkers={assignmentsByCandidate[c.index] ?? []}
+                workerSlots={workerAssignmentSummaries}
                 assignmentOpen={openAssignmentIndex === c.index}
                 onAssignmentToggle={() =>
                   setOpenAssignmentIndex((current) => (current === c.index ? null : c.index))
@@ -189,7 +189,7 @@ export function CandidateFinderPanel({
 function CandidateCard({
   candidate,
   fallbackChrom,
-  assignedWorkers,
+  workerSlots,
   assignmentOpen,
   onAssignmentToggle,
   onAssignmentClose,
@@ -197,7 +197,7 @@ function CandidateCard({
 }: {
   candidate: CandidatePreview;
   fallbackChrom: string;
-  assignedWorkers: CandidateWorkerAssignment[];
+  workerSlots: WorkerAssignmentSummary[];
   assignmentOpen: boolean;
   onAssignmentToggle: () => void;
   onAssignmentClose: () => void;
@@ -279,18 +279,35 @@ function CandidateCard({
           role="tooltip"
           onClick={(e) => e.stopPropagation()}
         >
-          <span className="candidate-assignment-popover-title">Worker assignments</span>
-          {assignedWorkers.length > 0 ? (
+          <span className="candidate-assignment-popover-title">Workers</span>
+          {workerSlots.length > 0 ? (
             <ul className="candidate-assignment-popover-list">
-              {assignedWorkers.map((slot) => (
-                <li key={slot.workerId}>
-                  <span className="chip chip-accent">{slot.workerName}</span>
-                  {slot.autoManaged && <span className="chip chip-muted">auto</span>}
-                </li>
-              ))}
+              {workerSlots.map((slot) => {
+                const assignedHere = slot.candidateIndex === candidate.index;
+                const assignedElsewhere =
+                  slot.candidateIndex != null && slot.candidateIndex !== candidate.index;
+                return (
+                  <li
+                    key={slot.workerId}
+                    className={assignedHere ? "candidate-assignment-row--here" : undefined}
+                  >
+                    <span className="chip chip-accent">{slot.workerName}</span>
+                    {assignedHere && <span className="chip chip-ok">this candidate</span>}
+                    {assignedElsewhere && (
+                      <span className="chip chip-muted">#{slot.candidateIndex! + 1}</span>
+                    )}
+                    {!assignedHere && !assignedElsewhere && (
+                      <span className="candidate-assignment-slot-empty">unassigned</span>
+                    )}
+                    {slot.autoManaged && assignedHere && (
+                      <span className="chip chip-muted">auto</span>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           ) : (
-            <p className="candidate-assignment-popover-empty">Not assigned to any worker.</p>
+            <p className="candidate-assignment-popover-empty">No workers registered.</p>
           )}
         </div>
       )}

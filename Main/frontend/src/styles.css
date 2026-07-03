@@ -790,6 +790,16 @@ code, .input-mono {
   gap: 0.35rem;
   flex-wrap: wrap;
 }
+.candidate-assignment-row--here {
+  padding: 0.2rem 0.35rem;
+  margin: -0.2rem -0.35rem;
+  border-radius: var(--radius-xs);
+  background: rgba(52, 211, 153, 0.08);
+}
+.candidate-assignment-slot-empty {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
 .candidate-assignment-popover-empty {
   margin: 0;
   font-size: 0.82rem;
