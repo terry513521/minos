@@ -115,3 +115,26 @@ class ControlPlaneSetting(Base):
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     value: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+
+class AutoModeRound(Base):
+    """One auto-mode optimization round with per-worker best scores."""
+
+    __tablename__ = "auto_mode_rounds"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    source_key: Mapped[str] = mapped_column(String(256), unique=True, nullable=False, index=True)
+    region: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    chromosome: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    start: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    end: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    tool: Mapped[str] = mapped_column(String(32), default="gatk")
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ended_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    end_reason: Mapped[str] = mapped_column(String(32), nullable=False)
+    winner_worker_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    winner_worker_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    winner_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    winner_conf: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    worker_results: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

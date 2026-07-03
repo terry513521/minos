@@ -440,3 +440,31 @@ class AutoBestResponse(BaseModel):
     worker_name: str | None = None
     stopped_workers: list[dict[str, Any]] = Field(default_factory=list)
     message: str
+    round_id: str | None = None
+
+
+class AutoModeWorkerRoundResult(BaseModel):
+    worker_id: str
+    worker_name: str
+    algorithm: str | None = None
+    candidate_index: int | None = None
+    window: str | None = None
+    best_score: float | None = None
+    best_conf: dict[str, Any] = Field(default_factory=dict)
+    trials_evaluated: int = 0
+    dispatch_ok: bool | None = None
+    error: str | None = None
+
+
+class AutoModeRoundRecord(BaseModel):
+    id: str
+    region: str
+    tool: str
+    started_at: datetime
+    ended_at: datetime
+    end_reason: str
+    winner_worker_id: str | None = None
+    winner_worker_name: str | None = None
+    winner_score: float | None = None
+    winner_conf: dict[str, Any] = Field(default_factory=dict)
+    worker_results: list[AutoModeWorkerRoundResult] = Field(default_factory=list)

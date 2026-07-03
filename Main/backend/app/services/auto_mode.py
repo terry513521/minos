@@ -429,6 +429,7 @@ class AutoSession:
     found_candidates: list[CandidatePreview] = field(default_factory=list)
     candidates_found: int = 0
     running: bool = True
+    round_recorded: bool = False
 
 
 def auto_mode_config(worker_names: list[str]) -> AutoModeConfig:
@@ -569,6 +570,7 @@ def _session_to_json(session: AutoSession) -> str:
         "candidates_found": session.candidates_found,
         "assignments": [assignment.model_dump() for assignment in session.assignments],
         "found_candidates": [candidate.model_dump() for candidate in session.found_candidates],
+        "round_recorded": session.round_recorded,
         "selected_candidates": [
             {
                 "worker_name": slot.worker_name,
@@ -611,6 +613,7 @@ def _session_from_json(raw: str) -> AutoSession:
         tool=str(data.get("tool") or AUTO_TOOL),
         started_at=started_at,
         running=bool(data.get("running", False)),
+        round_recorded=bool(data.get("round_recorded", False)),
         candidates_found=int(data.get("candidates_found") or 0),
         assignments=[
             AutoDispatchAssignment.model_validate(item)
@@ -1249,7 +1252,10 @@ async def start_auto_mode(
 
 async def restart_auto_mode_session(db: AsyncSession) -> AutoModeStatus:
     """Stop auto workers and clear session state so POST /auto/start can run again."""
+    from app.services.auto_round_history import record_auto_round_if_needed
+
     worker_names = await get_registered_worker_names(db)
+    await record_auto_round_if_needed(db, end_reason="restart")
     await stop_all_auto_workers(db)
     auto_mode_store.end_session(worker_names)
     await set_control_plane_setting(db, LAST_AUTO_START_REGION_KEY, None)
@@ -1258,7 +1264,10 @@ async def restart_auto_mode_session(db: AsyncSession) -> AutoModeStatus:
 
 
 async def collect_best_and_stop(db: AsyncSession) -> AutoBestResponse:
+    from app.services.auto_round_history import record_auto_round_if_needed
+
     session = auto_mode_store.session
+    round_row = await record_auto_round_if_needed(db, end_reason="best_export")
     worker_ids: list[str]
     if session and session.assignments:
         worker_ids = [item.worker_id for item in session.assignments]
@@ -1301,6 +1310,7 @@ async def collect_best_and_stop(db: AsyncSession) -> AutoBestResponse:
             worker_name=None,
             stopped_workers=stop_results,
             message="No worker returned a best score",
+            round_id=round_row.id if round_row else None,
         )
 
     winner = max(best_entries, key=lambda row: row[2])
@@ -1313,4 +1323,5 @@ async def collect_best_and_stop(db: AsyncSession) -> AutoBestResponse:
         worker_name=worker_name,
         stopped_workers=stop_results,
         message=f"Best conf from {worker_name} (score {best_score:.4f})",
+        round_id=round_row.id if round_row else None,
     )

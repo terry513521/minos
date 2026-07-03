@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, AutoModeStatus, AutoSelectedCandidate, CandidatePreview } from "../api/client";
+import { api, AutoModeRoundRecord, AutoModeStatus, AutoSelectedCandidate, CandidatePreview } from "../api/client";
 import { formatLocalDateTime } from "../hooks/useSubmissionCountdown";
 import {
   candidateHistoryScore,
@@ -38,8 +38,21 @@ export function AutoModePanel({ embedded = false }: AutoModePanelProps) {
   const [restarting, setRestarting] = useState(false);
   const [restartMessage, setRestartMessage] = useState<string | null>(null);
   const [editingParams, setEditingParams] = useState(false);
+  const [roundHistory, setRoundHistory] = useState<AutoModeRoundRecord[]>([]);
+  const [roundHistoryError, setRoundHistoryError] = useState<string | null>(null);
+  const [expandedRoundId, setExpandedRoundId] = useState<string | null>(null);
   const editingParamsRef = useRef(false);
   editingParamsRef.current = editingParams;
+
+  const refreshRoundHistory = useCallback(() => {
+    api
+      .listAutoRounds(50)
+      .then((rows) => {
+        setRoundHistory(rows);
+        setRoundHistoryError(null);
+      })
+      .catch((err: Error) => setRoundHistoryError(err.message));
+  }, []);
 
   const refresh = useCallback(() => {
     api
@@ -51,7 +64,8 @@ export function AutoModePanel({ embedded = false }: AutoModePanelProps) {
         setError(null);
       })
       .catch((err: Error) => setError(err.message));
-  }, []);
+    refreshRoundHistory();
+  }, [refreshRoundHistory]);
 
   useEffect(() => {
     refresh();
@@ -345,6 +359,99 @@ export function AutoModePanel({ embedded = false }: AutoModePanelProps) {
         </>
       )}
 
+      <div className="auto-mode-section">
+        <div className="auto-mode-section-head">
+          <span className="auto-mode-section-title">Round history</span>
+        </div>
+        {roundHistoryError && <div className="alert error">{roundHistoryError}</div>}
+        {roundHistory.length === 0 ? (
+          <p className="auto-mode-muted">
+            Completed auto rounds appear here with each worker&apos;s best score and conf.
+          </p>
+        ) : (
+          <div className="auto-mode-round-history">
+            {roundHistory.map((round) => {
+              const expanded = expandedRoundId === round.id;
+              return (
+                <div key={round.id} className="auto-mode-round-card">
+                  <button
+                    type="button"
+                    className="auto-mode-round-card-head"
+                    onClick={() => setExpandedRoundId(expanded ? null : round.id)}
+                    aria-expanded={expanded}
+                  >
+                    <div className="auto-mode-round-card-summary">
+                      <code className="auto-mode-round-region">{round.region}</code>
+                      <span className="auto-mode-round-meta">
+                        {formatLocalDateTime(round.ended_at)} · {formatRoundEndReason(round.end_reason)}
+                      </span>
+                    </div>
+                    <div className="auto-mode-round-winner">
+                      {round.winner_worker_name ? (
+                        <>
+                          <span className="auto-mode-round-winner-name">{round.winner_worker_name}</span>
+                          <span className="metric-pill">
+                            {round.winner_score != null ? round.winner_score.toFixed(4) : "—"}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="auto-mode-muted">No scored workers</span>
+                      )}
+                    </div>
+                  </button>
+                  {expanded && (
+                    <div className="auto-mode-round-workers">
+                      <table className="auto-mode-param-table">
+                        <thead>
+                          <tr>
+                            <th>Worker</th>
+                            <th>Algorithm</th>
+                            <th>Candidate</th>
+                            <th>Best score</th>
+                            <th>Trials</th>
+                            <th>Conf</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {round.worker_results.map((worker) => (
+                            <tr key={`${round.id}-${worker.worker_id}`}>
+                              <td>{worker.worker_name}</td>
+                              <td><code>{worker.algorithm ?? "—"}</code></td>
+                              <td>
+                                {worker.candidate_index != null
+                                  ? `#${worker.candidate_index + 1}`
+                                  : "—"}
+                              </td>
+                              <td>
+                                {worker.best_score != null ? worker.best_score.toFixed(4) : "—"}
+                              </td>
+                              <td>{worker.trials_evaluated || "—"}</td>
+                              <td>
+                                {Object.keys(worker.best_conf).length > 0 ? (
+                                  <ConfTooltip conf={worker.best_conf} />
+                                ) : (
+                                  worker.error ? (
+                                    <span className="chip chip-warn" title={worker.error}>
+                                      error
+                                    </span>
+                                  ) : (
+                                    "—"
+                                  )
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       <AutoModeTunableEditor
         open={editingParams}
         config={config}
@@ -356,6 +463,21 @@ export function AutoModePanel({ embedded = false }: AutoModePanelProps) {
       />
     </div>
   );
+}
+
+function formatRoundEndReason(reason: string): string {
+  switch (reason) {
+    case "best_export":
+      return "Exported best";
+    case "restart":
+      return "Session restart";
+    case "time_limit":
+      return "Time limit";
+    case "stop_all":
+      return "Stop all";
+    default:
+      return reason;
+  }
 }
 
 function AutoModeFoundCandidateCard({

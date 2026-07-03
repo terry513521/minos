@@ -302,6 +302,34 @@ export interface AutoBestResult {
   worker_name: string | null;
   stopped_workers: Array<Record<string, unknown>>;
   message: string;
+  round_id?: string | null;
+}
+
+export interface AutoModeWorkerRoundResult {
+  worker_id: string;
+  worker_name: string;
+  algorithm: string | null;
+  candidate_index: number | null;
+  window: string | null;
+  best_score: number | null;
+  best_conf: Record<string, unknown>;
+  trials_evaluated: number;
+  dispatch_ok: boolean | null;
+  error: string | null;
+}
+
+export interface AutoModeRoundRecord {
+  id: string;
+  region: string;
+  tool: string;
+  started_at: string;
+  ended_at: string;
+  end_reason: string;
+  winner_worker_id: string | null;
+  winner_worker_name: string | null;
+  winner_score: number | null;
+  winner_conf: Record<string, unknown>;
+  worker_results: AutoModeWorkerRoundResult[];
 }
 
 export const api = {
@@ -381,4 +409,6 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(body),
     }),
+  listAutoRounds: (limit = 50) =>
+    request<AutoModeRoundRecord[]>(`/auto/rounds?limit=${limit}`),
 };

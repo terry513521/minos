@@ -1943,6 +1943,70 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   margin: 0.35rem 0;
 }
 
+.auto-mode-round-history {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.auto-mode-round-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.02);
+  overflow: hidden;
+}
+
+.auto-mode-round-card-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 0.9rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.auto-mode-round-card-head:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.auto-mode-round-card-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.auto-mode-round-region {
+  font-size: 0.82rem;
+  word-break: break-all;
+}
+
+.auto-mode-round-meta {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.auto-mode-round-winner {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-shrink: 0;
+}
+
+.auto-mode-round-winner-name {
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.auto-mode-round-workers {
+  padding: 0 0.9rem 0.9rem;
+}
+
 .limit-countdown-badge {
   display: inline-flex;
   align-items: center;

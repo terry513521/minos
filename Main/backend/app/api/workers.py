@@ -165,11 +165,15 @@ async def stop_all_workers_endpoint(
     db: AsyncSession = Depends(get_db),
 ) -> WorkersStopAllResponse:
     from app.services.auto_mode import auto_mode_store, persist_auto_mode_state
+    from app.services.auto_round_history import record_auto_round_if_needed
 
     raw_results = await stop_all_workers_optimization(db)
     session = auto_mode_store.session
+    was_running = bool(session and session.running)
     if session:
         session.running = False
+    if was_running:
+        await record_auto_round_if_needed(db, end_reason="stop_all")
     await persist_auto_mode_state(db)
 
     results = [WorkerStopAllResult(**row) for row in raw_results]

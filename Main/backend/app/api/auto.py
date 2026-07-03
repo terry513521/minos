@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.schemas import (
     AutoBestResponse,
+    AutoModeRoundRecord,
     AutoModeStatus,
     AutoModeTunableConfigUpdate,
     AutoModeUpdateRequest,
@@ -21,6 +22,7 @@ from app.services.auto_mode import (
     start_auto_mode,
     update_auto_mode_tunable_config,
 )
+from app.services.auto_round_history import list_auto_rounds, record_auto_round_if_needed
 
 router = APIRouter(prefix="/auto", tags=["auto"])
 
@@ -36,8 +38,17 @@ async def get_auto_mode(db: AsyncSession = Depends(get_db)) -> AutoModeStatus:
     await retry_failed_auto_dispatches(db)
     status = auto_mode_store.status(worker_names)
     if was_running and not status.running:
+        await record_auto_round_if_needed(db, end_reason="time_limit")
         await persist_auto_mode_state(db)
     return status
+
+
+@router.get("/rounds", response_model=list[AutoModeRoundRecord])
+async def list_auto_mode_rounds(
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+) -> list[AutoModeRoundRecord]:
+    return await list_auto_rounds(db, limit=limit)
 
 
 @router.put("/mode", response_model=AutoModeStatus)
