@@ -4,10 +4,7 @@ import { api } from "../api/client";
 import { AddWorkerModal } from "./AddWorkerModal";
 import { AUTO_MODE_CHANGED_EVENT } from "./AutoModePanel";
 
-const sections = [
-  { hash: "#candidates", label: "Candidates" },
-  { hash: "#history", label: "History" },
-];
+const sections = [{ hash: "#candidates", label: "Candidates" }];
 
 export function Layout() {
   const location = useLocation();

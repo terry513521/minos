@@ -2,10 +2,20 @@ import { FindCandidatesResponse } from "../api/client";
 
 const STORAGE_KEY = "effortless:candidate-finder:v1";
 
+export const DEFAULT_K_CANDIDATES = 6;
+export const MIN_K_CANDIDATES = 1;
+export const MAX_K_CANDIDATES = 16;
+
 export interface PersistedCandidateFinderState {
   region: string;
   kCandidates: number;
   result: FindCandidatesResponse | null;
+}
+
+export function clampKCandidates(value: number | undefined): number {
+  const parsed = Math.round(Number(value));
+  if (!Number.isFinite(parsed)) return DEFAULT_K_CANDIDATES;
+  return Math.min(MAX_K_CANDIDATES, Math.max(MIN_K_CANDIDATES, parsed));
 }
 
 export function loadCandidateFinderState(): PersistedCandidateFinderState | null {
@@ -16,10 +26,7 @@ export function loadCandidateFinderState(): PersistedCandidateFinderState | null
     if (!parsed || typeof parsed !== "object") return null;
     return {
       region: typeof parsed.region === "string" ? parsed.region : "",
-      kCandidates:
-        typeof parsed.kCandidates === "number" && parsed.kCandidates > 0
-          ? parsed.kCandidates
-          : 2,
+      kCandidates: clampKCandidates(parsed.kCandidates),
       result: parsed.result ?? null,
     };
   } catch {
@@ -29,7 +36,13 @@ export function loadCandidateFinderState(): PersistedCandidateFinderState | null
 
 export function saveCandidateFinderState(state: PersistedCandidateFinderState): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        ...state,
+        kCandidates: clampKCandidates(state.kCandidates),
+      }),
+    );
   } catch {
     // Ignore quota / private-mode errors.
   }

@@ -171,8 +171,7 @@ code, .input-mono {
   width: 100%;
 }
 .console-hero,
-#candidates,
-#history {
+#candidates {
   width: 100%;
 }
 .workflow-rail {
@@ -217,14 +216,11 @@ code, .input-mono {
 .bento-grid {
   display: grid;
   grid-template-columns: 1fr;
-  grid-template-areas:
-    "candidates"
-    "history";
+  grid-template-areas: "candidates";
   gap: var(--pad-2);
   width: 100%;
 }
 #candidates { grid-area: candidates; }
-#history { grid-area: history; }
 
 .panel {
   width: 100%;
@@ -676,15 +672,31 @@ code, .input-mono {
 .candidate-finder-chrom-editing {
   border-color: rgba(167, 139, 250, 0.35);
 }
-.candidate-k-select select {
-  height: 100%;
-  min-width: 4rem;
-  padding: 0.65rem 0.85rem;
+.candidate-k-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  flex-shrink: 0;
+}
+.candidate-k-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.candidate-k-input {
+  width: 4.5rem;
+  min-height: 2.65rem;
+  padding: 0.65rem 0.75rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--bg-elevated);
   color: var(--text);
   font: inherit;
+}
+.candidate-k-input:focus {
+  outline: none;
+  border-color: rgba(167, 139, 250, 0.45);
 }
 .candidate-find-btn {
   white-space: nowrap;
