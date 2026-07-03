@@ -12,7 +12,7 @@ _DEFAULT_GATK_POLICY = OptimizerPolicy(
         "min_base_quality_score",
         "min_mapping_quality_score",
     ],
-    search_method="grid",
+    search_method="optuna",
     search_budget=SearchBudget(max_trials=12, timeout_seconds=3600),
     param_bounds={
         "pcr_indel_model": {"allowed": ["NONE", "CONSERVATIVE"]},

@@ -2,7 +2,7 @@ from copy import deepcopy
 from itertools import product
 from typing import Any
 
-from app.optimization.algorithms import is_adaptive_algorithm, normalize_algorithm
+from app.optimization.algorithms import normalize_algorithm
 from app.optimization.param_specs import TuneSpec
 
 
@@ -182,23 +182,19 @@ def count_search_trials(
     param_names: list[str],
     param_intervals: dict[str, Any] | None,
     *,
+<<<<<<< HEAD
     concurrency: int = 1,
     param_split: bool = True,
     algorithm: str = "grid",
     adaptive_max_trials: int = 44,
+=======
+    algorithm: str = "optuna",
+    adaptive_max_trials: int = 30,
+>>>>>>> e87a6ff604bb77a556a2525b4658384b8cee650b
 ) -> int:
-    """Trials to run: 1 base + search variants (grid, param-split, or adaptive cap)."""
-    algo = normalize_algorithm(algorithm)
-    if is_adaptive_algorithm(algo):
-        return 1 + max(1, adaptive_max_trials)
-
-    if param_split and concurrency > 1 and len(param_names) > 1:
-        total = 1
-        for group in split_params_for_lanes(param_names, concurrency):
-            total += max(0, len(build_search_space(base_conf, tool, group, param_intervals)) - 1)
-        return total
-
-    return len(build_search_space(base_conf, tool, param_names, param_intervals))
+    """Trials to run: 1 base + adaptive search cap."""
+    normalize_algorithm(algorithm)
+    return 1 + max(1, adaptive_max_trials)
 
 
 def summarize_param_axes(
@@ -253,7 +249,6 @@ def build_optimization_plan(
     param_intervals: dict[str, Any] | None,
     base_conf: dict[str, Any],
     concurrency: int,
-    param_split: bool,
     limit_seconds: int,
     algorithm: str,
     adaptive_max_trials: int = 44,
@@ -271,61 +266,29 @@ def build_optimization_plan(
         tool,
         params,
         param_intervals,
-        concurrency=concurrency,
-        param_split=param_split,
         algorithm=algo,
         adaptive_max_trials=adaptive_max_trials,
     )
-
-    if is_adaptive_algorithm(algo):
-        mode = algo
-    elif param_split and concurrency > 1 and len(params) > 1:
-        mode = "param_split"
-    else:
-        mode = "full_grid"
 
     plan: dict[str, Any] = {
         "window": window,
         "benchmark_window": benchmark_window,
         "tool": tool,
         "algorithm": algo,
-        "mode": mode,
+        "mode": algo,
         "concurrency": concurrency,
         "limit_seconds": limit_seconds,
         "params": list(params),
         "param_count": len(params),
         "full_cartesian_grid": full_cartesian,
         "planned_trials": planned_trials,
-        "adaptive_max_trials": adaptive_max_trials if is_adaptive_algorithm(algo) else None,
+        "adaptive_max_trials": adaptive_max_trials,
         "vcf_cache_enabled": vcf_cache_enabled,
         "gatk_persistent_container": gatk_persistent_container and tool.lower() == "gatk",
         "trial_threads": trial_threads,
         "trial_memory_gb": trial_memory_gb,
         "axes": summarize_param_axes(base_conf, tool, params, param_intervals),
-        "lanes": [],
     }
-
-    if mode == "param_split":
-        for index, lane_params in enumerate(split_params_for_lanes(params, concurrency), start=1):
-            lane_intervals = filter_param_intervals(param_intervals, lane_params)
-            lane_variants = len(build_search_space(base_conf, tool, lane_params, lane_intervals))
-            lane_axes = summarize_param_axes(base_conf, tool, lane_params, lane_intervals)
-            lane_product = 1
-            for axis in lane_axes:
-                lane_product *= max(1, int(axis["value_count"]))
-            plan["lanes"].append(
-                {
-                    "lane": index,
-                    "params": lane_params,
-                    "param_pairs": max(0, len(lane_params) - 1),
-                    "variant_count": lane_variants,
-                    "grid_product": lane_product,
-                    "axes": lane_axes,
-                }
-            )
-    else:
-        plan["grid_product"] = full_cartesian
-        plan["parallel_workers"] = concurrency
 
     return plan
 
@@ -360,26 +323,14 @@ def format_optimization_plan(plan: dict[str, Any]) -> str:
             f"  - {axis['param']}: {axis['value_count']} values [{preview}{suffix}]"
         )
 
-    if plan["mode"] == "param_split":
-        lines.append(f"lanes: {len(plan['lanes'])} (different param groups per parallel lane)")
-        for lane in plan["lanes"]:
-            params_label = " + ".join(lane["params"])
-            pairs = lane["param_pairs"]
-            pair_note = f", {pairs} param pair(s) in lane" if pairs else ""
-            lines.append(
-                f"  lane {lane['lane']}: [{params_label}] -> "
-                f"{lane['grid_product']} grid{pair_note}, {lane['variant_count']} configs"
-            )
-    elif plan["mode"] in ("random", "optuna"):
+    if plan["mode"] in ("random", "optuna", "gp", "sobol", "lhs"):
         lines.append(
             f"search: {plan['mode']} up to {plan['adaptive_max_trials']} trials after base "
-            f"(full grid reference: {plan['full_cartesian_grid']} configs)"
+            f"(reference space: {plan['full_cartesian_grid']} configs)"
         )
     else:
-        workers = plan.get("parallel_workers", 1)
         lines.append(
-            f"search: full grid {plan.get('grid_product', plan['full_cartesian_grid'])} configs, "
-            f"up to {workers} trials in parallel"
+            f"search: {plan['mode']} up to {plan['adaptive_max_trials']} trials after base"
         )
 
     extras: list[str] = []

@@ -42,7 +42,17 @@ WORKER_SELECTION_RULES: tuple[tuple[str, SelectionReason], ...] = (
     ("Big", "most_similar"),
     ("Igno", "best_composite"),
 )
+<<<<<<< HEAD
 AUTO_ALGORITHM = "optuna"
+=======
+AUTO_ALGORITHM_OPTUNA_WEIGHT = 2
+AUTO_ALGORITHM_RANDOM_WEIGHT = 1
+AUTO_WORKER_ALGORITHMS: dict[str, str] = {
+    "VM": "optuna",
+    "Big": "optuna",
+    "Igno": "random",
+}
+>>>>>>> e87a6ff604bb77a556a2525b4658384b8cee650b
 AUTO_FIND_K = 6
 AUTO_SELECT_K = 3
 AUTO_LIMIT_SECONDS = 50 * 60
@@ -94,7 +104,7 @@ def auto_mode_config() -> AutoModeConfig:
         params=list(AUTO_PARAMS),
         param_intervals=dict(AUTO_PARAM_INTERVALS),
         worker_names=list(AUTO_WORKER_NAMES),
-        worker_algorithms={},
+        worker_algorithms=dict(AUTO_WORKER_ALGORITHMS),
         assignment_strategy=AUTO_ASSIGNMENT_STRATEGY,
         limit_seconds=AUTO_LIMIT_SECONDS,
         adaptive_max_trials=AUTO_ADAPTIVE_MAX_TRIALS,
@@ -304,6 +314,7 @@ def assign_workers_by_metric(
     for worker_name, reason in WORKER_SELECTION_RULES:
         if worker_name not in worker_names:
             continue
+        algorithm = AUTO_WORKER_ALGORITHMS[worker_name]
         score_fn = score_fns[reason]
         available = [candidate for candidate in candidates if candidate.index not in used_indices]
         if not available:

@@ -18,18 +18,19 @@ from app.optimization.adaptive_search import (
     suggest_optuna_params,
     suggest_random_params,
 )
-from app.optimization.algorithms import is_adaptive_algorithm, normalize_algorithm
+from app.optimization.quasi_random import (
+    build_quasi_sample_confs,
+    seed_from_job_id,
+)
+from app.optimization.algorithms import is_optuna_algorithm, normalize_algorithm
 from app.benchmark import BenchmarkResult, conf_equals, run_benchmark, validate_benchmark_assets, validate_tool_supported
 from app.config import Settings, get_settings
 from app.optimization.job_control import is_stop_requested
 from app.domain.schemas import OptimizeRequest, OptimizeResponse
 from app.optimization.search import (
     build_optimization_plan,
-    build_search_space,
     count_search_trials,
-    filter_param_intervals,
     format_optimization_plan,
-    split_params_for_lanes,
 )
 from app.domain.state import best_store
 from app.core.window import resolve_benchmark_window
@@ -59,20 +60,11 @@ def validate_optimize_request(request: OptimizeRequest, settings: Settings | Non
     )
     validate_benchmark_assets(benchmark_window, settings)
     intervals = _intervals_payload(request)
-    concurrency = _parse_concurrency(request.concurrency)
-    param_split = (
-        settings.param_split_concurrency
-        and concurrency > 1
-        and len(request.params) > 1
-        and not is_adaptive_algorithm(algorithm)
-    )
     return count_search_trials(
         request.base_conf,
         request.tool,
         request.params,
         intervals,
-        concurrency=concurrency,
-        param_split=param_split,
         algorithm=algorithm,
         adaptive_max_trials=adaptive_max_trials,
     )
@@ -189,58 +181,6 @@ def _run_parallel_grid(
         _shutdown_executor(pool)
 
 
-def _run_param_split_lanes(
-    *,
-    request: OptimizeRequest,
-    base_conf: dict[str, Any],
-    intervals: dict[str, Any] | None,
-    concurrency: int,
-    work_root: Path,
-    settings: Settings,
-    timed_out: Callable[[], bool],
-    record_result: Callable[[BenchmarkResult, str], None],
-) -> None:
-    """Each lane tunes a different param subset; lanes run in parallel."""
-    lanes = split_params_for_lanes(request.params, concurrency)
-    lane_variants: list[tuple[list[str], list[dict[str, Any]]]] = []
-
-    for lane_params in lanes:
-        lane_intervals = filter_param_intervals(intervals, lane_params)
-        variants = build_search_space(base_conf, request.tool, lane_params, lane_intervals)
-        candidates = [conf for conf in variants if not conf_equals(conf, base_conf)]
-        lane_variants.append((lane_params, candidates))
-
-    def run_lane(lane_params: list[str], candidates: list[dict[str, Any]]) -> None:
-        logger.info(
-            "Lane start: params [%s] · %s trial(s)",
-            ", ".join(lane_params),
-            len(candidates),
-        )
-        for conf in candidates:
-            if timed_out():
-                return
-            record_result(
-                _evaluate_conf(request, conf, work_root, settings),
-                f"lane [{', '.join(lane_params)}]",
-            )
-
-    pool = ThreadPoolExecutor(max_workers=len(lanes))
-    futures = [
-        pool.submit(run_lane, lane_params, candidates)
-        for lane_params, candidates in lane_variants
-    ]
-    try:
-        for future in as_completed(futures):
-            if timed_out():
-                break
-            try:
-                future.result()
-            except Exception as exc:
-                logger.warning("Lane task failed: %s", exc)
-    finally:
-        _shutdown_executor(pool)
-
-
 def _run_adaptive_search(
     *,
     request: OptimizeRequest,
@@ -295,26 +235,69 @@ def _run_adaptive_search(
                 break
         return
 
-    import optuna
+    if algorithm in ("sobol", "lhs"):
+        seed = seed_from_job_id(request.job_id)
+        param_sets = build_quasi_sample_confs(
+            algorithm,
+            n=max_trials,
+            base_conf=base_conf,
+            tool=request.tool,
+            specs=specs,
+            seed=seed,
+        )
+        idx = 0
+        while not timed_out() and extra_done < max_trials and idx < len(param_sets):
+            batch: list[dict[str, Any]] = []
+            while (
+                len(batch) < concurrency
+                and idx < len(param_sets)
+                and extra_done + len(batch) < max_trials
+            ):
+                conf = build_conf_from_params(base_conf, request.tool, param_sets[idx])
+                idx += 1
+                if remember(conf):
+                    batch.append(conf)
+            if not batch:
+                logger.info("%s search exhausted unique configs", algorithm.upper())
+                break
+            before = extra_done
+            _run_parallel_grid(
+                candidate_variants=batch,
+                concurrency=min(concurrency, len(batch)),
+                timed_out=timed_out,
+                evaluate=evaluate,
+                record_result=record_result,
+                label=algorithm,
+            )
+            extra_done += len(batch)
+            if extra_done == before:
+                break
+        return
 
-    study = create_optuna_study()
-    while not timed_out() and extra_done < max_trials:
-        trial = study.ask()
-        params = suggest_optuna_params(trial, base_conf, request.tool, specs)
-        conf = build_conf_from_params(base_conf, request.tool, params)
-        if not remember(conf):
-            study.tell(trial, state=optuna.trial.TrialState.FAIL)
-            continue
-        if timed_out():
-            study.tell(trial, state=optuna.trial.TrialState.FAIL)
-            break
-        result = evaluate(conf)
-        record_result(result, "optuna")
-        extra_done += 1
-        if result.success:
-            study.tell(trial, result.score)
-        else:
-            study.tell(trial, state=optuna.trial.TrialState.FAIL)
+    if is_optuna_algorithm(algorithm):
+        import optuna
+
+        study = create_optuna_study(algorithm)
+        while not timed_out() and extra_done < max_trials:
+            trial = study.ask()
+            params = suggest_optuna_params(trial, base_conf, request.tool, specs)
+            conf = build_conf_from_params(base_conf, request.tool, params)
+            if not remember(conf):
+                study.tell(trial, state=optuna.trial.TrialState.FAIL)
+                continue
+            if timed_out():
+                study.tell(trial, state=optuna.trial.TrialState.FAIL)
+                break
+            result = evaluate(conf)
+            record_result(result, algorithm)
+            extra_done += 1
+            if result.success:
+                study.tell(trial, result.score)
+            else:
+                study.tell(trial, state=optuna.trial.TrialState.FAIL)
+        return
+
+    raise ValueError(f"Unhandled adaptive algorithm: {algorithm}")
 
 
 def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> OptimizeResponse:
@@ -331,12 +314,6 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
     concurrency = _parse_concurrency(request.concurrency)
     intervals = _intervals_payload(request)
 
-    use_param_split = (
-        settings.param_split_concurrency
-        and concurrency > 1
-        and len(request.params) > 1
-        and not is_adaptive_algorithm(algorithm)
-    )
     plan = build_optimization_plan(
         window=request.window,
         tool=job_request.tool,
@@ -344,7 +321,6 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
         param_intervals=intervals,
         base_conf=job_request.base_conf,
         concurrency=concurrency,
-        param_split=use_param_split,
         limit_seconds=limit_seconds,
         algorithm=algorithm,
         adaptive_max_trials=adaptive_max_trials,
@@ -443,6 +419,7 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
             return time.time() >= deadline or is_stop_requested()
 
         if not timed_out():
+<<<<<<< HEAD
             if is_adaptive_algorithm(algorithm):
                 logger.info(
                     "Starting %s search: up to %s trials after base",
@@ -501,6 +478,25 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
                         evaluate=evaluate,
                         record_result=record_result,
                     )
+=======
+            logger.info(
+                "Starting %s search: up to %s trials after base",
+                algorithm,
+                settings.adaptive_max_trials,
+            )
+            _run_adaptive_search(
+                request=job_request,
+                base_conf=job_request.base_conf,
+                intervals=intervals,
+                algorithm=algorithm,
+                concurrency=concurrency,
+                max_trials=settings.adaptive_max_trials,
+                work_root=work_root,
+                settings=settings,
+                timed_out=timed_out,
+                record_result=record_result,
+            )
+>>>>>>> e87a6ff604bb77a556a2525b4658384b8cee650b
 
         if best_score is None:
             message = errors[0] if errors else "No successful benchmark trials"
@@ -526,7 +522,7 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
 
         finish_message = (
             f"Done: {trials_evaluated}/{search_space_size} trials · best {best_score:.4f} · "
-            f"{plan['mode']} · Cartesian {plan['full_cartesian_grid']}"
+            f"{plan['mode']} · reference space {plan['full_cartesian_grid']} configs"
         )
         if is_stop_requested():
             finish_message += " (stopped by user)"

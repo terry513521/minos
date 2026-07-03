@@ -7,3 +7,4 @@ psutil>=6.0.0
 httpx>=0.27.0
 bittensor-wallet>=3.0.0
 optuna>=3.6.0
+scipy>=1.11.0

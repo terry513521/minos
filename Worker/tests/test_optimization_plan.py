@@ -1,7 +1,7 @@
 from app.optimization.search import build_optimization_plan, format_optimization_plan
 
 
-def test_optimization_plan_param_split():
+def test_optimization_plan_adaptive():
     base_conf = {
         "gatk_options": {
             "standard_min_confidence_threshold_for_calling": 30.0,
@@ -22,25 +22,20 @@ def test_optimization_plan_param_split():
         param_intervals=intervals,
         base_conf=base_conf,
         concurrency=2,
-        param_split=True,
         limit_seconds=1800,
-        algorithm="grid",
+        algorithm="gp",
+        adaptive_max_trials=12,
     )
 
-    assert plan["mode"] == "param_split"
+    assert plan["mode"] == "gp"
     assert plan["full_cartesian_grid"] == 9
-    assert plan["planned_trials"] == 5
-    assert len(plan["lanes"]) == 2
-    assert plan["lanes"][0]["param_pairs"] == 0
-    assert plan["lanes"][1]["param_pairs"] == 0
+    assert plan["planned_trials"] == 13
 
     text = format_optimization_plan(plan)
     assert "Optimization plan" in text
     assert "assigned window:" in text
-    assert "full Cartesian grid: 9" in text
-    assert "planned trials: 5" in text
-    assert "lane 1:" in text
-    assert "lane 2:" in text
+    assert "search: gp up to 12 trials after base" in text
+    assert "planned trials: 13" in text
 
 
 def test_optimization_plan_shows_benchmark_slice():
@@ -52,9 +47,8 @@ def test_optimization_plan_shows_benchmark_slice():
         param_intervals={"min_mapping_quality_score": {"min": 15, "max": 25, "step": 5}},
         base_conf={"gatk_options": {"min_mapping_quality_score": 20}},
         concurrency=1,
-        param_split=False,
         limit_seconds=600,
-        algorithm="grid",
+        algorithm="optuna",
     )
     text = format_optimization_plan(plan)
     assert "assigned window: chr21:1000000-6000000" in text

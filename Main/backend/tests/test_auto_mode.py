@@ -5,6 +5,7 @@ from app.services.auto_mode import (
     AUTO_ALGORITHM,
     AUTO_SCORE_WEIGHT,
     AUTO_SIMILARITY_WEIGHT,
+    AUTO_WORKER_ALGORITHMS,
     AutoModeStore,
     AutoSession,
     assign_workers_by_metric,
@@ -44,6 +45,17 @@ def test_composite_candidate_score():
     assert composite_candidate_score(candidate) == expected
 
 
+<<<<<<< HEAD
+=======
+def test_auto_worker_algorithms_are_fixed_per_worker():
+    assert AUTO_WORKER_ALGORITHMS == {
+        "VM": "optuna",
+        "Big": "optuna",
+        "Igno": "random",
+    }
+
+
+>>>>>>> e87a6ff604bb77a556a2525b4658384b8cee650b
 def test_build_diverse_candidate_pool_prioritizes_score_similarity_composite():
     pool = [
         CandidatePreview(

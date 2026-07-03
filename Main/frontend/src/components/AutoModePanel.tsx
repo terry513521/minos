@@ -135,6 +135,10 @@ export function AutoModePanel() {
               <span className="auto-mode-card-label">Selection</span>
               <p>
                 Find {config.find_k} candidates → VM top score, Big most similar, Igno best composite.
+<<<<<<< HEAD
+=======
+                Fixed algorithms per worker (see table below).
+>>>>>>> e87a6ff604bb77a556a2525b4658384b8cee650b
               </p>
               {status.region && (
                 <p>
@@ -189,6 +193,55 @@ export function AutoModePanel() {
             </div>
           </div>
 
+<<<<<<< HEAD
+=======
+          <div className="auto-mode-section">
+            <span className="auto-mode-section-title">Algorithm distribution</span>
+            <div className="auto-mode-worker-table-wrap">
+              <table className="auto-mode-param-table">
+                <thead>
+                  <tr>
+                    <th>Setting</th>
+                    <th>Value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Assignment</td>
+                    <td>VM top score · Big most similar · Igno best composite</td>
+                  </tr>
+                  <tr>
+                    <td>Algorithms</td>
+                    <td>
+                      {config.worker_names.map((name) => (
+                        <span key={name}>
+                          {name}: <code>{config.worker_algorithms[name] ?? "—"}</code>
+                          {" "}
+                        </span>
+                      ))}
+                    </td>
+                  </tr>
+                  {status.assignments.length > 0 ? (
+                    status.assignments.map((item) => (
+                      <tr key={item.worker_id}>
+                        <td>{item.worker_name}</td>
+                        <td><code>{item.algorithm}</code></td>
+                      </tr>
+                    ))
+                  ) : (
+                    config.worker_names.map((name) => (
+                      <tr key={name}>
+                        <td>{name}</td>
+                        <td className="auto-mode-muted">assigned at start</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+>>>>>>> e87a6ff604bb77a556a2525b4658384b8cee650b
           {status.found_candidates.length > 0 && (
             <div className="auto-mode-section">
               <span className="auto-mode-section-title">
