@@ -29,6 +29,9 @@ fi
 # shellcheck disable=SC1091
 source .venv/bin/activate
 
+# Fix hard-coded paths if this Worker folder was moved after venv creation.
+python -m venv --upgrade .venv 2>/dev/null || true
+
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 

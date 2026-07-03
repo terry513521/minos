@@ -6,13 +6,21 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
-if [[ ! -d .venv ]]; then
+resolve_venv_python() {
+  local d
+  for d in .venv venv; do
+    if [[ -x "$ROOT_DIR/$d/bin/python" ]]; then
+      echo "$ROOT_DIR/$d/bin/python"
+      return 0
+    fi
+  done
+  return 1
+}
+
+if ! VENV_PYTHON="$(resolve_venv_python)"; then
   echo "error: virtualenv missing. Run ./setup.sh first." >&2
   exit 1
 fi
-
-# shellcheck disable=SC1091
-source .venv/bin/activate
 
 HOST="${WORKER_HOST:-0.0.0.0}"
 PORT="${WORKER_PORT:-8080}"
@@ -52,7 +60,7 @@ elif ! docker info >/dev/null 2>&1; then
 fi
 
 if [[ "${WORKER_SKIP_VERIFY:-}" != "1" ]]; then
-  if ! python scripts/verify_datasets.py; then
+  if ! "$VENV_PYTHON" scripts/verify_datasets.py; then
     echo "warning: dataset verification failed — optimizations may error until assets are ready." >&2
   fi
 fi
@@ -75,7 +83,12 @@ echo "  health_url = ${BASE_URL}/health"
 echo "  base_url   = ${BASE_URL}"
 echo
 
-exec uvicorn app.main:app \
+if ! "$VENV_PYTHON" -c "import uvicorn" 2>/dev/null; then
+  echo "error: uvicorn not installed in virtualenv. Run ./setup.sh" >&2
+  exit 1
+fi
+
+exec "$VENV_PYTHON" -m uvicorn app.main:app \
   --host "$HOST" \
   --port "$PORT" \
   --workers 1 \
