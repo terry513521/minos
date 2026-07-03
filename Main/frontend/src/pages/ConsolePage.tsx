@@ -34,9 +34,18 @@ export function ConsolePage() {
             embedded
           />
           <AutoModePanel />
+        </section>
+
+        <section id="workers" className="panel">
+          <SectionHeader
+            step={2}
+            title="Workers"
+            lead="Drag a candidate card onto a worker to assign base conf and tune params."
+          />
           <WorkersPanel
             candidateContext={candidateContext}
             onWorkerAssignmentSummariesChange={handleWorkerAssignmentSummariesChange}
+            sectionChild
           />
         </section>
       </div>

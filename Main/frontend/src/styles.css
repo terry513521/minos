@@ -171,7 +171,8 @@ code, .input-mono {
   width: 100%;
 }
 .console-hero,
-#candidates {
+#candidates,
+#workers {
   width: 100%;
 }
 .workflow-rail {
@@ -216,11 +217,14 @@ code, .input-mono {
 .bento-grid {
   display: grid;
   grid-template-columns: 1fr;
-  grid-template-areas: "candidates";
+  grid-template-areas:
+    "candidates"
+    "workers";
   gap: var(--pad-2);
   width: 100%;
 }
 #candidates { grid-area: candidates; }
+#workers { grid-area: workers; }
 
 .panel {
   width: 100%;
@@ -1699,12 +1703,22 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   padding-top: var(--pad-2);
   border-top: 1px solid var(--border);
 }
+.workers-panel--section-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
 .workers-panel-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
   margin-bottom: 0.85rem;
+}
+.workers-panel-head--toolbar {
+  justify-content: flex-end;
+  margin-top: -0.35rem;
+  margin-bottom: 0.65rem;
 }
 .workers-panel-title {
   margin: 0;

@@ -79,6 +79,8 @@ const BEST_POLL_INTERVAL_MS = 1000;
 interface WorkersPanelProps {
   candidateContext?: FindCandidatesResponse | null;
   onWorkerAssignmentSummariesChange?: (summaries: WorkerAssignmentSummary[]) => void;
+  /** Parent section provides header and panel chrome. */
+  sectionChild?: boolean;
 }
 
 function isWorkerConnected(
@@ -195,7 +197,11 @@ function withoutLoadingHealth(
   );
 }
 
-export function WorkersPanel({ candidateContext = null, onWorkerAssignmentSummariesChange }: WorkersPanelProps) {
+export function WorkersPanel({
+  candidateContext = null,
+  onWorkerAssignmentSummariesChange,
+  sectionChild = false,
+}: WorkersPanelProps) {
   const persistedRef = useRef(loadWorkerPanelState());
   const persisted = persistedRef.current;
   const persistedAutoRef = useRef(loadAutoModeState());
@@ -846,15 +852,15 @@ export function WorkersPanel({ candidateContext = null, onWorkerAssignmentSummar
   }
 
   return (
-    <div className="workers-panel">
-      <div className="workers-panel-head">
-        <h3 className="workers-panel-title">Workers</h3>
+    <div className={`workers-panel${sectionChild ? " workers-panel--section-child" : ""}`}>
+      <div className={`workers-panel-head${sectionChild ? " workers-panel-head--toolbar" : ""}`}>
+        {!sectionChild && <h3 className="workers-panel-title">Workers</h3>}
         <button type="button" className="button ghost workers-refresh" onClick={refresh} disabled={loading}>
           Refresh
         </button>
       </div>
 
-      {candidateContext && (
+      {!sectionChild && candidateContext && (
         <p className="workers-drop-hint">
           Drag a candidate card onto a worker to assign base conf and tune params.
         </p>

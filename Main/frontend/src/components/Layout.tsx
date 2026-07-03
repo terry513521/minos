@@ -6,7 +6,10 @@ import { AUTO_MODE_CHANGED_EVENT } from "./AutoModePanel";
 import { AutoModeTunableEditor } from "./AutoModeTunableEditor";
 import { saveAutoModeState } from "../utils/autoModeStorage";
 
-const sections = [{ hash: "#candidates", label: "Candidates" }];
+const sections = [
+  { hash: "#candidates", label: "Candidates" },
+  { hash: "#workers", label: "Workers" },
+];
 
 export function Layout() {
   const location = useLocation();
