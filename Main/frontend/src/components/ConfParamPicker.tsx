@@ -12,6 +12,8 @@ interface ConfParamPickerProps {
   onToggle: (param: string) => void;
   onIntervalChange: (param: string, patch: Partial<ParamInterval>) => void;
   onBaseValueChange?: (param: string, raw: string) => void;
+  /** When true, show tune params without allowing edits (e.g. optimization running). */
+  readOnly?: boolean;
 }
 
 export function ConfParamPicker({
@@ -22,6 +24,7 @@ export function ConfParamPicker({
   onToggle,
   onIntervalChange,
   onBaseValueChange,
+  readOnly = false,
 }: ConfParamPickerProps) {
   const [search, setSearch] = useState("");
   const [selectedOnly, setSelectedOnly] = useState(false);
@@ -45,11 +48,13 @@ export function ConfParamPicker({
   }, [baseConf, tool, search, selectedOnly, selectedParams]);
 
   return (
-    <div className="worker-conf-picker">
+    <div className={`worker-conf-picker${readOnly ? " worker-conf-picker--readonly" : ""}`}>
       <div className="worker-conf-picker-head">
         <span className="worker-assignment-label">Tune parameters</span>
         <span className="worker-conf-picker-hint">
-          Check params to search · edit base values inline · min/max/step when selected
+          {readOnly
+            ? "Read-only while optimization is running"
+            : "Check params to search · edit base values inline · min/max/step when selected"}
         </span>
       </div>
 
@@ -89,6 +94,7 @@ export function ConfParamPicker({
               bound?.type === "float" ||
               (!bound && Number.isFinite(Number(value)));
             const boundHint = formatBoundHint(tool, param);
+            const baseValueEditor = readOnly ? undefined : onBaseValueChange;
 
             return (
               <div
@@ -100,6 +106,7 @@ export function ConfParamPicker({
                     <input
                       type="checkbox"
                       checked={selected}
+                      disabled={readOnly}
                       onChange={() => onToggle(param)}
                       aria-label={`Tune ${param}`}
                     />
@@ -107,12 +114,12 @@ export function ConfParamPicker({
                   <span className="worker-conf-picker-name" title={param}>
                     {param}
                   </span>
-                  {onBaseValueChange ? (
+                  {baseValueEditor ? (
                     bound?.type === "enum" && bound.allowedValues?.length ? (
                       <select
                         className="worker-conf-picker-base-input"
                         value={value}
-                        onChange={(e) => onBaseValueChange(param, e.target.value)}
+                        onChange={(e) => baseValueEditor!(param, e.target.value)}
                         aria-label={`${param} base value`}
                       >
                         {bound.allowedValues.map((opt) => (
@@ -127,7 +134,7 @@ export function ConfParamPicker({
                           type="checkbox"
                           checked={value === "true"}
                           onChange={(e) =>
-                            onBaseValueChange(param, e.target.checked ? "true" : "false")
+                            baseValueEditor!(param, e.target.checked ? "true" : "false")
                           }
                           aria-label={`${param} base value`}
                         />
@@ -137,7 +144,7 @@ export function ConfParamPicker({
                       <DeferredTextInput
                         className="worker-conf-picker-base-input input-mono"
                         value={value}
-                        onCommit={(next) => onBaseValueChange(param, next)}
+                        onCommit={(next) => baseValueEditor!(param, next)}
                         type={isNumeric ? "number" : "text"}
                         step={bound?.type === "float" ? "any" : bound?.type === "int" ? 1 : undefined}
                         min={bound?.min}
@@ -164,6 +171,7 @@ export function ConfParamPicker({
                           min={bound?.min}
                           max={bound?.max}
                           value={interval?.min}
+                          disabled={readOnly}
                           onCommit={(min) =>
                             onIntervalChange(
                               param,
@@ -180,6 +188,7 @@ export function ConfParamPicker({
                           min={bound?.min}
                           max={bound?.max}
                           value={interval?.max}
+                          disabled={readOnly}
                           onCommit={(max) =>
                             onIntervalChange(
                               param,
@@ -195,6 +204,7 @@ export function ConfParamPicker({
                           step="any"
                           min={0}
                           value={interval?.step}
+                          disabled={readOnly}
                           onCommit={(step) =>
                             onIntervalChange(
                               param,
@@ -219,6 +229,7 @@ export function ConfParamPicker({
                             <input
                               type="checkbox"
                               checked={checked}
+                              disabled={readOnly}
                               onChange={() => {
                                 const current = interval?.values ?? [];
                                 const next = checked

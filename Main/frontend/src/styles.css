@@ -2341,6 +2341,14 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   flex-direction: column;
   gap: 0.35rem;
 }
+.worker-conf-picker--readonly .worker-conf-picker-check input[type="checkbox"],
+.worker-conf-picker--readonly .worker-param-interval input,
+.worker-conf-picker--readonly .worker-param-enum-option input {
+  cursor: not-allowed;
+}
+.worker-conf-picker--readonly .worker-conf-picker-value {
+  opacity: 0.95;
+}
 .worker-conf-picker-head {
   display: flex;
   flex-wrap: wrap;

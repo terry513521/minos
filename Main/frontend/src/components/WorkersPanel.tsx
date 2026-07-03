@@ -1208,15 +1208,20 @@ export function WorkersPanel({
                       tool={assignment.tool}
                       selectedParams={assignment.selectedParams}
                       paramIntervals={assignment.paramIntervals}
-                      onToggle={autoManaged ? () => {} : (param) => toggleParam(worker.id, param)}
+                      readOnly={reassignmentLocked || autoManaged}
+                      onToggle={
+                        autoManaged || reassignmentLocked
+                          ? () => {}
+                          : (param) => toggleParam(worker.id, param)
+                      }
                       onIntervalChange={
-                        autoManaged
+                        autoManaged || reassignmentLocked
                           ? () => {}
                           : (param, patch) => updateParamInterval(worker.id, param, patch)
                       }
                       onBaseValueChange={
-                        autoManaged
-                          ? () => {}
+                        autoManaged || reassignmentLocked
+                          ? undefined
                           : (param, raw) => updateBaseParamValue(worker.id, param, raw)
                       }
                     />
