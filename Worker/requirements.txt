@@ -1,10 +1,23 @@
+# Effortless Worker — runtime dependencies (Python 3.10+)
+# Install: python -m pip install -r requirements.txt
+
+# --- API ---
 fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
 pydantic>=2.0.0
 pydantic-settings>=2.0.0
 python-dotenv>=1.0.0
+
+# --- Host / HTTP ---
 psutil>=6.0.0
 httpx>=0.27.0
-bittensor-wallet>=3.0.0
+
+# --- Optimization algorithms ---
+# optuna: TPE (algorithm=optuna) and GPSampler (algorithm=gp); requires >=3.6 for gp
 optuna>=3.6.0
+# scipy: Sobol + Latin Hypercube (algorithm=sobol, algorithm=lhs)
 scipy>=1.11.0
+numpy>=1.26.0
+
+# --- Asset setup (optional: validator truth download in scripts/setup_assets.py) ---
+bittensor-wallet>=3.0.0

@@ -89,6 +89,10 @@ Requirements:
   - Docker (for GATK / hap.py)
   - ~12 GB RAM recommended (concurrency=1); more for parallel trials
 
+Optimization algorithms (set in Main dispatch or POST /optimize):
+  optuna, gp, random, sobol, lhs
+  Python deps: optuna>=3.6 (TPE + GP), scipy>=1.11 (Sobol + LHS)
+
 Quick start:
   tar -xzf effortless-worker-*-src.tar.gz
   cd effortless-worker-*
