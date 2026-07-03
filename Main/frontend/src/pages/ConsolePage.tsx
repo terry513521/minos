@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, FindCandidatesResponse } from "../api/client";
+import { FindCandidatesResponse } from "../api/client";
 import { CandidateFinderPanel } from "../components/CandidateFinderPanel";
-import { AutoModePanel, AUTO_MODE_CHANGED_EVENT } from "../components/AutoModePanel";
+import { AutoModePanel } from "../components/AutoModePanel";
 import { SectionHeader } from "../components/SectionHeader";
 import { WorkersPanel } from "../components/WorkersPanel";
-import { loadAutoModeState } from "../utils/autoModeStorage";
+import { useAutoModeEnabled } from "../hooks/useAutoModeEnabled";
 import { WorkerAssignmentSummary } from "../types/workerAssignment";
 
 export function ConsolePage() {
@@ -12,9 +12,7 @@ export function ConsolePage() {
   const [workerAssignmentSummaries, setWorkerAssignmentSummaries] = useState<
     WorkerAssignmentSummary[]
   >([]);
-  const [autoModeEnabled, setAutoModeEnabled] = useState(
-    () => loadAutoModeState()?.status?.enabled ?? false,
-  );
+  const autoModeEnabled = useAutoModeEnabled();
   const assignCandidateRef = useRef<
     ((workerId: string, candidateIndex: number) => boolean) | null
   >(null);
@@ -40,16 +38,11 @@ export function ConsolePage() {
   );
 
   useEffect(() => {
-    function refreshAutoMode() {
-      api
-        .getAutoMode()
-        .then((status) => setAutoModeEnabled(status.enabled))
-        .catch(() => {});
+    if (!autoModeEnabled) return;
+    if (window.location.hash === "#candidates" || !window.location.hash) {
+      window.location.hash = "#auto";
     }
-    refreshAutoMode();
-    window.addEventListener(AUTO_MODE_CHANGED_EVENT, refreshAutoMode);
-    return () => window.removeEventListener(AUTO_MODE_CHANGED_EVENT, refreshAutoMode);
-  }, []);
+  }, [autoModeEnabled]);
 
   return (
     <div className="console-page">

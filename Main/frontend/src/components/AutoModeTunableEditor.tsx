@@ -131,10 +131,10 @@ export function AutoModeTunableEditor({
         param_intervals: dispatchIntervals,
         worker_algorithms: workerAlgorithms,
       });
-      window.dispatchEvent(new Event(AUTO_MODE_CHANGED_EVENT));
       if (variant === "enable" && onEnable) {
         await onEnable();
       } else {
+        window.dispatchEvent(new Event(AUTO_MODE_CHANGED_EVENT));
         onSaved?.();
       }
       onClose();

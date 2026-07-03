@@ -60,7 +60,11 @@ export function AutoModePanel({ embedded = false }: AutoModePanelProps) {
   }, [refresh]);
 
   if (!status) {
-    return error ? <div className="alert error auto-mode-panel">{error}</div> : null;
+    return error ? (
+      <div className="alert error auto-mode-panel">{error}</div>
+    ) : embedded ? (
+      <p className="empty-state">Loading auto mode…</p>
+    ) : null;
   }
 
   const config = status.config;
@@ -74,7 +78,7 @@ export function AutoModePanel({ embedded = false }: AutoModePanelProps) {
     status.assignments.length > 0 ||
     Boolean(status.last_started_region);
 
-  if (!status.enabled) {
+  if (!status.enabled && !embedded) {
     return null;
   }
 
