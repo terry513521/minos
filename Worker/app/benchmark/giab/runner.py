@@ -140,6 +140,14 @@ def score_tool_on_region(
         }
 
     metrics = score_giab(truth_vcf, truth_bed, out_vcf, ref, region, chrom)
+    if not metrics:
+        return {
+            "instance": instance_id or settings.name,
+            "tool": tool_key,
+            "region": region,
+            "error": "hap.py scoring failed",
+            "variant_count": call.get("variant_count"),
+        }
     numeric = {k: float(v) for k, v in metrics.items() if isinstance(v, (int, float))}
     breakdown_fn = getattr(AdvancedScorer, "compute_breakdown", None)
     score_breakdown = breakdown_fn(numeric) if breakdown_fn else None
