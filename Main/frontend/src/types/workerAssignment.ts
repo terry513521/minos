@@ -1,9 +1,7 @@
 import { CandidatePreview, FindCandidatesResponse, WorkerRecord } from "../api/client";
 import { defaultSelectedParams, listToolOptionKeys } from "../utils/candidateAssign";
-import {
-  defaultParamInterval,
-  ParamInterval,
-} from "../utils/paramBounds";
+import { buildSelectedParamIntervals } from "../utils/manualParamDefaults";
+import { defaultParamInterval, ParamInterval } from "../utils/paramBounds";
 
 export const TOOLKIT_OPTIONS = ["gatk", "bcftools", "deepvariant"] as const;
 export type ToolkitOption = (typeof TOOLKIT_OPTIONS)[number];
@@ -140,7 +138,7 @@ export function createAssignment(
     tool: resolvedTool,
     algorithm: DEFAULT_ALGORITHM,
     selectedParams,
-    paramIntervals: buildDefaultParamIntervals(
+    paramIntervals: buildSelectedParamIntervals(
       resolvedTool,
       candidate.base_conf,
       selectedParams,
@@ -164,7 +162,7 @@ export function assignmentParamsForTool(
   return {
     tool,
     selectedParams,
-    paramIntervals: buildDefaultParamIntervals(
+    paramIntervals: buildSelectedParamIntervals(
       tool,
       assignment.candidate.base_conf,
       selectedParams,

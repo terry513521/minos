@@ -57,6 +57,7 @@ import {
   manualAssignmentsFromEndedAuto,
   previewAssignmentsFromAutoConfig,
 } from "../utils/autoModeSync";
+import { syncManualParamDefaultsFromAutoConfig } from "../utils/manualParamDefaults";
 import { loadAutoModeState, saveAutoModeState } from "../utils/autoModeStorage";
 import {
   isWorkerJobRunning,
@@ -335,6 +336,7 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
       .getAutoMode()
       .then((status) => {
         saveAutoModeState(status);
+        syncManualParamDefaultsFromAutoConfig(status.config);
         setAutoModeEnabled(status.enabled);
         setAutoModeStatus(status);
         setAutoAssignmentsByWorker(autoAssignmentsForStatus(status));

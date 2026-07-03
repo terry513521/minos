@@ -8,6 +8,7 @@ import {
   ParamInterval,
 } from "../utils/paramBounds";
 import { paramIntervalsFromAutoConfig } from "../utils/autoModeSync";
+import { syncManualParamDefaultsFromAutoConfig } from "../utils/manualParamDefaults";
 import { ConfParamPicker } from "./ConfParamPicker";
 import { AUTO_MODE_CHANGED_EVENT } from "./AutoModePanel";
 
@@ -111,6 +112,11 @@ export function AutoModeTunableEditor({
         params: selectedParams,
         param_intervals: dispatchIntervals,
       });
+      syncManualParamDefaultsFromAutoConfig({
+        ...config,
+        params: selectedParams,
+        param_intervals: dispatchIntervals,
+      });
       window.dispatchEvent(new Event(AUTO_MODE_CHANGED_EVENT));
       onSaved();
       onClose();
@@ -124,7 +130,7 @@ export function AutoModeTunableEditor({
   return (
     <div className="modal-backdrop" onClick={onClose} role="presentation">
       <div
-        className="modal-panel modal-panel-wide"
+        className="modal-panel modal-panel-auto-tunable"
         ref={dialogRef}
         role="dialog"
         aria-labelledby="auto-tunable-title"

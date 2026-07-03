@@ -7,6 +7,7 @@ import {
   selectionSlotsByIndex,
 } from "../utils/candidateSelection";
 import { loadAutoModeState, saveAutoModeState } from "../utils/autoModeStorage";
+import { syncManualParamDefaultsFromAutoConfig } from "../utils/manualParamDefaults";
 import { formatParamInterval, paramIntervalsFromAutoConfig } from "../utils/autoModeSync";
 import { ConfTooltip } from "./ConfTooltip";
 import { LimitCountdownBadge } from "./LimitCountdownBadge";
@@ -29,6 +30,7 @@ export function AutoModePanel() {
       .getAutoMode()
       .then((next) => {
         saveAutoModeState(next);
+        syncManualParamDefaultsFromAutoConfig(next.config);
         setStatus(next);
         setError(null);
       })

@@ -1,3 +1,5 @@
+import { loadManualParamDefaults } from "./manualParamDefaults";
+
 export function toolOptionsKey(tool: string): string {
   return `${tool.toLowerCase().trim()}_options`;
 }
@@ -28,8 +30,16 @@ export const DEFAULT_FINE_TUNE_PARAMS = [
   "standard_min_confidence_threshold_for_calling",
 ] as const;
 
-export function defaultSelectedParams(_tool: string, available: string[]): string[] {
+export function defaultSelectedParams(tool: string, available: string[]): string[] {
   const availableSet = new Set(available);
+  const toolKey = tool.toLowerCase().trim();
+
+  const saved = loadManualParamDefaults();
+  if (saved && saved.tool === toolKey) {
+    const fromSaved = saved.params.filter((param) => availableSet.has(param));
+    if (fromSaved.length > 0) return fromSaved;
+  }
+
   return DEFAULT_FINE_TUNE_PARAMS.filter((param) => availableSet.has(param));
 }
 

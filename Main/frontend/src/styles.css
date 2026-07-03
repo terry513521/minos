@@ -1386,6 +1386,17 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   width: min(52rem, calc(100vw - 2rem));
 }
 
+.modal-panel-auto-tunable {
+  max-width: min(76rem, calc(100vw - 1.5rem));
+  width: min(76rem, calc(100vw - 1.5rem));
+  max-height: min(92vh, 56rem);
+  overflow: auto;
+}
+
+.modal-panel-auto-tunable .worker-conf-picker {
+  max-height: none;
+}
+
 .auto-mode-section-title {
   display: block;
   margin-bottom: 0.45rem;
