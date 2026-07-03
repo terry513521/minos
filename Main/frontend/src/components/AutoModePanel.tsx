@@ -19,7 +19,12 @@ import { AutoModeTunableEditor } from "./AutoModeTunableEditor";
 
 export const AUTO_MODE_CHANGED_EVENT = "effortless:auto-mode-changed";
 
-export function AutoModePanel() {
+interface AutoModePanelProps {
+  /** Render inside dashboard section panel (no nested chrome). */
+  embedded?: boolean;
+}
+
+export function AutoModePanel({ embedded = false }: AutoModePanelProps) {
   const persistedAutoRef = useRef(loadAutoModeState());
   const [status, setStatus] = useState<AutoModeStatus | null>(
     () => persistedAutoRef.current?.status ?? null,
@@ -69,9 +74,7 @@ export function AutoModePanel() {
     status.assignments.length > 0 ||
     Boolean(status.last_started_region);
 
-  const showPanel = status.enabled;
-
-  if (!showPanel) {
+  if (!status.enabled) {
     return null;
   }
 
@@ -100,9 +103,11 @@ export function AutoModePanel() {
   }
 
   return (
-    <div className={`auto-mode-panel${status.enabled ? " auto-mode-panel--on" : ""}`}>
+    <div
+      className={`auto-mode-panel${status.enabled ? " auto-mode-panel--on" : ""}${embedded ? " auto-mode-panel--embedded" : ""}`}
+    >
       <div className="auto-mode-panel-head">
-        <h4 className="auto-mode-panel-title">Auto mode</h4>
+        {!embedded && <h4 className="auto-mode-panel-title">Auto mode</h4>}
         <div className="auto-mode-panel-badges">
           <span className={`badge ${status.enabled ? "online" : "offline"}`}>
             {status.enabled ? "Enabled" : "Disabled"}
@@ -124,7 +129,7 @@ export function AutoModePanel() {
       {error && <div className="alert error">{error}</div>}
       {restartMessage && <div className="alert ok">{restartMessage}</div>}
 
-      {status.enabled ? (
+      {!embedded && status.enabled ? (
         <p className="auto-mode-panel-lead">
           Overnight orchestration for <strong>VM</strong>, <strong>Big</strong>, and{" "}
           <strong>Igno</strong>. Workers run only after{" "}
@@ -132,10 +137,15 @@ export function AutoModePanel() {
           <code>GET /api/v1/auto/best</code>. If start returns &quot;session already running&quot;, use{" "}
           <strong>Restart session</strong>.
         </p>
-      ) : status.running ? (
+      ) : !embedded && status.running ? (
         <p className="auto-mode-panel-lead">
           Auto mode is <strong>off</strong>. Worker optimizations from the last auto start{" "}
           <strong>continue</strong> — use the worker cards below for live scores.
+        </p>
+      ) : embedded ? (
+        <p className="auto-mode-panel-lead">
+          Stop and export via <code>GET /api/v1/auto/best</code>. If start returns &quot;session
+          already running&quot;, use <strong>Restart session</strong>.
         </p>
       ) : null}
 

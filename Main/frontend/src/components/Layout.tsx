@@ -6,7 +6,12 @@ import { AUTO_MODE_CHANGED_EVENT } from "./AutoModePanel";
 import { AutoModeTunableEditor } from "./AutoModeTunableEditor";
 import { saveAutoModeState } from "../utils/autoModeStorage";
 
-const sections = [
+const sectionsWhenAuto = [
+  { hash: "#auto", label: "Auto mode" },
+  { hash: "#workers", label: "Workers" },
+];
+
+const sectionsWhenManual = [
   { hash: "#candidates", label: "Candidates" },
   { hash: "#workers", label: "Workers" },
 ];
@@ -129,7 +134,8 @@ export function Layout() {
     }
   }
 
-  const activeHash = location.hash || "#candidates";
+  const sections = autoEnabled ? sectionsWhenAuto : sectionsWhenManual;
+  const activeHash = location.hash || (autoEnabled ? "#auto" : "#candidates");
 
   return (
     <div className="app-shell">

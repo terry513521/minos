@@ -172,6 +172,7 @@ code, .input-mono {
 }
 .console-hero,
 #candidates,
+#auto,
 #workers {
   width: 100%;
 }
@@ -218,13 +219,30 @@ code, .input-mono {
   display: grid;
   grid-template-columns: 1fr;
   grid-template-areas:
-    "candidates"
+    "primary"
     "workers";
   gap: var(--pad-2);
   width: 100%;
 }
-#candidates { grid-area: candidates; }
+#candidates,
+#auto {
+  grid-area: primary;
+}
 #workers { grid-area: workers; }
+
+.auto-mode-panel--embedded {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+}
+.auto-mode-panel--embedded.auto-mode-panel--on {
+  border: none;
+}
+.auto-mode-panel--embedded .auto-mode-panel-head {
+  margin-top: -0.15rem;
+}
 
 .panel {
   width: 100%;
