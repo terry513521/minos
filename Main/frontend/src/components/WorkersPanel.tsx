@@ -16,7 +16,7 @@ import {
   assignmentParamsForTool,
   buildWorkerAssignmentSummaries,
   buildDispatchBaseConf,
-  isBaseConfReassignmentLocked,
+  isWorkerCandidateAssignmentLocked,
   WorkerAssignmentSummary,
   clampTrialMemoryGb,
   clampTrialThreads,
@@ -400,12 +400,29 @@ export function WorkersPanel({
     });
   }, [assignments, baseConfByWorker, dispatchByWorker, bestByWorker, healthByWorker]);
 
+  const workerOptimizationSnapshot = useCallback(
+    (workerId: string) => {
+      const best = bestByWorker[workerId];
+      return best && best !== "loading" ? best : null;
+    },
+    [bestByWorker],
+  );
+
+  const isWorkerAssignmentLocked = useCallback(
+    (workerId: string) =>
+      isWorkerCandidateAssignmentLocked(
+        effectiveAssignmentsByWorker[workerId],
+        workerOptimizationSnapshot(workerId),
+      ),
+    [effectiveAssignmentsByWorker, workerOptimizationSnapshot],
+  );
+
   useEffect(() => {
     if (!onWorkerAssignmentSummariesChange) return;
     onWorkerAssignmentSummariesChange(
-      buildWorkerAssignmentSummaries(workers, effectiveAssignmentsByWorker),
+      buildWorkerAssignmentSummaries(workers, effectiveAssignmentsByWorker, bestByWorker),
     );
-  }, [workers, effectiveAssignmentsByWorker, onWorkerAssignmentSummariesChange]);
+  }, [workers, effectiveAssignmentsByWorker, bestByWorker, onWorkerAssignmentSummariesChange]);
 
   useEffect(() => {
     if (workers.length === 0) return;
@@ -442,7 +459,7 @@ export function WorkersPanel({
   }
 
   function clearAssignment(workerId: string) {
-    if (isBaseConfReassignmentLocked(effectiveAssignmentsByWorker[workerId])) return;
+    if (isWorkerAssignmentLocked(workerId)) return;
     setDismissedWorkers((prev) => {
       const next = new Set(prev);
       next.add(workerId);
@@ -470,7 +487,7 @@ export function WorkersPanel({
   const assignCandidateToWorker = useCallback(
     (workerId: string, candidateIndex: number): boolean => {
       if (!candidateContext) return false;
-      if (isBaseConfReassignmentLocked(effectiveAssignmentsByWorker[workerId])) return false;
+      if (isWorkerAssignmentLocked(workerId)) return false;
 
       const candidate = candidateContext.candidates.find((c) => c.index === candidateIndex);
       if (!candidate) return false;
@@ -496,7 +513,7 @@ export function WorkersPanel({
       });
       return true;
     },
-    [candidateContext, workers, effectiveAssignmentsByWorker],
+    [candidateContext, workers, isWorkerAssignmentLocked],
   );
 
   useEffect(() => {
@@ -506,7 +523,7 @@ export function WorkersPanel({
 
   function handleDragOver(e: DragEvent, workerId: string) {
     if (!candidateContext) return;
-    if (isBaseConfReassignmentLocked(effectiveAssignmentsByWorker[workerId])) return;
+    if (isWorkerAssignmentLocked(workerId)) return;
     if (!e.dataTransfer.types.includes(CANDIDATE_DRAG_MIME)) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "copy";
@@ -521,7 +538,7 @@ export function WorkersPanel({
     e.preventDefault();
     setDragOverWorkerId(null);
     if (!candidateContext) return;
-    if (isBaseConfReassignmentLocked(effectiveAssignmentsByWorker[workerId])) return;
+    if (isWorkerAssignmentLocked(workerId)) return;
 
     const raw = e.dataTransfer.getData(CANDIDATE_DRAG_MIME);
     if (!raw) return;
@@ -926,7 +943,7 @@ export function WorkersPanel({
             const isOptimizing = Boolean(
               bestOk && isJobActive(bestOk.status, runStartedAt, runLimitSeconds, nowMs),
             );
-            const reassignmentLocked = isBaseConfReassignmentLocked(assignment);
+            const reassignmentLocked = isWorkerAssignmentLocked(worker.id);
             const trialTotalCount = trialTotal(bestOk ?? undefined, dispatchResult);
             const trialLabel =
               trialTotalCount || (bestOk?.trials_evaluated ?? 0) > 0
@@ -1171,7 +1188,7 @@ export function WorkersPanel({
                       )}
                       {reassignmentLocked && (
                         <span className="chip chip-muted worker-assignment-locked-tag">
-                          Base conf locked
+                          Assignment locked
                         </span>
                       )}
                     </div>
@@ -1388,12 +1405,12 @@ export function WorkersPanel({
                   </div>
                 )}
 
-                {!assignment && candidateContext && !autoModeEnabled && (
+                {!assignment && candidateContext && !autoModeEnabled && !reassignmentLocked && (
                   <p className="worker-drop-placeholder">Drop candidate here</p>
                 )}
-                {assignment && reassignmentLocked && !autoManaged && (
+                {reassignmentLocked && !autoManaged && (
                   <p className="worker-drop-placeholder worker-drop-placeholder--locked">
-                    Optimization started — base conf cannot be reassigned
+                    Optimization running — cannot assign candidates
                   </p>
                 )}
               </article>

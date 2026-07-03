@@ -2289,6 +2289,12 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   color: var(--muted);
   text-align: center;
 }
+.worker-drop-placeholder--locked {
+  border-style: solid;
+  border-color: rgba(251, 191, 36, 0.35);
+  color: #fcd34d;
+  background: rgba(251, 191, 36, 0.06);
+}
 .worker-assignment {
   display: flex;
   flex-direction: column;

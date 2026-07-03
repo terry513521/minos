@@ -184,34 +184,59 @@ export function assignmentLabel(worker: WorkerRecord): string {
   return worker.name || worker.id.slice(0, 8);
 }
 
+export interface WorkerOptimizationSnapshot {
+  ok: boolean;
+  status: string | null;
+}
+
 export interface WorkerAssignmentSummary {
   workerId: string;
   workerName: string;
   candidateIndex: number | null;
   autoManaged: boolean;
-  /** True after optimization was dispatched — base conf cannot be reassigned. */
+  /** True while optimization is starting or running — no candidate may be assigned. */
   reassignmentLocked: boolean;
 }
 
+export function isWorkerCandidateAssignmentLocked(
+  assignment: WorkerAssignment | undefined,
+  optimization?: WorkerOptimizationSnapshot | null,
+): boolean {
+  if (assignment?.dispatching) return true;
+  if (Boolean(assignment?.dispatchedAt)) return true;
+  if (
+    optimization?.ok &&
+    (optimization.status === "optimizing" || optimization.status === "stopping")
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/** @deprecated Use isWorkerCandidateAssignmentLocked */
 export function isBaseConfReassignmentLocked(
   assignment: WorkerAssignment | undefined,
+  optimization?: WorkerOptimizationSnapshot | null,
 ): boolean {
-  return Boolean(assignment?.dispatchedAt);
+  return isWorkerCandidateAssignmentLocked(assignment, optimization);
 }
 
 export function buildWorkerAssignmentSummaries(
   workers: WorkerRecord[],
   assignments: Record<string, WorkerAssignment>,
+  bestByWorker: Record<string, WorkerOptimizationSnapshot | "loading"> = {},
 ): WorkerAssignmentSummary[] {
   return workers
     .map((worker) => {
       const assignment = assignments[worker.id];
+      const best = bestByWorker[worker.id];
+      const optimization = best && best !== "loading" ? best : null;
       return {
         workerId: worker.id,
         workerName: assignmentLabel(worker),
         candidateIndex: assignment?.candidate.index ?? null,
         autoManaged: Boolean(assignment?.autoManaged),
-        reassignmentLocked: isBaseConfReassignmentLocked(assignment),
+        reassignmentLocked: isWorkerCandidateAssignmentLocked(assignment, optimization),
       };
     })
     .sort((a, b) => a.workerName.localeCompare(b.workerName));

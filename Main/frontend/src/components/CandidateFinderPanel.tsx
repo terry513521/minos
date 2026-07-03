@@ -140,7 +140,7 @@ export function CandidateFinderPanel({
     if (selectedCandidateIndex == null || !onAssignCandidateToWorker) return;
     const slot = workerAssignmentSummaries.find((item) => item.workerId === workerId);
     if (slot?.reassignmentLocked) {
-      setAssignMessage(`Cannot reassign ${workerName} — optimization already started.`);
+      setAssignMessage(`Cannot assign to ${workerName} — optimization is running.`);
       return;
     }
     const ok = onAssignCandidateToWorker(workerId, selectedCandidateIndex);
@@ -363,7 +363,7 @@ function CandidateWorkerAssignPanel({
                   className={`candidate-worker-assign-btn${assignedHere ? " candidate-worker-assign-btn--here" : ""}${locked ? " candidate-worker-assign-btn--locked" : ""}`}
                   onClick={() => onAssign(slot.workerId, slot.workerName)}
                   title={
-                    locked ? "Optimization started — base conf cannot be reassigned" : undefined
+                    locked ? "Optimization running — cannot assign candidates" : undefined
                   }
                 >
                   <span className="candidate-worker-assign-btn-name">{slot.workerName}</span>
