@@ -164,12 +164,13 @@ async def worker_heartbeat(
 async def stop_all_workers_endpoint(
     db: AsyncSession = Depends(get_db),
 ) -> WorkersStopAllResponse:
-    from app.services.auto_mode import auto_mode_store
+    from app.services.auto_mode import auto_mode_store, persist_auto_mode_state
 
     raw_results = await stop_all_workers_optimization(db)
     session = auto_mode_store.session
     if session:
         session.running = False
+    await persist_auto_mode_state(db)
 
     results = [WorkerStopAllResult(**row) for row in raw_results]
     stopped_ok = sum(1 for row in results if row.ok)

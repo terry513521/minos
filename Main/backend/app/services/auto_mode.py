@@ -29,6 +29,7 @@ from app.engine.candidate_finder import CandidateFinderEngine
 from app.defaults import default_tool_conf, MAX_TRIAL_THREADS
 from app.services.control_plane_settings import (
     AUTO_MODE_ENABLED_KEY,
+    AUTO_MODE_SESSION_KEY,
     AUTO_MODE_TUNABLE_CONFIG_KEY,
     LAST_AUTO_START_REGION_KEY,
     get_control_plane_setting,
@@ -559,14 +560,121 @@ class AutoModeStore:
 auto_mode_store = AutoModeStore()
 
 
+def _session_to_json(session: AutoSession) -> str:
+    payload = {
+        "region": session.region,
+        "tool": session.tool,
+        "started_at": session.started_at.isoformat(),
+        "running": session.running,
+        "candidates_found": session.candidates_found,
+        "assignments": [assignment.model_dump() for assignment in session.assignments],
+        "found_candidates": [candidate.model_dump() for candidate in session.found_candidates],
+        "selected_candidates": [
+            {
+                "worker_name": slot.worker_name,
+                "selection_reason": slot.selection_reason,
+                "candidate": slot.candidate.model_dump(),
+            }
+            for slot in session.selected_candidates
+        ],
+    }
+    return json.dumps(payload)
+
+
+def _session_from_json(raw: str) -> AutoSession:
+    data = json.loads(raw)
+    if not isinstance(data, dict):
+        raise ValueError("auto_mode_session must be a JSON object")
+    started_at_raw = data.get("started_at")
+    if not started_at_raw:
+        raise ValueError("auto_mode_session.started_at is required")
+    started_at = datetime.fromisoformat(str(started_at_raw))
+    if started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=timezone.utc)
+    selection_reason: SelectionReason
+    selected_candidates: list[SelectedCandidateSlot] = []
+    for slot in data.get("selected_candidates", []):
+        if not isinstance(slot, dict):
+            continue
+        reason = slot.get("selection_reason", "top_score")
+        if reason not in SELECTION_REASONS:
+            reason = "top_score"
+        selected_candidates.append(
+            SelectedCandidateSlot(
+                worker_name=str(slot["worker_name"]),
+                selection_reason=reason,
+                candidate=CandidatePreview.model_validate(slot["candidate"]),
+            )
+        )
+    return AutoSession(
+        region=str(data["region"]),
+        tool=str(data.get("tool") or AUTO_TOOL),
+        started_at=started_at,
+        running=bool(data.get("running", False)),
+        candidates_found=int(data.get("candidates_found") or 0),
+        assignments=[
+            AutoDispatchAssignment.model_validate(item)
+            for item in data.get("assignments", [])
+            if isinstance(item, dict)
+        ],
+        found_candidates=[
+            CandidatePreview.model_validate(item)
+            for item in data.get("found_candidates", [])
+            if isinstance(item, dict)
+        ],
+        selected_candidates=selected_candidates,
+    )
+
+
+async def persist_auto_mode_state(db: AsyncSession) -> None:
+    """Write the in-memory auto session snapshot to SQLite."""
+    session = auto_mode_store.session
+    await set_control_plane_setting(
+        db,
+        AUTO_MODE_SESSION_KEY,
+        _session_to_json(session) if session else None,
+    )
+
+
+def _parse_enabled_setting(raw: str | None) -> bool | None:
+    if raw is None:
+        return None
+    return raw.strip().lower() in ("true", "1", "yes")
+
+
+async def _heal_legacy_auto_mode_enabled(db: AsyncSession) -> None:
+    """Backfill enabled=true when auto mode was used before the flag was persisted."""
+    if auto_mode_store.enabled:
+        return
+    raw_enabled = await get_control_plane_setting(db, AUTO_MODE_ENABLED_KEY)
+    if raw_enabled is not None:
+        return
+    if auto_mode_store.session and auto_mode_store.session.running:
+        auto_mode_store.enabled = True
+        await set_control_plane_setting(db, AUTO_MODE_ENABLED_KEY, "true")
+        return
+    if auto_mode_store.last_started_region:
+        auto_mode_store.enabled = True
+        await set_control_plane_setting(db, AUTO_MODE_ENABLED_KEY, "true")
+
+
 async def load_auto_mode_state(db: AsyncSession) -> None:
     """Load persisted auto-mode settings from SQLite."""
     auto_mode_store.last_started_region = await get_control_plane_setting(
         db, LAST_AUTO_START_REGION_KEY
     )
+    raw_session = await get_control_plane_setting(db, AUTO_MODE_SESSION_KEY)
+    if raw_session:
+        try:
+            session = _session_from_json(raw_session)
+            _end_session_if_time_limit_reached(session)
+            auto_mode_store.session = session
+        except (ValueError, TypeError, json.JSONDecodeError):
+            auto_mode_store.session = None
     raw_enabled = await get_control_plane_setting(db, AUTO_MODE_ENABLED_KEY)
-    if raw_enabled is not None:
-        auto_mode_store.enabled = raw_enabled.strip().lower() in ("true", "1", "yes")
+    parsed_enabled = _parse_enabled_setting(raw_enabled)
+    if parsed_enabled is not None:
+        auto_mode_store.enabled = parsed_enabled
     raw_tunable = await get_control_plane_setting(db, AUTO_MODE_TUNABLE_CONFIG_KEY)
     if raw_tunable:
         try:
@@ -575,6 +683,8 @@ async def load_auto_mode_state(db: AsyncSession) -> None:
         except (ValueError, TypeError, json.JSONDecodeError):
             worker_names = await get_registered_worker_names(db)
             auto_mode_store.tunable = default_auto_tunable_config(worker_names)
+
+    await _heal_legacy_auto_mode_enabled(db)
 
 
 async def update_auto_mode_tunable_config(
@@ -970,6 +1080,7 @@ async def retry_failed_auto_dispatches(db: AsyncSession) -> int:
         auto_mode_store.last_started_region = session.region
         await set_control_plane_setting(db, LAST_AUTO_START_REGION_KEY, session.region)
 
+    await persist_auto_mode_state(db)
     return succeeded
 
 
@@ -1114,6 +1225,9 @@ async def start_auto_mode(
         auto_mode_store.last_started_region = window
         await set_control_plane_setting(db, LAST_AUTO_START_REGION_KEY, window)
 
+    await set_auto_mode_enabled(db, True, worker_names)
+    await persist_auto_mode_state(db)
+
     return AutoStartResponse(
         ok=ok_count > 0,
         skipped=False,
@@ -1139,6 +1253,7 @@ async def restart_auto_mode_session(db: AsyncSession) -> AutoModeStatus:
     await stop_all_auto_workers(db)
     auto_mode_store.end_session(worker_names)
     await set_control_plane_setting(db, LAST_AUTO_START_REGION_KEY, None)
+    await persist_auto_mode_state(db)
     return auto_mode_store.status(worker_names)
 
 
@@ -1175,6 +1290,7 @@ async def collect_best_and_stop(db: AsyncSession) -> AutoBestResponse:
 
     if session:
         session.running = False
+    await persist_auto_mode_state(db)
 
     if not best_entries:
         return AutoBestResponse(

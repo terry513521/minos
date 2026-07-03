@@ -10,6 +10,7 @@ import {
 } from "../utils/candidateFinderStorage";
 import { normalizeRegion, chromosomeFromWindow } from "../utils/window";
 import { AUTO_MODE_CHANGED_EVENT } from "./AutoModePanel";
+import { loadAutoModeState } from "../utils/autoModeStorage";
 import { ConfTooltip } from "./ConfTooltip";
 import { DeferredNumberInput } from "./DeferredNumberInput";
 import { WorkerAssignmentSummary } from "../types/workerAssignment";
@@ -44,7 +45,9 @@ export function CandidateFinderPanel({
   const [result, setResult] = useState<FindCandidatesResponse | null>(
     () => initialFinderState?.result ?? null,
   );
-  const [autoModeEnabled, setAutoModeEnabled] = useState(false);
+  const [autoModeEnabled, setAutoModeEnabled] = useState(
+    () => loadAutoModeState()?.status?.enabled ?? false,
+  );
   const [selectedCandidateIndex, setSelectedCandidateIndex] = useState<number | null>(null);
   const [assignMessage, setAssignMessage] = useState<string | null>(null);
 

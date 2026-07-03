@@ -15,13 +15,6 @@ export function useAutoModeStatus(pausePolling?: PausePollingFn) {
   );
 
   const refresh = useCallback(() => {
-    const cached = loadAutoModeState()?.status;
-    if (cached) {
-      setStatus(cached);
-      if (cached.config.params.length > 0) {
-        syncManualParamDefaultsFromAutoConfig(cached.config);
-      }
-    }
     return api
       .getAutoMode()
       .then((next) => {

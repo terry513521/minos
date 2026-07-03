@@ -14,6 +14,7 @@ from app.services.auto_mode import (
     auto_mode_store,
     collect_best_and_stop,
     get_registered_worker_names,
+    persist_auto_mode_state,
     restart_auto_mode_session,
     retry_failed_auto_dispatches,
     set_auto_mode_enabled,
@@ -26,9 +27,17 @@ router = APIRouter(prefix="/auto", tags=["auto"])
 
 @router.get("/mode", response_model=AutoModeStatus)
 async def get_auto_mode(db: AsyncSession = Depends(get_db)) -> AutoModeStatus:
+    from app.services.auto_mode import _heal_legacy_auto_mode_enabled
+
     worker_names = await get_registered_worker_names(db)
+    await _heal_legacy_auto_mode_enabled(db)
+    session = auto_mode_store.session
+    was_running = bool(session and session.running)
     await retry_failed_auto_dispatches(db)
-    return auto_mode_store.status(worker_names)
+    status = auto_mode_store.status(worker_names)
+    if was_running and not status.running:
+        await persist_auto_mode_state(db)
+    return status
 
 
 @router.put("/mode", response_model=AutoModeStatus)

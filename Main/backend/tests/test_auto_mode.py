@@ -7,6 +7,7 @@ from app.services.auto_mode import (
     AUTO_SIMILARITY_WEIGHT,
     AutoModeStore,
     AutoSession,
+    SelectedCandidateSlot,
     assign_workers_by_metric,
     build_diverse_candidate_pool,
     candidate_dispatch_window,
@@ -340,6 +341,72 @@ def test_retry_failed_auto_dispatches_succeeds_when_worker_recovers():
             assert assignment.dispatch_error is None
             assert assignment.job_id == "job-123"
             assert auto_mode_store.last_started_region == "chr21:1-100"
+
+    asyncio.run(_run())
+
+
+def test_session_json_round_trip():
+    from app.services.auto_mode import _session_from_json, _session_to_json
+
+    session = AutoSession(
+        region="chr21:1-100",
+        tool="gatk",
+        started_at=datetime(2026, 7, 3, 12, 0, tzinfo=timezone.utc),
+        running=True,
+        candidates_found=2,
+        assignments=[
+            AutoDispatchAssignment(
+                worker_id="w1",
+                worker_name="VM",
+                algorithm="optuna",
+                candidate_index=0,
+                composite_score=0.5,
+                dispatch_ok=True,
+            )
+        ],
+        found_candidates=[
+            CandidatePreview(index=0, base_conf={}, rank_score=0.5),
+        ],
+        selected_candidates=[
+            SelectedCandidateSlot(
+                worker_name="VM",
+                candidate=CandidatePreview(index=0, base_conf={}, rank_score=0.5),
+                selection_reason="top_score",
+            )
+        ],
+    )
+    restored = _session_from_json(_session_to_json(session))
+    assert restored.region == session.region
+    assert restored.running is True
+    assert len(restored.assignments) == 1
+    assert restored.assignments[0].dispatch_ok is True
+
+
+def test_heal_legacy_auto_mode_enabled_from_last_region():
+    import asyncio
+    from unittest.mock import AsyncMock, patch
+
+    from app.services.auto_mode import AutoModeStore, _heal_legacy_auto_mode_enabled, auto_mode_store
+
+    store = AutoModeStore()
+    store.enabled = False
+    store.last_started_region = "chr21:1-100"
+    store.session = None
+
+    async def _run():
+        with patch("app.services.auto_mode.auto_mode_store", store):
+            with patch(
+                "app.services.auto_mode.get_control_plane_setting",
+                new_callable=AsyncMock,
+                return_value=None,
+            ):
+                with patch(
+                    "app.services.auto_mode.set_control_plane_setting",
+                    new_callable=AsyncMock,
+                ) as set_setting:
+                    await _heal_legacy_auto_mode_enabled(AsyncMock())
+                    assert store.enabled is True
+                    set_setting.assert_called_once()
 
     asyncio.run(_run())
 
