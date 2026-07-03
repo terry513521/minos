@@ -81,6 +81,18 @@ def test_optimize_accepts_main_dispatch_shape(mock_validate, mock_submit, client
 
 
 @patch("app.api.routes.submit_optimize_job")
+@patch("app.api.routes.validate_optimize_request", return_value=31)
+@pytest.mark.parametrize("algorithm", ["gp", "sobol", "lhs"])
+def test_optimize_accepts_gp_sobol_lhs(mock_validate, mock_submit, client, algorithm):
+    response = client.post("/optimize", json=_main_style_payload(algorithm=algorithm))
+    assert response.status_code == 202
+    body = response.json()
+    assert body["status"] == "accepted"
+    assert body["algorithm"] == algorithm
+    mock_submit.assert_called_once()
+
+
+@patch("app.api.routes.submit_optimize_job")
 def test_optimize_rejects_deepvariant(mock_submit, client):
     response = client.post("/optimize", json=_main_style_payload(tool="deepvariant"))
     assert response.status_code == 400
