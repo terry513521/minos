@@ -1578,13 +1578,6 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   width: min(52rem, calc(100vw - 2rem));
 }
 
-.modal-panel-auto-tunable {
-  max-width: min(96rem, calc(100vw - 0.75rem));
-  width: min(96rem, calc(100vw - 0.75rem));
-  max-height: min(94vh, 68rem);
-  overflow: auto;
-}
-
 .modal-panel-auto-tunable .worker-conf-picker {
   max-height: none;
 }
@@ -1816,6 +1809,12 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   border: 1px solid var(--border-strong);
   background: var(--surface-solid);
   box-shadow: var(--shadow);
+}
+.modal-panel.modal-panel-auto-tunable {
+  max-width: min(120rem, calc(100vw - 1rem));
+  width: min(120rem, calc(100vw - 1rem));
+  max-height: min(94vh, 72rem);
+  overflow: auto;
 }
 .modal-head {
   display: flex;
