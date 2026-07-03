@@ -89,6 +89,12 @@ export function workerTrialMemoryGbFromAutoConfig(
   );
 }
 
+export function workerConcurrencyFromAutoConfig(
+  config: AutoModeConfig,
+): Record<string, number> {
+  return workerSettingsFromConfig(config, config.worker_concurrency, 1);
+}
+
 export function paramIntervalsFromAutoConfig(
   config: AutoModeConfig,
 ): Record<string, ParamInterval> {
@@ -142,7 +148,7 @@ export function assignmentFromAutoDispatch(
     selectedParams:
       autoAssignment.params.length > 0 ? autoAssignment.params : [...config.params],
     paramIntervals,
-    concurrency: autoAssignment.concurrency || config.concurrency,
+    concurrency: autoAssignment.concurrency || workerSettingForName(config.worker_concurrency, autoAssignment.worker_name) || config.concurrency,
     limitSeconds: autoAssignment.limit_seconds || config.limit_seconds,
     ...trialResourcesFromConf(autoAssignment.base_conf),
     trialCount: trialCountFromAutoConfig(config),
@@ -165,6 +171,7 @@ export function previewAssignmentsFromAutoConfig(
   const intervals = paramIntervalsFromAutoConfig(status.config);
   const trialThreadsByWorker = workerTrialThreadsFromAutoConfig(status.config);
   const trialMemoryByWorker = workerTrialMemoryGbFromAutoConfig(status.config);
+  const concurrencyByWorker = workerConcurrencyFromAutoConfig(status.config);
   const next: Record<string, WorkerAssignment> = {};
   for (const worker of workers) {
     const algorithm = workerSettingForName(
@@ -187,7 +194,7 @@ export function previewAssignmentsFromAutoConfig(
       algorithm: algorithm as AlgorithmOption,
       selectedParams: [...status.config.params],
       paramIntervals: intervals,
-      concurrency: status.config.concurrency,
+      concurrency: workerSettingForName(concurrencyByWorker, worker.name) ?? status.config.concurrency,
       limitSeconds: status.config.limit_seconds,
       trialThreads: workerSettingForName(trialThreadsByWorker, worker.name) ?? DEFAULT_TRIAL_THREADS,
       trialMemoryGb:

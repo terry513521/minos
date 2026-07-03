@@ -50,6 +50,7 @@ async def set_auto_mode_config(
             worker_algorithms=body.worker_algorithms,
             worker_trial_threads=body.worker_trial_threads,
             worker_trial_memory_gb=body.worker_trial_memory_gb,
+            worker_concurrency=body.worker_concurrency,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

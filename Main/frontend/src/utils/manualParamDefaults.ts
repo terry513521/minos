@@ -5,6 +5,7 @@ import {
   workerAlgorithmsFromAutoConfig,
   workerTrialMemoryGbFromAutoConfig,
   workerTrialThreadsFromAutoConfig,
+  workerConcurrencyFromAutoConfig,
 } from "./autoModeSync";
 import { clampParamInterval, defaultParamInterval, ParamInterval } from "./paramBounds";
 import {
@@ -13,6 +14,7 @@ import {
   clampTotalTrials,
   clampTrialMemoryGb,
   clampTrialThreads,
+  clampConcurrency,
   DEFAULT_ALGORITHM,
   DEFAULT_LIMIT_SECONDS,
   DEFAULT_TOTAL_TRIALS,
@@ -30,6 +32,7 @@ export interface ManualWorkerDefaults {
   workerAlgorithms: Record<string, AlgorithmOption>;
   workerTrialThreads: Record<string, number>;
   workerTrialMemoryGb: Record<string, number>;
+  workerConcurrency: Record<string, number>;
   limitSeconds: number;
   trialCount: number;
   concurrency: number;
@@ -47,6 +50,7 @@ export function manualWorkerDefaultsFromAutoConfig(config: AutoModeConfig): Manu
     workerAlgorithms: workerAlgorithmsFromAutoConfig(config),
     workerTrialThreads: workerTrialThreadsFromAutoConfig(config),
     workerTrialMemoryGb: workerTrialMemoryGbFromAutoConfig(config),
+    workerConcurrency: workerConcurrencyFromAutoConfig(config),
     limitSeconds: config.limit_seconds || DEFAULT_LIMIT_SECONDS,
     trialCount: trialCountFromAutoConfig(config),
     concurrency: config.concurrency || 1,
@@ -111,6 +115,15 @@ function parseLegacyDefaults(raw: unknown): ManualWorkerDefaults | null {
             ]),
           )
         : {},
+    workerConcurrency:
+      parsed.workerConcurrency && typeof parsed.workerConcurrency === "object"
+        ? Object.fromEntries(
+            Object.entries(parsed.workerConcurrency).map(([name, value]) => [
+              name,
+              clampConcurrency(Number(value) || 1),
+            ]),
+          )
+        : {},
     limitSeconds: Math.max(
       60,
       Math.round(Number(parsed.limitSeconds) || DEFAULT_LIMIT_SECONDS),
@@ -165,6 +178,7 @@ export function saveManualWorkerDefaults(defaults: ManualWorkerDefaults): void {
         workerAlgorithms: defaults.workerAlgorithms,
         workerTrialThreads: defaults.workerTrialThreads,
         workerTrialMemoryGb: defaults.workerTrialMemoryGb,
+        workerConcurrency: defaults.workerConcurrency,
         limitSeconds: defaults.limitSeconds,
         trialCount: defaults.trialCount,
         concurrency: defaults.concurrency,
@@ -211,6 +225,13 @@ export function workerDefaultTrialMemoryGb(workerName: string): number {
   const saved = getEffectiveManualWorkerDefaults();
   const value = resolveWorkerMapValue(saved?.workerTrialMemoryGb, workerName);
   return clampTrialMemoryGb(value ?? DEFAULT_TRIAL_MEMORY_GB);
+}
+
+export function workerDefaultConcurrency(workerName: string): number {
+  const saved = getEffectiveManualWorkerDefaults();
+  const perWorker = resolveWorkerMapValue(saved?.workerConcurrency, workerName);
+  if (perWorker != null) return clampConcurrency(perWorker);
+  return clampConcurrency(saved?.concurrency ?? 1);
 }
 
 export function savedDefaultLimitSeconds(): number {

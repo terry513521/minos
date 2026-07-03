@@ -7,6 +7,7 @@ import {
   savedDefaultLimitSeconds,
   savedDefaultTrialCount,
   workerDefaultAlgorithm,
+  workerDefaultConcurrency,
   workerDefaultTrialMemoryGb,
   workerDefaultTrialThreads,
 } from "../utils/manualParamDefaults";
@@ -27,6 +28,8 @@ export const DEFAULT_TOTAL_TRIALS = 45;
 export const DEFAULT_TRIAL_THREADS = 4;
 export const DEFAULT_TRIAL_MEMORY_GB = 6;
 export const MAX_TRIAL_THREADS = 100;
+export const MAX_CONCURRENCY = 32;
+export const CONCURRENCY_OPTIONS = [1, 2, 3, 4, 6, 8] as const;
 
 export interface WorkerAssignment {
   candidate: CandidatePreview;
@@ -93,6 +96,12 @@ export function clampTrialMemoryGb(value: number): number {
   const parsed = Math.round(Number(value));
   if (!Number.isFinite(parsed)) return DEFAULT_TRIAL_MEMORY_GB;
   return Math.min(128, Math.max(4, parsed));
+}
+
+export function clampConcurrency(value: number): number {
+  const parsed = Math.round(Number(value));
+  if (!Number.isFinite(parsed)) return 1;
+  return Math.min(MAX_CONCURRENCY, Math.max(1, parsed));
 }
 
 export function buildDispatchBaseConf(
@@ -163,7 +172,7 @@ export function createAssignment(
       candidate.base_conf,
       selectedParams,
     ),
-    concurrency: savedDefaultConcurrency(),
+    concurrency: workerName ? workerDefaultConcurrency(workerName) : savedDefaultConcurrency(),
     limitSeconds: savedDefaultLimitSeconds(),
     trialThreads: workerName ? workerDefaultTrialThreads(workerName) : DEFAULT_TRIAL_THREADS,
     trialMemoryGb: workerName ? workerDefaultTrialMemoryGb(workerName) : DEFAULT_TRIAL_MEMORY_GB,

@@ -206,6 +206,7 @@ export interface AutoModeTunableConfigUpdate {
   worker_algorithms?: Record<string, string>;
   worker_trial_threads?: Record<string, number>;
   worker_trial_memory_gb?: Record<string, number>;
+  worker_concurrency?: Record<string, number>;
 }
 
 export interface AutoModeConfig {
@@ -216,6 +217,7 @@ export interface AutoModeConfig {
   worker_algorithms: Record<string, string>;
   worker_trial_threads: Record<string, number>;
   worker_trial_memory_gb: Record<string, number>;
+  worker_concurrency: Record<string, number>;
   assignment_strategy: string;
   limit_seconds: number;
   adaptive_max_trials: number;

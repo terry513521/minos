@@ -177,12 +177,14 @@ def test_update_auto_tunable_config_persists():
                     worker_algorithms={"VM": "gp", "Big": "random", "Igno": "sobol"},
                     worker_trial_threads={"VM": 6, "Big": 4, "Igno": 8},
                     worker_trial_memory_gb={"VM": 8, "Big": 6, "Igno": 12},
+                    worker_concurrency={"VM": 2, "Big": 4, "Igno": 1},
                 )
                 assert status.config.params == ["min_base_quality_score"]
                 assert status.config.param_intervals["min_base_quality_score"].min == 8.0
                 assert status.config.worker_algorithms["VM"] == "gp"
                 assert status.config.worker_trial_threads["VM"] == 6
                 assert status.config.worker_trial_memory_gb["Igno"] == 12
+                assert status.config.worker_concurrency["Big"] == 4
 
     import asyncio
 

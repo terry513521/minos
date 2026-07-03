@@ -7,9 +7,9 @@ import {
   defaultParamInterval,
   ParamInterval,
 } from "../utils/paramBounds";
-import { paramIntervalsFromAutoConfig, workerAlgorithmsFromAutoConfig, workerSettingForName, workerTrialMemoryGbFromAutoConfig, workerTrialThreadsFromAutoConfig } from "../utils/autoModeSync";
+import { paramIntervalsFromAutoConfig, workerAlgorithmsFromAutoConfig, workerConcurrencyFromAutoConfig, workerSettingForName, workerTrialMemoryGbFromAutoConfig, workerTrialThreadsFromAutoConfig } from "../utils/autoModeSync";
 import { syncManualParamDefaultsFromAutoConfig } from "../utils/manualParamDefaults";
-import { ALGORITHM_OPTIONS, AlgorithmOption, clampTrialMemoryGb, clampTrialThreads, MAX_TRIAL_THREADS } from "../types/workerAssignment";
+import { ALGORITHM_OPTIONS, AlgorithmOption, clampConcurrency, clampTrialMemoryGb, clampTrialThreads, CONCURRENCY_OPTIONS, MAX_TRIAL_THREADS } from "../types/workerAssignment";
 import { ConfParamPicker } from "./ConfParamPicker";
 import { DeferredNumberInput } from "./DeferredNumberInput";
 import { AUTO_MODE_CHANGED_EVENT } from "./AutoModePanel";
@@ -52,6 +52,9 @@ export function AutoModeTunableEditor({
   const [workerTrialMemoryGb, setWorkerTrialMemoryGb] = useState<Record<string, number>>(() =>
     workerTrialMemoryGbFromAutoConfig(config),
   );
+  const [workerConcurrency, setWorkerConcurrency] = useState<Record<string, number>>(() =>
+    workerConcurrencyFromAutoConfig(config),
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [registeredWorkers, setRegisteredWorkers] = useState<WorkerRecord[]>([]);
@@ -84,6 +87,13 @@ export function AutoModeTunableEditor({
     const base = workerTrialMemoryGbFromAutoConfig(config);
     return Object.fromEntries(
       names.map((name) => [name, clampTrialMemoryGb(workerSettingForName(base, name) ?? 6)]),
+    );
+  }
+
+  function mergeWorkerConcurrency(names: string[]): Record<string, number> {
+    const base = workerConcurrencyFromAutoConfig(config);
+    return Object.fromEntries(
+      names.map((name) => [name, clampConcurrency(workerSettingForName(base, name) ?? 1)]),
     );
   }
 
@@ -135,6 +145,14 @@ export function AutoModeTunableEditor({
             ]),
           ),
         );
+        setWorkerConcurrency(
+          Object.fromEntries(
+            names.map((name) => [
+              name,
+              clampConcurrency(workerSettingForName(workerConcurrencyFromAutoConfig(config), name) ?? 1),
+            ]),
+          ),
+        );
         setError(null);
         wasOpenRef.current = true;
       })
@@ -147,6 +165,7 @@ export function AutoModeTunableEditor({
         setWorkerAlgorithms(mergeWorkerAlgorithms(names));
         setWorkerTrialThreads(mergeWorkerTrialThreads(names));
         setWorkerTrialMemoryGb(mergeWorkerTrialMemoryGb(names));
+        setWorkerConcurrency(mergeWorkerConcurrency(names));
         setError(null);
         wasOpenRef.current = true;
       });
@@ -210,6 +229,7 @@ export function AutoModeTunableEditor({
     setWorkerAlgorithms(mergeWorkerAlgorithms(workerNames));
     setWorkerTrialThreads(mergeWorkerTrialThreads(workerNames));
     setWorkerTrialMemoryGb(mergeWorkerTrialMemoryGb(workerNames));
+    setWorkerConcurrency(mergeWorkerConcurrency(workerNames));
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -236,6 +256,7 @@ export function AutoModeTunableEditor({
         worker_algorithms: workerAlgorithms,
         worker_trial_threads: workerTrialThreads,
         worker_trial_memory_gb: workerTrialMemoryGb,
+        worker_concurrency: workerConcurrency,
       });
       syncManualParamDefaultsFromAutoConfig({
         ...config,
@@ -245,6 +266,7 @@ export function AutoModeTunableEditor({
         worker_algorithms: workerAlgorithms,
         worker_trial_threads: workerTrialThreads,
         worker_trial_memory_gb: workerTrialMemoryGb,
+        worker_concurrency: workerConcurrency,
       });
       if (variant === "enable" && onEnable) {
         await onEnable();
@@ -313,7 +335,7 @@ export function AutoModeTunableEditor({
             <div className="auto-mode-worker-algorithms">
             <span className="auto-mode-section-title">Worker settings</span>
             <p className="auto-mode-worker-algorithms-lead">
-              Algorithm and per-trial Docker CPU/RAM for each auto worker.
+              Algorithm, parallel trials, and per-trial Docker CPU/RAM for each auto worker.
             </p>
             <div className="auto-mode-worker-settings-table-wrap">
               <table className="auto-mode-worker-settings-table">
@@ -321,6 +343,7 @@ export function AutoModeTunableEditor({
                   <tr>
                     <th>Worker</th>
                     <th>Algorithm</th>
+                    <th>Concurrency</th>
                     <th>CPUs / trial</th>
                     <th>RAM (GB) / trial</th>
                   </tr>
@@ -345,6 +368,26 @@ export function AutoModeTunableEditor({
                           {ALGORITHM_OPTIONS.map((algorithm) => (
                             <option key={algorithm} value={algorithm}>
                               {algorithm}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td>
+                        <select
+                          className="input-mono auto-mode-worker-resource-input"
+                          value={workerConcurrency[workerName] ?? 1}
+                          onChange={(e) =>
+                            setWorkerConcurrency({
+                              ...workerConcurrency,
+                              [workerName]: clampConcurrency(Number(e.target.value)),
+                            })
+                          }
+                          disabled={loading || running}
+                          aria-label={`Concurrency for ${workerName}`}
+                        >
+                          {CONCURRENCY_OPTIONS.map((value) => (
+                            <option key={value} value={value}>
+                              {value}
                             </option>
                           ))}
                         </select>

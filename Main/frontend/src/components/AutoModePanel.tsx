@@ -12,6 +12,7 @@ import {
   formatParamInterval,
   paramIntervalsFromAutoConfig,
   workerAlgorithmsFromAutoConfig,
+  workerConcurrencyFromAutoConfig,
   workerTrialMemoryGbFromAutoConfig,
   workerTrialThreadsFromAutoConfig,
 } from "../utils/autoModeSync";
@@ -254,7 +255,18 @@ export function AutoModePanel({ embedded = false }: AutoModePanelProps) {
                   />
                 </p>
               )}
-              <p>Concurrency: {config.concurrency}</p>
+              <p>
+                Concurrency:{" "}
+                {config.worker_names.length > 0
+                  ? config.worker_names
+                      .map((name) => {
+                        const value =
+                          workerConcurrencyFromAutoConfig(config)[name] ?? config.concurrency;
+                        return `${name}: ${value}`;
+                      })
+                      .join(", ")
+                  : config.concurrency}
+              </p>
             </div>
           </div>
 

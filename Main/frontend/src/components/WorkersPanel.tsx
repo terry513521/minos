@@ -20,6 +20,7 @@ import {
   WorkerAssignmentSummary,
   clampTrialMemoryGb,
   clampTrialThreads,
+  CONCURRENCY_OPTIONS,
   MAX_TRIAL_THREADS,
   clampTotalTrials,
   createAssignment,
@@ -74,7 +75,6 @@ import {
 } from "../utils/workerDisplayOrder";
 import { AUTO_MODE_CHANGED_EVENT } from "./AutoModePanel";
 
-const CONCURRENCY_OPTIONS = [1, 2, 3, 4, 6, 8];
 /** Background poll for worker GET /best while optimization is running. */
 const BEST_POLL_INTERVAL_MS = 1000;
 

@@ -79,6 +79,7 @@ class AutoModeTunableConfig:
     worker_algorithms: dict[str, str] = field(default_factory=dict)
     worker_trial_threads: dict[str, int] = field(default_factory=dict)
     worker_trial_memory_gb: dict[str, int] = field(default_factory=dict)
+    worker_concurrency: dict[str, int] = field(default_factory=dict)
 
 
 def default_worker_algorithms(worker_names: list[str] | None = None) -> dict[str, str]:
@@ -96,6 +97,11 @@ def default_worker_trial_memory_gb(worker_names: list[str] | None = None) -> dic
     return {name: AUTO_TRIAL_MEMORY_GB for name in names}
 
 
+def default_worker_concurrency(worker_names: list[str] | None = None) -> dict[str, int]:
+    names = worker_names or []
+    return {name: AUTO_CONCURRENCY for name in names}
+
+
 def default_auto_tunable_config(worker_names: list[str] | None = None) -> AutoModeTunableConfig:
     return AutoModeTunableConfig(
         params=list(AUTO_PARAMS),
@@ -103,6 +109,7 @@ def default_auto_tunable_config(worker_names: list[str] | None = None) -> AutoMo
         worker_algorithms=default_worker_algorithms(worker_names),
         worker_trial_threads=default_worker_trial_threads(worker_names),
         worker_trial_memory_gb=default_worker_trial_memory_gb(worker_names),
+        worker_concurrency=default_worker_concurrency(worker_names),
     )
 
 
@@ -164,6 +171,7 @@ def _tunable_config_to_json(config: AutoModeTunableConfig) -> str:
             "worker_algorithms": dict(config.worker_algorithms),
             "worker_trial_threads": dict(config.worker_trial_threads),
             "worker_trial_memory_gb": dict(config.worker_trial_memory_gb),
+            "worker_concurrency": dict(config.worker_concurrency),
         }
     )
 
@@ -207,12 +215,22 @@ def _tunable_config_from_json(raw: str) -> AutoModeTunableConfig:
                     worker_trial_memory_gb[name] = clamp_trial_memory_gb(int(memory_gb))
                 except (TypeError, ValueError):
                     pass
+    worker_concurrency: dict[str, int] = {}
+    concurrency_raw = payload.get("worker_concurrency")
+    if isinstance(concurrency_raw, dict):
+        for name, concurrency in concurrency_raw.items():
+            if isinstance(name, str) and name.strip():
+                try:
+                    worker_concurrency[name] = clamp_concurrency(int(concurrency))
+                except (TypeError, ValueError):
+                    pass
     return AutoModeTunableConfig(
         params=[str(p) for p in params],
         param_intervals=intervals,
         worker_algorithms=worker_algorithms,
         worker_trial_threads=worker_trial_threads,
         worker_trial_memory_gb=worker_trial_memory_gb,
+        worker_concurrency=worker_concurrency,
     )
 
 
@@ -233,6 +251,7 @@ def validate_auto_tunable_config(
             config.worker_trial_memory_gb,
             names,
         )
+        validate_worker_concurrency(config.worker_concurrency, names)
     else:
         for worker_name, algorithm in config.worker_algorithms.items():
             if algorithm not in AUTO_ALGORITHMS:
@@ -263,6 +282,10 @@ def clamp_trial_memory_gb(value: int) -> int:
     return max(4, min(128, int(value)))
 
 
+def clamp_concurrency(value: int) -> int:
+    return max(1, min(32, int(value)))
+
+
 def validate_worker_trial_resources(
     worker_trial_threads: dict[str, int],
     worker_trial_memory_gb: dict[str, int],
@@ -277,6 +300,16 @@ def validate_worker_trial_resources(
             raise ValueError(f"CPUs per trial for {worker_name} must be between 1 and {MAX_TRIAL_THREADS}")
         if memory_gb != clamp_trial_memory_gb(memory_gb):
             raise ValueError(f"RAM per trial for {worker_name} must be between 4 and 128 GB")
+
+
+def validate_worker_concurrency(
+    worker_concurrency: dict[str, int],
+    worker_names: list[str],
+) -> None:
+    for worker_name in worker_names:
+        concurrency = int(_lookup_worker_setting(worker_concurrency, worker_name, AUTO_CONCURRENCY))
+        if concurrency != clamp_concurrency(concurrency):
+            raise ValueError(f"Concurrency for {worker_name} must be between 1 and 32")
 
 
 def effective_worker_algorithms(worker_names: list[str]) -> dict[str, str]:
@@ -297,6 +330,11 @@ def effective_worker_trial_memory_gb(worker_names: list[str]) -> dict[str, int]:
         AUTO_TRIAL_MEMORY_GB,
         clamp_trial_memory_gb,
     )
+
+
+def effective_worker_concurrency(worker_names: list[str]) -> dict[str, int]:
+    stored = auto_mode_store.tunable.worker_concurrency
+    return merge_worker_int_settings(stored, worker_names, AUTO_CONCURRENCY, clamp_concurrency)
 
 
 def effective_auto_params() -> list[str]:
@@ -337,6 +375,7 @@ def auto_mode_config(worker_names: list[str]) -> AutoModeConfig:
         worker_algorithms=effective_worker_algorithms(worker_names),
         worker_trial_threads=effective_worker_trial_threads(worker_names),
         worker_trial_memory_gb=effective_worker_trial_memory_gb(worker_names),
+        worker_concurrency=effective_worker_concurrency(worker_names),
         assignment_strategy=AUTO_ASSIGNMENT_STRATEGY,
         limit_seconds=AUTO_LIMIT_SECONDS,
         adaptive_max_trials=AUTO_ADAPTIVE_MAX_TRIALS,
@@ -427,6 +466,12 @@ class AutoModeStore:
                 AUTO_TRIAL_MEMORY_GB,
                 clamp_trial_memory_gb,
             ),
+            worker_concurrency=merge_worker_int_settings(
+                config.worker_concurrency,
+                worker_names,
+                AUTO_CONCURRENCY,
+                clamp_concurrency,
+            ),
         )
         return self.status(worker_names)
 
@@ -457,6 +502,7 @@ async def update_auto_mode_tunable_config(
     worker_algorithms: dict[str, str] | None = None,
     worker_trial_threads: dict[str, int] | None = None,
     worker_trial_memory_gb: dict[str, int] | None = None,
+    worker_concurrency: dict[str, int] | None = None,
 ) -> AutoModeStatus:
     if auto_mode_store.session and auto_mode_store.session.running:
         raise ValueError("Cannot edit tunable parameters while an auto session is running")
@@ -486,12 +532,21 @@ async def update_auto_mode_tunable_config(
         AUTO_TRIAL_MEMORY_GB,
         clamp_trial_memory_gb,
     )
+    concurrency_by_worker = merge_worker_int_settings(
+        worker_concurrency
+        if worker_concurrency is not None
+        else auto_mode_store.tunable.worker_concurrency,
+        worker_names,
+        AUTO_CONCURRENCY,
+        clamp_concurrency,
+    )
     config = AutoModeTunableConfig(
         params=list(params),
         param_intervals=dict(param_intervals),
         worker_algorithms=algorithms,
         worker_trial_threads=trial_threads,
         worker_trial_memory_gb=trial_memory_gb,
+        worker_concurrency=concurrency_by_worker,
     )
     validate_auto_tunable_config(config, worker_names)
     status = auto_mode_store.set_tunable(config, worker_names)
@@ -706,6 +761,7 @@ def build_dispatch_request(
     algorithm: str = AUTO_ALGORITHM,
     trial_threads: int = AUTO_TRIAL_THREADS,
     trial_memory_gb: int = AUTO_TRIAL_MEMORY_GB,
+    concurrency: int = AUTO_CONCURRENCY,
 ) -> WorkerDispatchRequest:
     return WorkerDispatchRequest(
         window=window,
@@ -717,7 +773,7 @@ def build_dispatch_request(
         ),
         params=effective_auto_params(),
         param_intervals=effective_auto_param_intervals(),
-        concurrency=AUTO_CONCURRENCY,
+        concurrency=clamp_concurrency(concurrency),
         algorithm=algorithm,
         limit_seconds=AUTO_LIMIT_SECONDS,
         adaptive_max_trials=AUTO_ADAPTIVE_MAX_TRIALS,
@@ -791,6 +847,7 @@ async def start_auto_mode(
     worker_algorithms = effective_worker_algorithms(worker_names)
     worker_trial_threads = effective_worker_trial_threads(worker_names)
     worker_trial_memory_gb = effective_worker_trial_memory_gb(worker_names)
+    worker_concurrency = effective_worker_concurrency(worker_names)
 
     assignments: list[AutoDispatchAssignment] = []
     dispatch_results: list[AutoDispatchAssignment] = []
@@ -801,6 +858,7 @@ async def start_auto_mode(
         algorithm = worker_algorithms[worker_name]
         trial_threads = worker_trial_threads[worker_name]
         trial_memory_gb = worker_trial_memory_gb[worker_name]
+        concurrency = worker_concurrency[worker_name]
         worker = workers[worker_name]
         dispatch_window = candidate_dispatch_window(candidate, window)
         dispatch_body = build_dispatch_request(
@@ -811,6 +869,7 @@ async def start_auto_mode(
             algorithm=algorithm,
             trial_threads=trial_threads,
             trial_memory_gb=trial_memory_gb,
+            concurrency=concurrency,
         )
         response = await dispatch_to_worker(db, worker.id, dispatch_body)
         assignment = AutoDispatchAssignment(
@@ -830,7 +889,7 @@ async def start_auto_mode(
             window=dispatch_window,
             params=effective_auto_params(),
             param_intervals=effective_auto_param_intervals(),
-            concurrency=AUTO_CONCURRENCY,
+            concurrency=concurrency,
             limit_seconds=AUTO_LIMIT_SECONDS,
             adaptive_max_trials=AUTO_ADAPTIVE_MAX_TRIALS,
             dispatch_ok=response.ok,
