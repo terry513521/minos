@@ -1,6 +1,13 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { api, AutoModeConfig, WorkerRecord } from "../api/client";
 import { DEFAULT_FINE_TUNE_PARAMS } from "../utils/candidateAssign";
+import {
+  buildAutoModeTunableSettingsFile,
+  downloadAutoModeTunableConf,
+  downloadAutoModeTunableSettings,
+  parseAutoModeTunableImport,
+} from "../utils/autoModeTunableFile";
+import { parseToolOptionValue, setToolOption } from "../utils/confEdit";
 import {
   buildDispatchParamIntervals,
   buildGatkReferenceConf,
@@ -38,7 +45,8 @@ export function AutoModeTunableEditor({
   onEnable,
 }: AutoModeTunableEditorProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
-  const referenceConf = buildGatkReferenceConf();
+  const importFileRef = useRef<HTMLInputElement>(null);
+  const [baseConf, setBaseConf] = useState(() => buildGatkReferenceConf());
   const [selectedParams, setSelectedParams] = useState<string[]>([...config.params]);
   const [paramIntervals, setParamIntervals] = useState<Record<string, ParamInterval>>(() =>
     paramIntervalsFromAutoConfig(config),
@@ -134,12 +142,14 @@ export function AutoModeTunableEditor({
             ? [...workers].sort((a, b) => a.name.localeCompare(b.name)).map((worker) => worker.name)
             : [...status.config.worker_names];
         applyConfigToState(status.config, names);
+        setBaseConf(buildGatkReferenceConf());
       } catch {
         if (!active) return;
         const fallbackConfig = configRef.current;
         const names = [...fallbackConfig.worker_names];
         setRegisteredWorkers([]);
         applyConfigToState(fallbackConfig, names);
+        setBaseConf(buildGatkReferenceConf());
       } finally {
         if (active) setHydrating(false);
       }
@@ -169,7 +179,7 @@ export function AutoModeTunableEditor({
       setParamIntervals(rest);
       return;
     }
-    const options = referenceConf[`${tool}_options`];
+    const options = baseConf[`${tool}_options`];
     const baseValue =
       options && typeof options === "object" && !Array.isArray(options)
         ? String((options as Record<string, unknown>)[param] ?? "")
@@ -188,11 +198,91 @@ export function AutoModeTunableEditor({
     });
   }
 
+  function updateBaseParamValue(param: string, raw: string) {
+    setBaseConf((prev) => setToolOption(prev, tool, param, parseToolOptionValue(tool, param, raw)));
+  }
+
+  function applyImportedSettings(file: ReturnType<typeof buildAutoModeTunableSettingsFile>) {
+    setBaseConf(structuredClone(file.base_conf));
+    setSelectedParams([...file.params]);
+    setParamIntervals({ ...file.param_intervals });
+    setWorkerAlgorithms({ ...file.worker_algorithms });
+    setWorkerTrialThreads(
+      Object.fromEntries(
+        workerNames.map((name) => [
+          name,
+          clampTrialThreads(file.worker_trial_threads[name] ?? workerTrialThreads[name] ?? 4),
+        ]),
+      ),
+    );
+    setWorkerTrialMemoryGb(
+      Object.fromEntries(
+        workerNames.map((name) => [
+          name,
+          clampTrialMemoryGb(file.worker_trial_memory_gb[name] ?? workerTrialMemoryGb[name] ?? 6),
+        ]),
+      ),
+    );
+    setWorkerConcurrency(
+      Object.fromEntries(
+        workerNames.map((name) => [
+          name,
+          clampConcurrency(file.worker_concurrency[name] ?? workerConcurrency[name] ?? 1),
+        ]),
+      ),
+    );
+  }
+
+  function handleExportConf() {
+    downloadAutoModeTunableConf(baseConf, `${tool}-auto-mode`);
+  }
+
+  function handleExportSettings() {
+    downloadAutoModeTunableSettings(
+      buildAutoModeTunableSettingsFile({
+        tool,
+        params: selectedParams,
+        paramIntervals,
+        workerAlgorithms,
+        workerTrialThreads,
+        workerTrialMemoryGb,
+        workerConcurrency,
+        baseConf,
+      }),
+    );
+  }
+
+  async function handleImportFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+
+    setError(null);
+    try {
+      const text = await file.text();
+      const parsed = parseAutoModeTunableImport(text, tool, baseConf);
+      if (!parsed.ok) {
+        setError(parsed.error);
+        return;
+      }
+
+      if (parsed.result.kind === "settings") {
+        applyImportedSettings(parsed.result.file);
+      } else {
+        setBaseConf(parsed.result.baseConf);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to read import file");
+    }
+  }
+
   function resetDefaults() {
+    const nextBaseConf = buildGatkReferenceConf();
+    setBaseConf(nextBaseConf);
     const params = [...DEFAULT_FINE_TUNE_PARAMS];
     const intervals: Record<string, ParamInterval> = {};
     for (const param of params) {
-      const options = referenceConf[`${tool}_options`];
+      const options = nextBaseConf[`${tool}_options`];
       const baseValue =
         options && typeof options === "object" && !Array.isArray(options)
           ? String((options as Record<string, unknown>)[param] ?? "")
@@ -323,6 +413,47 @@ export function AutoModeTunableEditor({
         {error && <div className="alert error">{error}</div>}
         {hydrating && <div className="alert">Loading saved auto mode parameters…</div>}
 
+        <div className="auto-mode-tunable-io">
+          <p className="auto-mode-tunable-io-lead">
+            Import or export the full <code>{tool}</code> conf (all parameters). JSON settings files
+            also restore tune params, intervals, and worker resources.
+          </p>
+          <div className="auto-mode-tunable-io-actions">
+            <button
+              type="button"
+              className="button ghost"
+              disabled={hydrating || loading || running}
+              onClick={() => importFileRef.current?.click()}
+            >
+              Import
+            </button>
+            <button
+              type="button"
+              className="button ghost"
+              disabled={hydrating || loading}
+              onClick={handleExportConf}
+            >
+              Export conf
+            </button>
+            <button
+              type="button"
+              className="button ghost"
+              disabled={hydrating || loading}
+              onClick={handleExportSettings}
+            >
+              Export settings
+            </button>
+            <input
+              ref={importFileRef}
+              type="file"
+              accept=".conf,.json,application/json,text/plain"
+              className="sr-only"
+              aria-hidden
+              onChange={(e) => void handleImportFile(e)}
+            />
+          </div>
+        </div>
+
         <form className="form modal-form modal-form-auto-tunable" onSubmit={(e) => void handleSubmit(e)}>
           <div
             className={`auto-mode-tunable-scroll${hydrating ? " auto-mode-tunable-scroll--loading" : ""}`}
@@ -430,13 +561,14 @@ export function AutoModeTunableEditor({
           </div>
 
           <ConfParamPicker
-            baseConf={referenceConf}
+            baseConf={baseConf}
             tool={tool}
             selectedParams={selectedParams}
             paramIntervals={paramIntervals}
             readOnly={hydrating || loading}
             onToggle={toggleParam}
             onIntervalChange={updateInterval}
+            onBaseValueChange={updateBaseParamValue}
           />
           </div>
 

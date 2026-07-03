@@ -1985,8 +1985,27 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
 }
 .modal-panel.modal-panel-auto-tunable .modal-lead,
 .modal-panel.modal-panel-auto-tunable .modal-head,
-.modal-panel.modal-panel-auto-tunable > .alert {
+.modal-panel.modal-panel-auto-tunable > .alert,
+.modal-panel.modal-panel-auto-tunable .auto-mode-tunable-io {
   flex-shrink: 0;
+}
+.modal-panel.modal-panel-auto-tunable .auto-mode-tunable-io {
+  margin: 0.35rem 0 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--surface-solid) 92%, var(--text) 8%);
+}
+.modal-panel.modal-panel-auto-tunable .auto-mode-tunable-io-lead {
+  margin: 0 0 0.55rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.modal-panel.modal-panel-auto-tunable .auto-mode-tunable-io-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
 }
 .modal-panel.modal-panel-auto-tunable .modal-form-auto-tunable {
   flex: 1;
