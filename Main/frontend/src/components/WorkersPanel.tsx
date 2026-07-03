@@ -84,6 +84,7 @@ import {
   sortWorkersForDisplay,
 } from "../utils/workerDisplayOrder";
 import { buildWorkerLiveStatuses, WorkerLiveStatus } from "../utils/workerLiveStatus";
+import { normalizeRegion } from "../utils/window";
 import { AUTO_MODE_CHANGED_EVENT } from "./AutoModePanel";
 
 /** Background poll for worker GET /best while optimization is running. */
@@ -376,6 +377,27 @@ export function WorkersPanel({
   useEffect(() => {
     void ensureWorkerTunablesHydrated();
   }, []);
+
+  useEffect(() => {
+    const targetWindow = normalizeRegion(candidateContext?.window ?? "") ?? candidateContext?.window?.trim();
+    if (!targetWindow || !candidateContext) return;
+
+    setAssignments((prev) => {
+      let changed = false;
+      const next: Record<string, WorkerAssignment> = { ...prev };
+      for (const [workerId, assignment] of Object.entries(prev)) {
+        if (assignment.autoManaged) continue;
+        const inPool = candidateContext.candidates.some(
+          (candidate) => candidate.index === assignment.candidate.index,
+        );
+        if (inPool && assignment.window !== targetWindow) {
+          next[workerId] = { ...assignment, window: targetWindow };
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [candidateContext]);
 
   useEffect(() => {
     if (initialAutoStatus?.config?.params?.length) {
@@ -1585,14 +1607,19 @@ export function WorkersPanel({
                 {assignment && (
                   <div className="worker-assignment">
                     <div className="worker-assignment-head">
-                      <span className="worker-assignment-title">
-                        {autoManaged ? "Auto assignment" : `Candidate #${assignment.candidate.index + 1}`}
-                        {score != null && (
-                          <span className="worker-assignment-score">
-                            {(score * 100).toFixed(1)}%
-                          </span>
-                        )}
-                      </span>
+                      <div className="worker-assignment-head-main">
+                        <span className="worker-assignment-title">
+                          {autoManaged ? "Auto assignment" : `Candidate #${assignment.candidate.index + 1}`}
+                          {score != null && (
+                            <span className="worker-assignment-score">
+                              {(score * 100).toFixed(1)}%
+                            </span>
+                          )}
+                        </span>
+                        <code className="worker-assignment-window">
+                          {assignment.tool}: {assignment.window}
+                        </code>
+                      </div>
                       {!reassignmentLocked && (
                         <button
                           type="button"

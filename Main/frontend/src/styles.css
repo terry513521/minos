@@ -2568,9 +2568,20 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
 }
 .worker-assignment-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 0.5rem;
+}
+.worker-assignment-head-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+.worker-assignment-window {
+  font-size: 0.74rem;
+  color: var(--muted);
+  word-break: break-all;
 }
 .worker-assignment-title {
   font-size: 0.82rem;

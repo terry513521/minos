@@ -957,14 +957,20 @@ async def resolve_workers_by_name(db: AsyncSession, names: tuple[str, ...]) -> d
 
 
 def candidate_dispatch_window(candidate: CandidatePreview, fallback: str) -> str:
-    """Use the candidate's historical region when available, not the query round region."""
+    """Dispatch on the active round/finder region, not the candidate's history region."""
+    fb = (fallback or "").strip()
+    if fb:
+        try:
+            return parse_window(fb).window
+        except ValueError:
+            return fb
     source = (candidate.source_window or "").strip()
     if not source:
         return fallback
     try:
         return parse_window(source).window
     except ValueError:
-        return fallback
+        return source
 
 
 def with_trial_resources(

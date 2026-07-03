@@ -152,6 +152,8 @@ export function resolveAssignmentWindow(
   candidate: CandidatePreview,
   contextWindow: string,
 ): string {
+  const query = contextWindow?.trim();
+  if (query) return query;
   const fromCandidate = candidate.source_window?.trim();
   return fromCandidate || contextWindow;
 }

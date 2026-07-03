@@ -15,7 +15,7 @@ from app.services.auto_mode import (
 )
 
 
-def test_candidate_dispatch_window_prefers_source_window():
+def test_candidate_dispatch_window_uses_query_region():
     candidate = CandidatePreview(
         index=0,
         base_conf={},
@@ -23,7 +23,20 @@ def test_candidate_dispatch_window_prefers_source_window():
         source_window="chr21:35444092-40444092",
     )
     assert (
-        candidate_dispatch_window(candidate, "chr21:1000000-6000000")
+        candidate_dispatch_window(candidate, "chr20:10000000-15000000")
+        == "chr20:10000000-15000000"
+    )
+
+
+def test_candidate_dispatch_window_falls_back_to_source_when_query_missing():
+    candidate = CandidatePreview(
+        index=0,
+        base_conf={},
+        rank_score=0.5,
+        source_window="chr21:35444092-40444092",
+    )
+    assert (
+        candidate_dispatch_window(candidate, "")
         == "chr21:35444092-40444092"
     )
 
