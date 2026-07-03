@@ -322,10 +322,16 @@ def test_retry_failed_auto_dispatches_succeeds_when_worker_recovers():
     )
 
     async def _run():
-        with patch(
-            "app.services.auto_mode.dispatch_to_worker",
-            new_callable=AsyncMock,
-            return_value=mock_response,
+        with (
+            patch(
+                "app.services.auto_mode.dispatch_to_worker",
+                new_callable=AsyncMock,
+                return_value=mock_response,
+            ),
+            patch(
+                "app.services.auto_mode.set_control_plane_setting",
+                new_callable=AsyncMock,
+            ),
         ):
             succeeded = await retry_failed_auto_dispatches(AsyncMock())
             assert succeeded == 1

@@ -1644,7 +1644,9 @@ export function WorkersPanel({
                     {autoManaged ? (
                       <div className="worker-dispatch-success">
                         {assignment.dispatchError
-                          ? `Auto dispatch failed: ${assignment.dispatchError}`
+                          ? autoModeStatus?.running
+                            ? `Auto dispatch pending: ${assignment.dispatchError} (retrying)`
+                            : `Auto dispatch failed: ${assignment.dispatchError}`
                           : autoAssignmentsByWorker[worker.id]
                             ? "Dispatched by auto mode — live scores update above."
                             : "Waiting for auto start — config shown from auto mode policy."}
