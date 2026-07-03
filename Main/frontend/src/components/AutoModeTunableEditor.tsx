@@ -2,10 +2,10 @@ import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "re
 import { api, AutoModeConfig, WorkerRecord } from "../api/client";
 import { DEFAULT_FINE_TUNE_PARAMS } from "../utils/candidateAssign";
 import {
-  buildAutoModeIntervalsFile,
-  downloadAutoModeIntervalsFile,
+  buildAutoModeTunableFile,
+  downloadAutoModeTunableFile,
   parseAutoModeTunableImport,
-  AutoModeIntervalsImport,
+  AutoModeTunableImportData,
 } from "../utils/autoModeTunableFile";
 import { parseToolOptionValue, setToolOption } from "../utils/confEdit";
 import {
@@ -202,14 +202,21 @@ export function AutoModeTunableEditor({
     setBaseConf((prev) => setToolOption(prev, tool, param, parseToolOptionValue(tool, param, raw)));
   }
 
-  function applyImportedIntervals(data: AutoModeIntervalsImport) {
+  function applyImportedTunable(data: AutoModeTunableImportData) {
     setSelectedParams([...data.params]);
     setParamIntervals({ ...data.paramIntervals });
     if (data.baseConf) {
       setBaseConf(structuredClone(data.baseConf));
     }
     if (data.workerAlgorithms) {
-      setWorkerAlgorithms({ ...data.workerAlgorithms });
+      setWorkerAlgorithms(
+        Object.fromEntries(
+          workerNames.map((name) => [
+            name,
+            data.workerAlgorithms?.[name] ?? workerAlgorithms[name] ?? "optuna",
+          ]),
+        ) as Record<string, AlgorithmOption>,
+      );
     }
     if (data.workerTrialThreads) {
       setWorkerTrialThreads(
@@ -245,15 +252,25 @@ export function AutoModeTunableEditor({
 
   function handleExport() {
     if (selectedParams.length === 0) {
-      setError("Select at least one parameter before exporting intervals.");
+      setError("Select at least one parameter before exporting.");
+      return;
+    }
+    if (workerNames.length === 0) {
+      setError("Add at least one worker before exporting.");
       return;
     }
     setError(null);
-    downloadAutoModeIntervalsFile(
-      buildAutoModeIntervalsFile({
+    downloadAutoModeTunableFile(
+      buildAutoModeTunableFile({
         tool,
         params: selectedParams,
         paramIntervals,
+        baseConf,
+        workerNames,
+        workerAlgorithms,
+        workerTrialThreads,
+        workerTrialMemoryGb,
+        workerConcurrency,
       }),
     );
   }
@@ -272,12 +289,12 @@ export function AutoModeTunableEditor({
         return;
       }
 
-      if (parsed.result.kind === "intervals") {
-        applyImportedIntervals(parsed.result.data);
+      if (parsed.result.kind === "tunable") {
+        applyImportedTunable(parsed.result.data);
       } else {
         setBaseConf(parsed.result.baseConf);
         setError(
-          "Imported base conf values only — .conf files do not include tune intervals. Export/import JSON for min, max, and step.",
+          "Imported GATK base conf only — use Export/Import JSON for intervals, steps, and worker settings.",
         );
       }
     } catch (err) {
@@ -424,8 +441,8 @@ export function AutoModeTunableEditor({
 
         <div className="auto-mode-tunable-io">
           <p className="auto-mode-tunable-io-lead">
-            Import or export tune <strong>intervals</strong> (min, max, step) for selected parameters.
-            JSON restores which params are tuned and their search ranges.
+            Import or export a full auto-mode settings file: default <code>{tool}</code> conf, tune
+            intervals (min, max, step), and per-worker algorithm, concurrency, CPUs, and RAM.
           </p>
           <div className="auto-mode-tunable-io-actions">
             <button
@@ -439,7 +456,9 @@ export function AutoModeTunableEditor({
             <button
               type="button"
               className="button ghost"
-              disabled={hydrating || loading || selectedParams.length === 0}
+              disabled={
+                hydrating || loading || selectedParams.length === 0 || workerNames.length === 0
+              }
               onClick={handleExport}
             >
               Export
@@ -447,7 +466,7 @@ export function AutoModeTunableEditor({
             <input
               ref={importFileRef}
               type="file"
-              accept=".json,application/json"
+              accept=".json,.conf,application/json,text/plain"
               className="sr-only"
               aria-hidden
               onChange={(e) => void handleImportFile(e)}

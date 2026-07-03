@@ -1,24 +1,31 @@
 import { AlgorithmOption } from "../types/workerAssignment";
 import { getToolOptions, parseToolOptionValue, setToolOptions } from "./confEdit";
-import { downloadConfFile } from "./confDisplay";
-import { clampParamInterval, ParamInterval } from "./paramBounds";
+import { confToDotConf, downloadConfFile } from "./confDisplay";
+import { clampParamInterval, ParamInterval, buildGatkReferenceConf } from "./paramBounds";
 
-export const AUTO_MODE_INTERVALS_FILE_KIND = "minos-auto-mode-intervals";
-export const AUTO_MODE_INTERVALS_FILE_VERSION = 1;
-
-/** @deprecated Legacy full-settings export; import still accepted. */
 export const AUTO_MODE_TUNABLE_FILE_KIND = "minos-auto-mode-tunable";
 export const AUTO_MODE_TUNABLE_FILE_VERSION = 1;
 
-export interface AutoModeIntervalsFile {
-  kind: typeof AUTO_MODE_INTERVALS_FILE_KIND;
+/** Legacy intervals-only exports; import still accepted. */
+export const AUTO_MODE_INTERVALS_FILE_KIND = "minos-auto-mode-intervals";
+export const AUTO_MODE_INTERVALS_FILE_VERSION = 1;
+
+export interface AutoModeTunableFile {
+  kind: typeof AUTO_MODE_TUNABLE_FILE_KIND;
   version: number;
   tool: string;
   params: string[];
   param_intervals: Record<string, ParamInterval>;
+  base_conf: Record<string, unknown>;
+  worker_algorithms: Record<string, AlgorithmOption>;
+  worker_trial_threads: Record<string, number>;
+  worker_trial_memory_gb: Record<string, number>;
+  worker_concurrency: Record<string, number>;
+  /** Miner-style key=value lines for the full base conf (export convenience). */
+  conf_dot: string;
 }
 
-export interface AutoModeIntervalsImport {
+export interface AutoModeTunableImportData {
   params: string[];
   paramIntervals: Record<string, ParamInterval>;
   baseConf?: Record<string, unknown>;
@@ -128,30 +135,58 @@ export function normalizeImportedIntervals(
   return out;
 }
 
-export function buildAutoModeIntervalsFile(input: {
+function pickWorkerRecord<T>(
+  workerNames: string[],
+  record: Record<string, T>,
+  fallback: T,
+): Record<string, T> {
+  return Object.fromEntries(workerNames.map((name) => [name, record[name] ?? fallback]));
+}
+
+export function buildAutoModeTunableFile(input: {
   tool: string;
   params: string[];
   paramIntervals: Record<string, ParamInterval>;
-}): AutoModeIntervalsFile {
+  baseConf: Record<string, unknown>;
+  workerNames: string[];
+  workerAlgorithms: Record<string, AlgorithmOption>;
+  workerTrialThreads: Record<string, number>;
+  workerTrialMemoryGb: Record<string, number>;
+  workerConcurrency: Record<string, number>;
+}): AutoModeTunableFile {
   const param_intervals: Record<string, ParamInterval> = {};
   for (const param of input.params) {
     const interval = input.paramIntervals[param];
     if (!interval) continue;
     param_intervals[param] = { ...interval };
   }
+
+  const base_conf = structuredClone(input.baseConf);
+
   return {
-    kind: AUTO_MODE_INTERVALS_FILE_KIND,
-    version: AUTO_MODE_INTERVALS_FILE_VERSION,
+    kind: AUTO_MODE_TUNABLE_FILE_KIND,
+    version: AUTO_MODE_TUNABLE_FILE_VERSION,
     tool: input.tool,
     params: [...input.params],
     param_intervals,
+    base_conf,
+    worker_algorithms: pickWorkerRecord(
+      input.workerNames,
+      input.workerAlgorithms,
+      "optuna",
+    ) as Record<string, AlgorithmOption>,
+    worker_trial_threads: pickWorkerRecord(input.workerNames, input.workerTrialThreads, 4),
+    worker_trial_memory_gb: pickWorkerRecord(input.workerNames, input.workerTrialMemoryGb, 6),
+    worker_concurrency: pickWorkerRecord(input.workerNames, input.workerConcurrency, 1),
+    conf_dot: confToDotConf(base_conf),
   };
 }
 
-function parseIntervalsPayload(
+function parseTunablePayload(
   parsed: Record<string, unknown>,
   tool: string,
-): { ok: true; data: AutoModeIntervalsImport } | { ok: false; error: string } {
+  requireFull: boolean,
+): { ok: true; data: AutoModeTunableImportData } | { ok: false; error: string } {
   const fileTool = typeof parsed.tool === "string" ? parsed.tool.trim() : tool;
   if (fileTool !== tool) {
     return {
@@ -184,33 +219,54 @@ function parseIntervalsPayload(
     };
   }
 
-  const data: AutoModeIntervalsImport = {
-    params,
-    paramIntervals: normalizeImportedIntervals(tool, params, paramIntervals),
-  };
-
+  let baseConf: Record<string, unknown> | undefined;
   if (isRecord(parsed.base_conf)) {
-    data.baseConf = structuredClone(parsed.base_conf);
+    baseConf = structuredClone(parsed.base_conf);
+  } else if (typeof parsed.conf_dot === "string" && parsed.conf_dot.trim()) {
+    baseConf = mergeDotConfIntoBase(buildGatkReferenceConf(), tool, parsed.conf_dot);
+  }
+
+  if (requireFull && !baseConf) {
+    return { ok: false, error: "File must include base_conf (full GATK conf)" };
   }
 
   const workerAlgorithms = parseStringStringRecord(parsed.worker_algorithms);
-  if (workerAlgorithms) {
-    data.workerAlgorithms = workerAlgorithms as Record<string, AlgorithmOption>;
-  }
   const workerTrialThreads = parseStringNumberRecord(parsed.worker_trial_threads);
-  if (workerTrialThreads) data.workerTrialThreads = workerTrialThreads;
   const workerTrialMemoryGb = parseStringNumberRecord(parsed.worker_trial_memory_gb);
-  if (workerTrialMemoryGb) data.workerTrialMemoryGb = workerTrialMemoryGb;
   const workerConcurrency = parseStringNumberRecord(parsed.worker_concurrency);
-  if (workerConcurrency) data.workerConcurrency = workerConcurrency;
+
+  if (requireFull) {
+    if (!workerAlgorithms) {
+      return { ok: false, error: "File worker_algorithms are invalid" };
+    }
+    if (!workerTrialThreads) {
+      return { ok: false, error: "File worker_trial_threads are invalid" };
+    }
+    if (!workerTrialMemoryGb) {
+      return { ok: false, error: "File worker_trial_memory_gb are invalid" };
+    }
+    if (!workerConcurrency) {
+      return { ok: false, error: "File worker_concurrency are invalid" };
+    }
+  }
+
+  const data: AutoModeTunableImportData = {
+    params,
+    paramIntervals: normalizeImportedIntervals(tool, params, paramIntervals),
+    baseConf,
+    workerAlgorithms: workerAlgorithms as Record<string, AlgorithmOption> | undefined,
+    workerTrialThreads: workerTrialThreads ?? undefined,
+    workerTrialMemoryGb: workerTrialMemoryGb ?? undefined,
+    workerConcurrency: workerConcurrency ?? undefined,
+  };
 
   return { ok: true, data };
 }
 
-export function parseAutoModeIntervalsFile(
+export function parseAutoModeTunableFile(
   text: string,
   tool: string,
-): { ok: true; data: AutoModeIntervalsImport } | { ok: false; error: string } {
+): { ok: true; data: AutoModeTunableImportData } | { ok: false; error: string } {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
@@ -222,22 +278,22 @@ export function parseAutoModeIntervalsFile(
   }
 
   if (!isRecord(parsed)) {
-    return { ok: false, error: "Intervals file must be a JSON object" };
+    return { ok: false, error: "Settings file must be a JSON object" };
   }
 
   const kind = parsed.kind;
   if (
     kind != null &&
-    kind !== AUTO_MODE_INTERVALS_FILE_KIND &&
-    kind !== AUTO_MODE_TUNABLE_FILE_KIND
+    kind !== AUTO_MODE_TUNABLE_FILE_KIND &&
+    kind !== AUTO_MODE_INTERVALS_FILE_KIND
   ) {
     return { ok: false, error: `Unrecognized file kind: ${String(kind)}` };
   }
 
   if (
     parsed.version != null &&
-    parsed.version !== AUTO_MODE_INTERVALS_FILE_VERSION &&
-    parsed.version !== AUTO_MODE_TUNABLE_FILE_VERSION
+    parsed.version !== AUTO_MODE_TUNABLE_FILE_VERSION &&
+    parsed.version !== AUTO_MODE_INTERVALS_FILE_VERSION
   ) {
     return {
       ok: false,
@@ -245,11 +301,12 @@ export function parseAutoModeIntervalsFile(
     };
   }
 
-  return parseIntervalsPayload(parsed, tool);
+  const requireFull = kind === AUTO_MODE_TUNABLE_FILE_KIND;
+  return parseTunablePayload(parsed, tool, requireFull);
 }
 
 export type AutoModeTunableImportResult =
-  | { kind: "intervals"; data: AutoModeIntervalsImport }
+  | { kind: "tunable"; data: AutoModeTunableImportData }
   | { kind: "conf"; baseConf: Record<string, unknown> };
 
 export function parseAutoModeTunableImport(
@@ -263,16 +320,16 @@ export function parseAutoModeTunableImport(
   }
 
   if (trimmed.startsWith("{")) {
-    const intervals = parseAutoModeIntervalsFile(text, tool);
-    if (intervals.ok) {
-      return { ok: true, result: { kind: "intervals", data: intervals.data } };
+    const tunable = parseAutoModeTunableFile(text, tool);
+    if (tunable.ok) {
+      return { ok: true, result: { kind: "tunable", data: tunable.data } };
     }
 
     let json: unknown;
     try {
       json = JSON.parse(text);
     } catch {
-      return intervals;
+      return tunable;
     }
 
     if (isRecord(json)) {
@@ -288,26 +345,26 @@ export function parseAutoModeTunableImport(
       }
     }
 
-    return intervals;
+    return tunable;
   }
 
   const merged = mergeDotConfIntoBase(currentBaseConf, tool, text);
   return { ok: true, result: { kind: "conf", baseConf: merged } };
 }
 
-export function downloadAutoModeIntervalsFile(file: AutoModeIntervalsFile): void {
+export function downloadAutoModeTunableFile(file: AutoModeTunableFile): void {
   const blob = new Blob([JSON.stringify(file, null, 2)], {
     type: "application/json;charset=utf-8",
   });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = "auto-mode-intervals.json";
+  const base = file.tool || "auto-mode";
+  anchor.download = `${base}-auto-mode-tunable.json`;
   anchor.click();
   URL.revokeObjectURL(url);
 }
 
-/** @deprecated Conf export removed from auto mode panel; kept for other callers. */
 export function downloadAutoModeTunableConf(
   baseConf: Record<string, unknown>,
   fileName = "auto-mode-tunable",
