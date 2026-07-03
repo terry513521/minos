@@ -13,6 +13,9 @@ export function useAutoModeEnabled(): boolean {
     const cached = loadAutoModeState()?.status;
     if (cached) {
       setEnabled(cached.enabled);
+      if (cached.config.params.length > 0) {
+        syncManualParamDefaultsFromAutoConfig(cached.config);
+      }
     }
     api
       .getAutoMode()

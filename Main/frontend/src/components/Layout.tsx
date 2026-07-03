@@ -5,7 +5,7 @@ import { AddWorkerModal } from "./AddWorkerModal";
 import { AUTO_MODE_CHANGED_EVENT } from "./AutoModePanel";
 import { AutoModeTunableEditor } from "./AutoModeTunableEditor";
 import { saveAutoModeState } from "../utils/autoModeStorage";
-import { syncManualParamDefaultsFromAutoConfig } from "../utils/manualParamDefaults";
+import { syncManualParamDefaultsFromAutoConfig, ensureManualDefaultsHydrated } from "../utils/manualParamDefaults";
 
 const sectionsWhenAuto = [
   { hash: "#auto", label: "Auto mode" },
@@ -36,6 +36,7 @@ export function Layout() {
   }, []);
 
   const refreshAutoMode = useCallback(() => {
+    ensureManualDefaultsHydrated();
     api
       .getAutoMode()
       .then((status) => {

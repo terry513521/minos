@@ -2,6 +2,7 @@ import { CandidatePreview, FindCandidatesResponse, WorkerRecord } from "../api/c
 import { defaultSelectedParams, listToolOptionKeys } from "../utils/candidateAssign";
 import {
   buildSelectedParamIntervals,
+  ensureManualDefaultsHydrated,
   savedDefaultConcurrency,
   savedDefaultLimitSeconds,
   savedDefaultTrialCount,
@@ -137,6 +138,7 @@ export function createAssignment(
   context: FindCandidatesResponse,
   worker?: Pick<WorkerRecord, "id" | "name">,
 ): WorkerAssignment {
+  ensureManualDefaultsHydrated();
   const tool = (context.tool?.toLowerCase() as ToolkitOption) || DEFAULT_TOOLKIT;
   const resolvedTool = TOOLKIT_OPTIONS.includes(tool) ? tool : DEFAULT_TOOLKIT;
   const keys = listToolOptionKeys(candidate.base_conf, resolvedTool);

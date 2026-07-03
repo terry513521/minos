@@ -60,7 +60,7 @@ import {
   manualAssignmentsFromEndedAuto,
   previewAssignmentsFromAutoConfig,
 } from "../utils/autoModeSync";
-import { syncManualParamDefaultsFromAutoConfig } from "../utils/manualParamDefaults";
+import { syncManualParamDefaultsFromAutoConfig, ensureManualDefaultsHydrated } from "../utils/manualParamDefaults";
 import { loadAutoModeState, saveAutoModeState } from "../utils/autoModeStorage";
 import {
   isWorkerJobRunning,
@@ -345,7 +345,16 @@ export function WorkersPanel({
     return () => window.removeEventListener(WORKERS_CHANGED_EVENT, onChanged);
   }, [refresh]);
 
+  useEffect(() => {
+    if (initialAutoStatus?.config?.params?.length) {
+      syncManualParamDefaultsFromAutoConfig(initialAutoStatus.config);
+    } else {
+      ensureManualDefaultsHydrated();
+    }
+  }, []);
+
   const refreshAutoMode = useCallback(() => {
+    ensureManualDefaultsHydrated();
     api
       .getAutoMode()
       .then((status) => {
