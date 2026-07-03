@@ -73,6 +73,7 @@ import {
   shouldPollWorkerBest,
   sortWorkersForDisplay,
 } from "../utils/workerDisplayOrder";
+import { buildWorkerLiveStatuses, WorkerLiveStatus } from "../utils/workerLiveStatus";
 import { AUTO_MODE_CHANGED_EVENT } from "./AutoModePanel";
 
 /** Background poll for worker GET /best while optimization is running. */
@@ -81,6 +82,7 @@ const BEST_POLL_INTERVAL_MS = 1000;
 interface WorkersPanelProps {
   candidateContext?: FindCandidatesResponse | null;
   onWorkerAssignmentSummariesChange?: (summaries: WorkerAssignmentSummary[]) => void;
+  onWorkerLiveStatusesChange?: (statuses: WorkerLiveStatus[]) => void;
   /** Parent section provides header and panel chrome. */
   sectionChild?: boolean;
   onAssignHandlerReady?: (
@@ -205,6 +207,7 @@ function withoutLoadingHealth(
 export function WorkersPanel({
   candidateContext = null,
   onWorkerAssignmentSummariesChange,
+  onWorkerLiveStatusesChange,
   sectionChild = false,
   onAssignHandlerReady,
 }: WorkersPanelProps) {
@@ -455,6 +458,30 @@ export function WorkersPanel({
     autoModeStatus,
     nowMs,
     onWorkerAssignmentSummariesChange,
+  ]);
+
+  useEffect(() => {
+    if (!onWorkerLiveStatusesChange) return;
+    onWorkerLiveStatusesChange(
+      buildWorkerLiveStatuses(
+        workers,
+        bestByWorker,
+        healthByWorker,
+        effectiveAssignmentsByWorker,
+        dispatchByWorker,
+        autoModeStatus,
+        nowMs,
+      ),
+    );
+  }, [
+    workers,
+    bestByWorker,
+    healthByWorker,
+    effectiveAssignmentsByWorker,
+    dispatchByWorker,
+    autoModeStatus,
+    nowMs,
+    onWorkerLiveStatusesChange,
   ]);
 
   useEffect(() => {
@@ -717,6 +744,15 @@ export function WorkersPanel({
       setStoppingWorkerId(null);
     }
   }
+
+  useEffect(() => {
+    if (workers.length === 0) return;
+    for (const worker of workers) {
+      if (worker.base_url) {
+        void pollWorkerBest(worker.id, true);
+      }
+    }
+  }, [workers, pollWorkerBest]);
 
   useEffect(() => {
     if (workers.length === 0) return;

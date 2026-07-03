@@ -170,6 +170,105 @@ code, .input-mono {
   gap: var(--pad-2);
   width: 100%;
 }
+
+.worker-status-overview {
+  padding: var(--pad-2);
+}
+.worker-status-overview-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  margin-bottom: 0.85rem;
+}
+.worker-status-overview-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+.worker-status-overview-lead {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.worker-status-overview-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.75rem;
+}
+.worker-status-overview-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--chip-bg);
+}
+.worker-status-overview-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.worker-status-overview-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.worker-status-overview-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+.worker-status-overview-label {
+  display: block;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-bottom: 0.15rem;
+}
+.worker-status-overview-score {
+  font-size: 1.15rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+.worker-status-overview-trials,
+.worker-status-overview-muted {
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.worker-status-overview-muted {
+  color: var(--muted);
+}
+.worker-status-overview-error {
+  font-size: 0.78rem;
+  color: var(--warn);
+}
+.worker-status-overview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 1.75rem;
+}
+.worker-status-overview-download {
+  font-size: 0.78rem;
+  padding: 0.2rem 0.55rem;
+}
+.worker-status-overview-countdown {
+  font-size: 0.78rem;
+}
+.worker-status-overview-no-conf {
+  font-size: 0.78rem;
+}
+
 .console-hero,
 #candidates,
 #auto,

@@ -3,15 +3,18 @@ import { FindCandidatesResponse } from "../api/client";
 import { CandidateFinderPanel } from "../components/CandidateFinderPanel";
 import { AutoModePanel } from "../components/AutoModePanel";
 import { SectionHeader } from "../components/SectionHeader";
+import { WorkerStatusOverview } from "../components/WorkerStatusOverview";
 import { WorkersPanel } from "../components/WorkersPanel";
 import { useAutoModeEnabled } from "../hooks/useAutoModeEnabled";
 import { WorkerAssignmentSummary } from "../types/workerAssignment";
+import { WorkerLiveStatus } from "../utils/workerLiveStatus";
 
 export function ConsolePage() {
   const [candidateContext, setCandidateContext] = useState<FindCandidatesResponse | null>(null);
   const [workerAssignmentSummaries, setWorkerAssignmentSummaries] = useState<
     WorkerAssignmentSummary[]
   >([]);
+  const [workerLiveStatuses, setWorkerLiveStatuses] = useState<WorkerLiveStatus[]>([]);
   const autoModeEnabled = useAutoModeEnabled();
   const assignCandidateRef = useRef<
     ((workerId: string, candidateIndex: number) => boolean) | null
@@ -23,6 +26,10 @@ export function ConsolePage() {
     },
     [],
   );
+
+  const handleWorkerLiveStatusesChange = useCallback((statuses: WorkerLiveStatus[]) => {
+    setWorkerLiveStatuses(statuses);
+  }, []);
 
   const handleAssignHandlerReady = useCallback(
     (handler: (workerId: string, candidateIndex: number) => boolean) => {
@@ -46,6 +53,7 @@ export function ConsolePage() {
 
   return (
     <div className="console-page">
+      <WorkerStatusOverview statuses={workerLiveStatuses} />
       <div className="bento-grid">
         {autoModeEnabled ? (
           <section id="auto" className="panel">
@@ -85,6 +93,7 @@ export function ConsolePage() {
           <WorkersPanel
             candidateContext={candidateContext}
             onWorkerAssignmentSummariesChange={handleWorkerAssignmentSummariesChange}
+            onWorkerLiveStatusesChange={handleWorkerLiveStatusesChange}
             onAssignHandlerReady={handleAssignHandlerReady}
             sectionChild
           />
