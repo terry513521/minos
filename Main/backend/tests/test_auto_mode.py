@@ -7,6 +7,7 @@ from app.services.auto_mode import (
     AUTO_SIMILARITY_WEIGHT,
     AutoModeStore,
     AutoSession,
+    SelectedCandidateSlot,
     assign_workers_by_metric,
     build_diverse_candidate_pool,
     candidate_dispatch_window,
@@ -79,6 +80,7 @@ def test_build_diverse_candidate_pool_prioritizes_score_similarity_composite():
 
 
 def test_assign_workers_by_metric_maps_vm_big_igno():
+    worker_names = ["VM", "Big", "Igno"]
     candidates = [
         CandidatePreview(
             index=0,
@@ -105,7 +107,7 @@ def test_assign_workers_by_metric_maps_vm_big_igno():
             history_id="balanced",
         ),
     ]
-    slots = assign_workers_by_metric(candidates)
+    slots = assign_workers_by_metric(candidates, worker_names)
     assert [slot.worker_name for slot in slots] == ["VM", "Big", "Igno"]
     assert slots[0].selection_reason == "top_score"
     assert slots[0].candidate.history_id == "high-score"
@@ -145,7 +147,20 @@ def test_auto_dispatch_uses_configured_algorithm():
     assert custom["memory_gb"] == 12
 
 
+def test_worker_trial_threads_limit_is_100():
+    from app.defaults import MAX_TRIAL_THREADS
+    from app.services.auto_mode import clamp_trial_threads, validate_worker_trial_resources
+
+    assert MAX_TRIAL_THREADS == 100
+    assert clamp_trial_threads(64) == 64
+    assert clamp_trial_threads(100) == 100
+    assert clamp_trial_threads(101) == 100
+    validate_worker_trial_resources({"VM": 64}, {"VM": 8}, ["VM"])
+
+
 def test_update_auto_tunable_config_persists():
+    from unittest.mock import AsyncMock, patch
+
     from app.schemas import ParamIntervalSpec
     from app.services.auto_mode import (
         auto_mode_store,
@@ -153,28 +168,35 @@ def test_update_auto_tunable_config_persists():
         update_auto_mode_tunable_config,
     )
 
-    auto_mode_store.tunable = default_auto_tunable_config()
+    auto_mode_store.tunable = default_auto_tunable_config(["VM", "Big", "Igno"])
     auto_mode_store.session = None
 
     async def _run():
         from app.database import SessionLocal
 
         async with SessionLocal() as db:
-            status = await update_auto_mode_tunable_config(
-                db,
-                params=["min_base_quality_score"],
-                param_intervals={
-                    "min_base_quality_score": ParamIntervalSpec(min=8.0, max=18.0, step=2.0),
-                },
-                worker_algorithms={"VM": "gp", "Big": "random", "Igno": "sobol"},
-                worker_trial_threads={"VM": 6, "Big": 4, "Igno": 8},
-                worker_trial_memory_gb={"VM": 8, "Big": 6, "Igno": 12},
-            )
-            assert status.config.params == ["min_base_quality_score"]
-            assert status.config.param_intervals["min_base_quality_score"].min == 8.0
-            assert status.config.worker_algorithms["VM"] == "gp"
-            assert status.config.worker_trial_threads["VM"] == 6
-            assert status.config.worker_trial_memory_gb["Igno"] == 12
+            with patch(
+                "app.services.auto_mode.get_registered_worker_names",
+                new_callable=AsyncMock,
+                return_value=["VM", "Big", "Igno"],
+            ):
+                status = await update_auto_mode_tunable_config(
+                    db,
+                    params=["min_base_quality_score"],
+                    param_intervals={
+                        "min_base_quality_score": ParamIntervalSpec(min=8.0, max=18.0, step=2.0),
+                    },
+                    worker_algorithms={"VM": "gp", "Big": "random", "Igno": "sobol"},
+                    worker_trial_threads={"VM": 6, "Big": 4, "Igno": 8},
+                    worker_trial_memory_gb={"VM": 8, "Big": 6, "Igno": 12},
+                    worker_concurrency={"VM": 2, "Big": 4, "Igno": 1},
+                )
+                assert status.config.params == ["min_base_quality_score"]
+                assert status.config.param_intervals["min_base_quality_score"].min == 8.0
+                assert status.config.worker_algorithms["VM"] == "gp"
+                assert status.config.worker_trial_threads["VM"] == 6
+                assert status.config.worker_trial_memory_gb["Igno"] == 12
+                assert status.config.worker_concurrency["Big"] == 4
 
     import asyncio
 
@@ -200,7 +222,7 @@ def test_disable_auto_mode_keeps_session_running():
         running=True,
     )
 
-    status = store.set_enabled(False)
+    status = store.set_enabled(False, ["VM"])
 
     assert status.enabled is False
     assert status.running is True
@@ -218,7 +240,7 @@ def test_finished_session_allows_new_start_check():
         started_at=datetime.now(timezone.utc),
         running=False,
     )
-    status = store.status()
+    status = store.status([])
     assert status.running is False
     assert status.enabled is True
 
@@ -226,7 +248,7 @@ def test_finished_session_allows_new_start_check():
 def test_auto_mode_status_includes_last_started_region():
     store = AutoModeStore()
     store.last_started_region = "chr21:35444092-40444092"
-    assert store.status().last_started_region == "chr21:35444092-40444092"
+    assert store.status([]).last_started_region == "chr21:35444092-40444092"
 
 
 def test_end_session_clears_running_session():
@@ -240,7 +262,7 @@ def test_end_session_clears_running_session():
     )
     store.last_started_region = "chr21:1-100"
 
-    status = store.end_session()
+    status = store.end_session([])
 
     assert store.session is None
     assert store.last_started_region is None
@@ -259,3 +281,167 @@ def test_skipped_start_response_shape():
     assert response.skipped is True
     assert response.ok is False
     assert response.workers_dispatched == 0
+
+
+def test_retry_failed_auto_dispatches_succeeds_when_worker_recovers():
+    import asyncio
+    from unittest.mock import AsyncMock, patch
+
+    from app.schemas import WorkerDispatchResponse
+    from app.services.auto_mode import (
+        AutoSession,
+        auto_mode_store,
+        retry_failed_auto_dispatches,
+    )
+
+    auto_mode_store.session = AutoSession(
+        region="chr21:1-100",
+        tool="gatk",
+        started_at=datetime.now(timezone.utc),
+        assignments=[
+            AutoDispatchAssignment(
+                worker_id="w1",
+                worker_name="VM",
+                algorithm="optuna",
+                candidate_index=0,
+                composite_score=0.5,
+                base_conf={"threads": 4, "memory_gb": 6},
+                window="chr21:1-100",
+                params=["standard_min_confidence_threshold_for_calling"],
+                dispatch_ok=False,
+                dispatch_error="connection refused",
+            )
+        ],
+        running=True,
+    )
+    auto_mode_store.last_started_region = None
+
+    mock_response = WorkerDispatchResponse(
+        worker_id="w1",
+        ok=True,
+        result={"job_id": "job-123", "status": "accepted"},
+    )
+
+    async def _run():
+        with (
+            patch(
+                "app.services.auto_mode.dispatch_to_worker",
+                new_callable=AsyncMock,
+                return_value=mock_response,
+            ),
+            patch(
+                "app.services.auto_mode.set_control_plane_setting",
+                new_callable=AsyncMock,
+            ),
+        ):
+            succeeded = await retry_failed_auto_dispatches(AsyncMock())
+            assert succeeded == 1
+            assignment = auto_mode_store.session.assignments[0]
+            assert assignment.dispatch_ok is True
+            assert assignment.dispatch_error is None
+            assert assignment.job_id == "job-123"
+            assert auto_mode_store.last_started_region == "chr21:1-100"
+
+    asyncio.run(_run())
+
+
+def test_session_json_round_trip():
+    from app.services.auto_mode import _session_from_json, _session_to_json
+
+    session = AutoSession(
+        region="chr21:1-100",
+        tool="gatk",
+        started_at=datetime(2026, 7, 3, 12, 0, tzinfo=timezone.utc),
+        running=True,
+        candidates_found=2,
+        assignments=[
+            AutoDispatchAssignment(
+                worker_id="w1",
+                worker_name="VM",
+                algorithm="optuna",
+                candidate_index=0,
+                composite_score=0.5,
+                dispatch_ok=True,
+            )
+        ],
+        found_candidates=[
+            CandidatePreview(index=0, base_conf={}, rank_score=0.5),
+        ],
+        selected_candidates=[
+            SelectedCandidateSlot(
+                worker_name="VM",
+                candidate=CandidatePreview(index=0, base_conf={}, rank_score=0.5),
+                selection_reason="top_score",
+            )
+        ],
+    )
+    restored = _session_from_json(_session_to_json(session))
+    assert restored.region == session.region
+    assert restored.running is True
+    assert len(restored.assignments) == 1
+    assert restored.assignments[0].dispatch_ok is True
+
+
+def test_heal_legacy_auto_mode_enabled_from_last_region():
+    import asyncio
+    from unittest.mock import AsyncMock, patch
+
+    from app.services.auto_mode import AutoModeStore, _heal_legacy_auto_mode_enabled, auto_mode_store
+
+    store = AutoModeStore()
+    store.enabled = False
+    store.last_started_region = "chr21:1-100"
+    store.session = None
+
+    async def _run():
+        with patch("app.services.auto_mode.auto_mode_store", store):
+            with patch(
+                "app.services.auto_mode.get_control_plane_setting",
+                new_callable=AsyncMock,
+                return_value=None,
+            ):
+                with patch(
+                    "app.services.auto_mode.set_control_plane_setting",
+                    new_callable=AsyncMock,
+                ) as set_setting:
+                    await _heal_legacy_auto_mode_enabled(AsyncMock())
+                    assert store.enabled is True
+                    set_setting.assert_called_once()
+
+    asyncio.run(_run())
+
+
+def test_retry_failed_auto_dispatches_skips_when_session_not_running():
+    import asyncio
+    from unittest.mock import AsyncMock, patch
+
+    from app.services.auto_mode import AutoSession, auto_mode_store, retry_failed_auto_dispatches
+
+    auto_mode_store.session = AutoSession(
+        region="chr21:1-100",
+        tool="gatk",
+        started_at=datetime.now(timezone.utc),
+        assignments=[
+            AutoDispatchAssignment(
+                worker_id="w1",
+                worker_name="VM",
+                algorithm="optuna",
+                candidate_index=0,
+                composite_score=0.5,
+                dispatch_ok=False,
+                dispatch_error="down",
+            )
+        ],
+        running=False,
+    )
+
+    async def _run():
+        with patch(
+            "app.services.auto_mode.dispatch_to_worker",
+            new_callable=AsyncMock,
+        ) as mock_dispatch:
+            succeeded = await retry_failed_auto_dispatches(AsyncMock())
+            assert succeeded == 0
+            mock_dispatch.assert_not_called()
+
+    asyncio.run(_run())

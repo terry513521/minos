@@ -12,6 +12,9 @@ import {
   formatParamInterval,
   paramIntervalsFromAutoConfig,
   workerAlgorithmsFromAutoConfig,
+  workerConcurrencyFromAutoConfig,
+  workerLimitSecondsFromAutoConfig,
+  workerTrialCountsFromAutoConfig,
   workerTrialMemoryGbFromAutoConfig,
   workerTrialThreadsFromAutoConfig,
 } from "../utils/autoModeSync";
@@ -78,6 +81,8 @@ export function AutoModePanel({ embedded = false }: AutoModePanelProps) {
   const workerAlgorithms = workerAlgorithmsFromAutoConfig(config);
   const workerTrialThreads = workerTrialThreadsFromAutoConfig(config);
   const workerTrialMemoryGb = workerTrialMemoryGbFromAutoConfig(config);
+  const workerTrialCounts = workerTrialCountsFromAutoConfig(config);
+  const workerLimitSeconds = workerLimitSecondsFromAutoConfig(config);
   const selectionByIndex = selectionSlotsByIndex(status.selected_candidates);
   const foundCount = status.found_candidates.length || status.candidates_found;
   const canRestartSession =
@@ -168,12 +173,7 @@ export function AutoModePanel({ embedded = false }: AutoModePanelProps) {
             type="button"
             className="button ghost auto-mode-edit-params-btn"
             onClick={() => setEditingParams(true)}
-            disabled={status.running}
-            title={
-              status.running
-                ? "Stop or restart the session before editing parameters"
-                : "Edit parameters for the next auto start"
-            }
+            title="Edit parameters — changes apply on the next auto start"
           >
             Edit parameters
           </button>
@@ -203,8 +203,9 @@ export function AutoModePanel({ embedded = false }: AutoModePanelProps) {
         <div className="auto-mode-worker-algorithm-summary">
           {config.worker_names.map((workerName) => (
             <span key={workerName} className="chip chip-muted">
-              {workerName}: {workerAlgorithms[workerName]} · {workerTrialThreads[workerName]} CPU ·{" "}
-              {workerTrialMemoryGb[workerName]} GB
+              {workerName}: {workerAlgorithms[workerName]} · {workerTrialCounts[workerName]} trials ·{" "}
+              {Math.round((workerLimitSeconds[workerName] ?? config.limit_seconds) / 60)} min ·{" "}
+              {workerTrialThreads[workerName]} CPU · {workerTrialMemoryGb[workerName]} GB
             </span>
           ))}
         </div>
@@ -216,7 +217,16 @@ export function AutoModePanel({ embedded = false }: AutoModePanelProps) {
             <div className="auto-mode-card">
               <span className="auto-mode-card-label">Selection</span>
               <p>
-                Find {config.find_k} candidates → VM top score, Big most similar, Igno best composite.
+                Find {config.find_k} candidates → assign{" "}
+                {config.worker_names.length > 0
+                  ? config.worker_names
+                      .map((name, index) => {
+                        const reasons = ["top score", "most similar", "best composite"] as const;
+                        return `${name} ${reasons[index % reasons.length]}`;
+                      })
+                      .join(", ")
+                  : "registered workers"}
+                .
               </p>
               {status.region && (
                 <p>
@@ -245,7 +255,18 @@ export function AutoModePanel({ embedded = false }: AutoModePanelProps) {
                   />
                 </p>
               )}
-              <p>Concurrency: {config.concurrency}</p>
+              <p>
+                Concurrency:{" "}
+                {config.worker_names.length > 0
+                  ? config.worker_names
+                      .map((name) => {
+                        const value =
+                          workerConcurrencyFromAutoConfig(config)[name] ?? config.concurrency;
+                        return `${name}: ${value}`;
+                      })
+                      .join(", ")
+                  : config.concurrency}
+              </p>
             </div>
           </div>
 
@@ -297,6 +318,17 @@ export function AutoModePanel({ embedded = false }: AutoModePanelProps) {
                         <td>
                           {item.dispatch_ok ? (
                             <span className="chip chip-ok">accepted</span>
+                          ) : status.running ? (
+                            <span
+                              className="chip chip-pending"
+                              title={
+                                item.dispatch_error
+                                  ? `${item.dispatch_error} — retrying while session runs`
+                                  : "Waiting for worker — retrying while session runs"
+                              }
+                            >
+                              pending
+                            </span>
                           ) : (
                             <span className="chip chip-warn" title={item.dispatch_error ?? undefined}>
                               failed

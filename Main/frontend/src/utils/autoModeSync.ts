@@ -35,37 +35,98 @@ function trialCountFromAutoConfig(config: AutoModeConfig): number {
   return clampTotalTrials(config.adaptive_max_trials + 1);
 }
 
+export function workerSettingForName<T>(
+  map: Record<string, T> | undefined,
+  workerName: string,
+): T | undefined {
+  if (!map || !workerName.trim()) return undefined;
+  const trimmed = workerName.trim();
+  if (map[trimmed] !== undefined) return map[trimmed];
+  const lower = trimmed.toLowerCase();
+  const matchedKey = Object.keys(map).find((key) => key.toLowerCase() === lower);
+  return matchedKey ? map[matchedKey] : undefined;
+}
+
+function workerSettingsFromConfig<T>(
+  config: AutoModeConfig,
+  map: Record<string, T> | undefined,
+  fallback: T,
+): Record<string, T> {
+  const settings: Record<string, T> = {};
+  for (const workerName of config.worker_names) {
+    settings[workerName] = workerSettingForName(map, workerName) ?? fallback;
+  }
+  return settings;
+}
+
 export function workerAlgorithmsFromAutoConfig(
   config: AutoModeConfig,
 ): Record<string, AlgorithmOption> {
-  const algorithms: Record<string, AlgorithmOption> = {};
-  for (const workerName of config.worker_names) {
-    const raw = config.worker_algorithms[workerName] ?? DEFAULT_ALGORITHM;
-    algorithms[workerName] = raw as AlgorithmOption;
-  }
-  return algorithms;
+  return workerSettingsFromConfig(
+    config,
+    config.worker_algorithms as Record<string, AlgorithmOption>,
+    DEFAULT_ALGORITHM,
+  );
 }
 
 export function workerTrialThreadsFromAutoConfig(
   config: AutoModeConfig,
 ): Record<string, number> {
-  const threads: Record<string, number> = {};
-  for (const workerName of config.worker_names) {
-    const raw = config.worker_trial_threads?.[workerName] ?? DEFAULT_TRIAL_THREADS;
-    threads[workerName] = clampTrialThreads(raw);
-  }
-  return threads;
+  return workerSettingsFromConfig(
+    config,
+    config.worker_trial_threads,
+    DEFAULT_TRIAL_THREADS,
+  );
 }
 
 export function workerTrialMemoryGbFromAutoConfig(
   config: AutoModeConfig,
 ): Record<string, number> {
-  const memory: Record<string, number> = {};
-  for (const workerName of config.worker_names) {
-    const raw = config.worker_trial_memory_gb?.[workerName] ?? DEFAULT_TRIAL_MEMORY_GB;
-    memory[workerName] = clampTrialMemoryGb(raw);
-  }
-  return memory;
+  return workerSettingsFromConfig(
+    config,
+    config.worker_trial_memory_gb,
+    DEFAULT_TRIAL_MEMORY_GB,
+  );
+}
+
+export function workerConcurrencyFromAutoConfig(
+  config: AutoModeConfig,
+): Record<string, number> {
+  return workerSettingsFromConfig(config, config.worker_concurrency, 1);
+}
+
+export function workerLimitSecondsFromAutoConfig(
+  config: AutoModeConfig,
+): Record<string, number> {
+  return workerSettingsFromConfig(
+    config,
+    config.worker_limit_seconds ?? {},
+    config.limit_seconds,
+  );
+}
+
+export function workerAdaptiveMaxTrialsFromAutoConfig(
+  config: AutoModeConfig,
+): Record<string, number> {
+  return workerSettingsFromConfig(
+    config,
+    config.worker_adaptive_max_trials ?? {},
+    config.adaptive_max_trials,
+  );
+}
+
+export function workerTrialCountsFromAutoConfig(
+  config: AutoModeConfig,
+): Record<string, number> {
+  const adaptiveByWorker = workerAdaptiveMaxTrialsFromAutoConfig(config);
+  return Object.fromEntries(
+    config.worker_names.map((workerName) => [
+      workerName,
+      clampTotalTrials(
+        (workerSettingForName(adaptiveByWorker, workerName) ?? config.adaptive_max_trials) + 1,
+      ),
+    ]),
+  );
 }
 
 export function paramIntervalsFromAutoConfig(
@@ -121,10 +182,20 @@ export function assignmentFromAutoDispatch(
     selectedParams:
       autoAssignment.params.length > 0 ? autoAssignment.params : [...config.params],
     paramIntervals,
-    concurrency: autoAssignment.concurrency || config.concurrency,
-    limitSeconds: autoAssignment.limit_seconds || config.limit_seconds,
+    concurrency: autoAssignment.concurrency || workerSettingForName(config.worker_concurrency, autoAssignment.worker_name) || config.concurrency,
+    limitSeconds:
+      autoAssignment.limit_seconds ||
+      workerSettingForName(workerLimitSecondsFromAutoConfig(config), autoAssignment.worker_name) ||
+      config.limit_seconds,
     ...trialResourcesFromConf(autoAssignment.base_conf),
-    trialCount: trialCountFromAutoConfig(config),
+    trialCount: clampTotalTrials(
+      (autoAssignment.adaptive_max_trials ??
+        workerSettingForName(
+          workerAdaptiveMaxTrialsFromAutoConfig(config),
+          autoAssignment.worker_name,
+        ) ??
+        config.adaptive_max_trials) + 1,
+    ),
     dispatching: false,
     dispatchError: autoAssignment.dispatch_error,
     dispatchedAt:
@@ -144,9 +215,15 @@ export function previewAssignmentsFromAutoConfig(
   const intervals = paramIntervalsFromAutoConfig(status.config);
   const trialThreadsByWorker = workerTrialThreadsFromAutoConfig(status.config);
   const trialMemoryByWorker = workerTrialMemoryGbFromAutoConfig(status.config);
+  const concurrencyByWorker = workerConcurrencyFromAutoConfig(status.config);
+  const limitSecondsByWorker = workerLimitSecondsFromAutoConfig(status.config);
+  const trialCountsByWorker = workerTrialCountsFromAutoConfig(status.config);
   const next: Record<string, WorkerAssignment> = {};
   for (const worker of workers) {
-    const algorithm = status.config.worker_algorithms[worker.name];
+    const algorithm = workerSettingForName(
+      status.config.worker_algorithms,
+      worker.name,
+    );
     if (!algorithm) continue;
     next[worker.id] = {
       candidate: {
@@ -163,11 +240,13 @@ export function previewAssignmentsFromAutoConfig(
       algorithm: algorithm as AlgorithmOption,
       selectedParams: [...status.config.params],
       paramIntervals: intervals,
-      concurrency: status.config.concurrency,
-      limitSeconds: status.config.limit_seconds,
-      trialThreads: trialThreadsByWorker[worker.name] ?? DEFAULT_TRIAL_THREADS,
-      trialMemoryGb: trialMemoryByWorker[worker.name] ?? DEFAULT_TRIAL_MEMORY_GB,
-      trialCount: trialCountFromAutoConfig(status.config),
+      concurrency: workerSettingForName(concurrencyByWorker, worker.name) ?? status.config.concurrency,
+      limitSeconds:
+        workerSettingForName(limitSecondsByWorker, worker.name) ?? status.config.limit_seconds,
+      trialThreads: workerSettingForName(trialThreadsByWorker, worker.name) ?? DEFAULT_TRIAL_THREADS,
+      trialMemoryGb:
+        workerSettingForName(trialMemoryByWorker, worker.name) ?? DEFAULT_TRIAL_MEMORY_GB,
+      trialCount: workerSettingForName(trialCountsByWorker, worker.name) ?? trialCountFromAutoConfig(status.config),
       dispatching: false,
       dispatchError: null,
       autoManaged: true,

@@ -1,9 +1,11 @@
 import { AutoModeConfig } from "../api/client";
+import { loadAutoModeState } from "./autoModeStorage";
 import {
   paramIntervalsFromAutoConfig,
   workerAlgorithmsFromAutoConfig,
   workerTrialMemoryGbFromAutoConfig,
   workerTrialThreadsFromAutoConfig,
+  workerConcurrencyFromAutoConfig,
 } from "./autoModeSync";
 import { clampParamInterval, defaultParamInterval, ParamInterval } from "./paramBounds";
 import {
@@ -12,6 +14,7 @@ import {
   clampTotalTrials,
   clampTrialMemoryGb,
   clampTrialThreads,
+  clampConcurrency,
   DEFAULT_ALGORITHM,
   DEFAULT_LIMIT_SECONDS,
   DEFAULT_TOTAL_TRIALS,
@@ -29,6 +32,7 @@ export interface ManualWorkerDefaults {
   workerAlgorithms: Record<string, AlgorithmOption>;
   workerTrialThreads: Record<string, number>;
   workerTrialMemoryGb: Record<string, number>;
+  workerConcurrency: Record<string, number>;
   limitSeconds: number;
   trialCount: number;
   concurrency: number;
@@ -46,6 +50,7 @@ export function manualWorkerDefaultsFromAutoConfig(config: AutoModeConfig): Manu
     workerAlgorithms: workerAlgorithmsFromAutoConfig(config),
     workerTrialThreads: workerTrialThreadsFromAutoConfig(config),
     workerTrialMemoryGb: workerTrialMemoryGbFromAutoConfig(config),
+    workerConcurrency: workerConcurrencyFromAutoConfig(config),
     limitSeconds: config.limit_seconds || DEFAULT_LIMIT_SECONDS,
     trialCount: trialCountFromAutoConfig(config),
     concurrency: config.concurrency || 1,
@@ -57,6 +62,18 @@ function normalizeAlgorithm(raw: string | undefined): AlgorithmOption {
     return raw as AlgorithmOption;
   }
   return DEFAULT_ALGORITHM;
+}
+
+function resolveWorkerMapValue<T>(
+  map: Record<string, T> | undefined,
+  workerName: string,
+): T | undefined {
+  if (!map || !workerName.trim()) return undefined;
+  const trimmed = workerName.trim();
+  if (map[trimmed] !== undefined) return map[trimmed];
+  const lower = trimmed.toLowerCase();
+  const matchedKey = Object.keys(map).find((key) => key.toLowerCase() === lower);
+  return matchedKey ? map[matchedKey] : undefined;
 }
 
 function parseLegacyDefaults(raw: unknown): ManualWorkerDefaults | null {
@@ -98,6 +115,15 @@ function parseLegacyDefaults(raw: unknown): ManualWorkerDefaults | null {
             ]),
           )
         : {},
+    workerConcurrency:
+      parsed.workerConcurrency && typeof parsed.workerConcurrency === "object"
+        ? Object.fromEntries(
+            Object.entries(parsed.workerConcurrency).map(([name, value]) => [
+              name,
+              clampConcurrency(Number(value) || 1),
+            ]),
+          )
+        : {},
     limitSeconds: Math.max(
       60,
       Math.round(Number(parsed.limitSeconds) || DEFAULT_LIMIT_SECONDS),
@@ -123,6 +149,24 @@ export function loadManualWorkerDefaults(): ManualWorkerDefaults | null {
   }
 }
 
+/** Prefer saved manual defaults; fall back to cached auto-mode config from local storage. */
+export function getEffectiveManualWorkerDefaults(): ManualWorkerDefaults | null {
+  const saved = loadManualWorkerDefaults();
+  if (saved) return saved;
+  const cachedConfig = loadAutoModeState()?.status?.config;
+  if (!cachedConfig || cachedConfig.params.length === 0) return null;
+  return manualWorkerDefaultsFromAutoConfig(cachedConfig);
+}
+
+/** Seed manual defaults from cached auto-mode config when dedicated defaults are missing. */
+export function ensureManualDefaultsHydrated(): ManualWorkerDefaults | null {
+  const effective = getEffectiveManualWorkerDefaults();
+  if (effective && !loadManualWorkerDefaults()) {
+    saveManualWorkerDefaults(effective);
+  }
+  return effective ?? loadManualWorkerDefaults();
+}
+
 export function saveManualWorkerDefaults(defaults: ManualWorkerDefaults): void {
   try {
     localStorage.setItem(
@@ -134,6 +178,7 @@ export function saveManualWorkerDefaults(defaults: ManualWorkerDefaults): void {
         workerAlgorithms: defaults.workerAlgorithms,
         workerTrialThreads: defaults.workerTrialThreads,
         workerTrialMemoryGb: defaults.workerTrialMemoryGb,
+        workerConcurrency: defaults.workerConcurrency,
         limitSeconds: defaults.limitSeconds,
         trialCount: defaults.trialCount,
         concurrency: defaults.concurrency,
@@ -166,35 +211,53 @@ export function manualParamDefaultsFromAutoConfig(config: AutoModeConfig): Manua
 }
 
 export function workerDefaultAlgorithm(workerName: string): AlgorithmOption {
-  const saved = loadManualWorkerDefaults();
-  return normalizeAlgorithm(saved?.workerAlgorithms[workerName]);
+  const saved = getEffectiveManualWorkerDefaults();
+  return normalizeAlgorithm(resolveWorkerMapValue(saved?.workerAlgorithms, workerName));
 }
 
 export function workerDefaultTrialThreads(workerName: string): number {
-  const saved = loadManualWorkerDefaults();
-  const value = saved?.workerTrialThreads[workerName];
+  const saved = getEffectiveManualWorkerDefaults();
+  const value = resolveWorkerMapValue(saved?.workerTrialThreads, workerName);
   return clampTrialThreads(value ?? DEFAULT_TRIAL_THREADS);
 }
 
 export function workerDefaultTrialMemoryGb(workerName: string): number {
-  const saved = loadManualWorkerDefaults();
-  const value = saved?.workerTrialMemoryGb[workerName];
+  const saved = getEffectiveManualWorkerDefaults();
+  const value = resolveWorkerMapValue(saved?.workerTrialMemoryGb, workerName);
   return clampTrialMemoryGb(value ?? DEFAULT_TRIAL_MEMORY_GB);
 }
 
+export function workerDefaultConcurrency(workerName: string): number {
+  const saved = getEffectiveManualWorkerDefaults();
+  const perWorker = resolveWorkerMapValue(saved?.workerConcurrency, workerName);
+  if (perWorker != null) return clampConcurrency(perWorker);
+  return clampConcurrency(saved?.concurrency ?? 1);
+}
+
 export function savedDefaultLimitSeconds(): number {
-  const saved = loadManualWorkerDefaults();
+  const saved = getEffectiveManualWorkerDefaults();
   return saved?.limitSeconds ?? DEFAULT_LIMIT_SECONDS;
 }
 
 export function savedDefaultTrialCount(): number {
-  const saved = loadManualWorkerDefaults();
+  const saved = getEffectiveManualWorkerDefaults();
   return saved?.trialCount ?? DEFAULT_TOTAL_TRIALS;
 }
 
 export function savedDefaultConcurrency(): number {
-  const saved = loadManualWorkerDefaults();
+  const saved = getEffectiveManualWorkerDefaults();
   return saved?.concurrency ?? 1;
+}
+
+export function savedDefaultSelectedParams(tool: string, available: string[]): string[] {
+  const availableSet = new Set(available);
+  const toolKey = tool.toLowerCase().trim();
+  const saved = getEffectiveManualWorkerDefaults();
+  if (saved && saved.tool === toolKey) {
+    const fromSaved = saved.params.filter((param) => availableSet.has(param));
+    if (fromSaved.length > 0) return fromSaved;
+  }
+  return [];
 }
 
 export function buildSelectedParamIntervals(
@@ -203,7 +266,7 @@ export function buildSelectedParamIntervals(
   paramNames: string[],
 ): Record<string, ParamInterval> {
   const toolKey = tool.toLowerCase().trim();
-  const saved = loadManualWorkerDefaults();
+  const saved = getEffectiveManualWorkerDefaults();
   const useSaved = saved?.tool === toolKey;
   const intervals: Record<string, ParamInterval> = {};
 
@@ -213,7 +276,7 @@ export function buildSelectedParamIntervals(
       options && typeof options === "object" && !Array.isArray(options)
         ? String((options as Record<string, unknown>)[param] ?? "")
         : "";
-    const savedInterval = useSaved ? saved.paramIntervals[param] : undefined;
+    const savedInterval = useSaved ? saved?.paramIntervals[param] : undefined;
     intervals[param] = savedInterval
       ? clampParamInterval(toolKey, param, savedInterval)
       : defaultParamInterval(toolKey, param, baseValue);

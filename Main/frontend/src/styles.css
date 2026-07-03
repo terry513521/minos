@@ -170,6 +170,105 @@ code, .input-mono {
   gap: var(--pad-2);
   width: 100%;
 }
+
+.worker-status-overview {
+  padding: var(--pad-2);
+}
+.worker-status-overview-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  margin-bottom: 0.85rem;
+}
+.worker-status-overview-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+.worker-status-overview-lead {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.worker-status-overview-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.75rem;
+}
+.worker-status-overview-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--chip-bg);
+}
+.worker-status-overview-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.worker-status-overview-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.worker-status-overview-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+.worker-status-overview-label {
+  display: block;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-bottom: 0.15rem;
+}
+.worker-status-overview-score {
+  font-size: 1.15rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+.worker-status-overview-trials,
+.worker-status-overview-muted {
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.worker-status-overview-muted {
+  color: var(--muted);
+}
+.worker-status-overview-error {
+  font-size: 0.78rem;
+  color: var(--warn);
+}
+.worker-status-overview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 1.75rem;
+}
+.worker-status-overview-download {
+  font-size: 0.78rem;
+  padding: 0.2rem 0.55rem;
+}
+.worker-status-overview-countdown {
+  font-size: 0.78rem;
+}
+.worker-status-overview-no-conf {
+  font-size: 0.78rem;
+}
+
 .console-hero,
 #candidates,
 #auto,
@@ -484,6 +583,7 @@ code, .input-mono {
 }
 .chip-accent { color: var(--accent); border-color: rgba(167, 139, 250, 0.3); background: var(--accent-dim); }
 .chip-warn { color: var(--warn); border-color: rgba(251, 191, 36, 0.32); }
+.chip-pending { color: #93c5fd; border-color: rgba(147, 197, 253, 0.35); }
 .chip-muted { color: var(--muted); }
 .metric-pill {
   font-size: 0.78rem;
@@ -1456,6 +1556,40 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   font-size: 0.82rem;
 }
 
+.topbar-worker-bulk {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.topbar-check-all {
+  padding: 0.45rem 0.85rem;
+  font-size: 0.82rem;
+  border-color: rgba(147, 197, 253, 0.45);
+  color: #93c5fd;
+}
+
+.topbar-start-all {
+  padding: 0.45rem 0.85rem;
+  font-size: 0.82rem;
+  border-color: rgba(120, 214, 164, 0.45);
+  color: #9be8c3;
+}
+
+.topbar-clear-all {
+  padding: 0.45rem 0.85rem;
+  font-size: 0.82rem;
+  border-color: var(--border);
+  color: var(--muted);
+}
+
+.topbar-stop-all {
+  padding: 0.45rem 0.85rem;
+  font-size: 0.82rem;
+  border-color: rgba(248, 113, 113, 0.45);
+  color: #fca5a5;
+}
+
 .topbar-auto-mode {
   padding: 0.45rem 0.85rem;
   font-size: 0.82rem;
@@ -1466,6 +1600,11 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   border-color: rgba(120, 214, 164, 0.55);
   color: #9be8c3;
   background: rgba(56, 120, 90, 0.18);
+}
+
+.topbar-auto-configure {
+  padding: 0.45rem 0.85rem;
+  font-size: 0.82rem;
 }
 
 .topbar-auto-restart {
@@ -1859,21 +1998,47 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   box-shadow: var(--shadow);
 }
 .modal-backdrop:has(.modal-panel-auto-tunable) {
-  overflow: hidden;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  overflow-y: auto;
+  padding-top: max(var(--pad-2), 2vh);
+  padding-bottom: max(var(--pad-2), 2vh);
 }
 .modal-panel.modal-panel-auto-tunable {
   width: 100%;
-  max-width: min(120rem, calc(100vw - 4.5rem));
-  max-height: min(96vh, 80rem);
+  max-width: min(72rem, calc(100vw - 2rem));
+  height: min(92vh, 52rem);
+  max-height: 92vh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
+  margin: auto 0;
 }
 .modal-panel.modal-panel-auto-tunable .modal-lead,
 .modal-panel.modal-panel-auto-tunable .modal-head,
-.modal-panel.modal-panel-auto-tunable > .alert {
+.modal-panel.modal-panel-auto-tunable > .alert,
+.modal-panel.modal-panel-auto-tunable .auto-mode-tunable-io {
   flex-shrink: 0;
+}
+.modal-panel.modal-panel-auto-tunable .auto-mode-tunable-io {
+  margin: 0.35rem 0 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--surface-solid) 92%, var(--text) 8%);
+}
+.modal-panel.modal-panel-auto-tunable .auto-mode-tunable-io-lead {
+  margin: 0 0 0.55rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.modal-panel.modal-panel-auto-tunable .auto-mode-tunable-io-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
 }
 .modal-panel.modal-panel-auto-tunable .modal-form-auto-tunable {
   flex: 1;
@@ -1889,25 +2054,27 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   max-width: 100%;
   overflow-x: hidden;
   overflow-y: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  overscroll-behavior: contain;
+  padding-right: 0.15rem;
 }
-.modal-panel.modal-panel-auto-tunable .auto-mode-tunable-scroll::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-  display: none;
+.modal-panel.modal-panel-auto-tunable .auto-mode-tunable-scroll--loading {
+  opacity: 0.72;
+  pointer-events: none;
 }
 .modal-panel.modal-panel-auto-tunable .auto-mode-worker-algorithms {
   margin-bottom: 1rem;
   max-width: 100%;
 }
 .modal-panel.modal-panel-auto-tunable .auto-mode-worker-settings-table-wrap {
-  overflow-x: hidden;
+  overflow-x: auto;
   max-width: 100%;
 }
 .modal-panel.modal-panel-auto-tunable .auto-mode-worker-settings-table {
   width: 100%;
   table-layout: fixed;
+}
+.modal-panel.modal-panel-auto-tunable .auto-mode-worker-settings-table--wide {
+  min-width: 44rem;
 }
 .modal-panel.modal-panel-auto-tunable .worker-conf-picker {
   max-width: 100%;
@@ -1917,7 +2084,7 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
 .modal-panel.modal-panel-auto-tunable .worker-conf-picker-list {
   max-width: 100%;
   max-height: none;
-  min-height: 12rem;
+  min-height: 0;
   overflow: visible;
 }
 .modal-panel.modal-panel-auto-tunable .worker-conf-picker-main {
@@ -2340,6 +2507,14 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+}
+.worker-conf-picker--readonly .worker-conf-picker-check input[type="checkbox"],
+.worker-conf-picker--readonly .worker-param-interval input,
+.worker-conf-picker--readonly .worker-param-enum-option input {
+  cursor: not-allowed;
+}
+.worker-conf-picker--readonly .worker-conf-picker-value {
+  opacity: 0.95;
 }
 .worker-conf-picker-head {
   display: flex;

@@ -1,4 +1,4 @@
-import { loadManualParamDefaults } from "./manualParamDefaults";
+import { savedDefaultSelectedParams } from "./manualParamDefaults";
 
 export function toolOptionsKey(tool: string): string {
   return `${tool.toLowerCase().trim()}_options`;
@@ -31,15 +31,10 @@ export const DEFAULT_FINE_TUNE_PARAMS = [
 ] as const;
 
 export function defaultSelectedParams(tool: string, available: string[]): string[] {
+  const fromSaved = savedDefaultSelectedParams(tool, available);
+  if (fromSaved.length > 0) return fromSaved;
+
   const availableSet = new Set(available);
-  const toolKey = tool.toLowerCase().trim();
-
-  const saved = loadManualParamDefaults();
-  if (saved && saved.tool === toolKey) {
-    const fromSaved = saved.params.filter((param) => availableSet.has(param));
-    if (fromSaved.length > 0) return fromSaved;
-  }
-
   return DEFAULT_FINE_TUNE_PARAMS.filter((param) => availableSet.has(param));
 }
 

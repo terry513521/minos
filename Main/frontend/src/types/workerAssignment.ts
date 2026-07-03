@@ -1,15 +1,18 @@
-import { CandidatePreview, FindCandidatesResponse, WorkerRecord } from "../api/client";
+import { AutoModeStatus, CandidatePreview, FindCandidatesResponse, WorkerRecord } from "../api/client";
 import { defaultSelectedParams, listToolOptionKeys } from "../utils/candidateAssign";
 import {
   buildSelectedParamIntervals,
+  ensureManualDefaultsHydrated,
   savedDefaultConcurrency,
   savedDefaultLimitSeconds,
   savedDefaultTrialCount,
   workerDefaultAlgorithm,
+  workerDefaultConcurrency,
   workerDefaultTrialMemoryGb,
   workerDefaultTrialThreads,
 } from "../utils/manualParamDefaults";
 import { defaultParamInterval, ParamInterval } from "../utils/paramBounds";
+import { isWorkerJobRunning } from "../utils/workerJobStatus";
 
 export const TOOLKIT_OPTIONS = ["gatk", "bcftools", "deepvariant"] as const;
 export type ToolkitOption = (typeof TOOLKIT_OPTIONS)[number];
@@ -25,6 +28,9 @@ export const DEFAULT_ADAPTIVE_MAX_TRIALS = 44;
 export const DEFAULT_TOTAL_TRIALS = 45;
 export const DEFAULT_TRIAL_THREADS = 4;
 export const DEFAULT_TRIAL_MEMORY_GB = 6;
+export const MAX_TRIAL_THREADS = 100;
+export const MAX_CONCURRENCY = 32;
+export const CONCURRENCY_OPTIONS = [1, 2, 3, 4, 6, 8] as const;
 
 export interface WorkerAssignment {
   candidate: CandidatePreview;
@@ -40,7 +46,7 @@ export interface WorkerAssignment {
   trialThreads: number;
   /** GATK Docker RAM in GB per trial slot (sent as base_conf.memory_gb). */
   trialMemoryGb: number;
-  /** Total trials for random/optuna (1 base + search). Ignored for grid. */
+  /** Total trials (1 base + search). Used for all supported search algorithms. */
   trialCount: number;
   dispatching: boolean;
   dispatchError: string | null;
@@ -61,7 +67,14 @@ export function limitMinutesToSeconds(minutes: number): number {
 }
 
 export function isAdaptiveAlgorithm(algorithm: AlgorithmOption | string): boolean {
-  return algorithm === "random" || algorithm === "optuna";
+  const algo = String(algorithm).toLowerCase();
+  return (
+    algo === "optuna" ||
+    algo === "gp" ||
+    algo === "random" ||
+    algo === "sobol" ||
+    algo === "lhs"
+  );
 }
 
 export function clampTotalTrials(value: number): number {
@@ -77,13 +90,19 @@ export function adaptiveMaxTrialsFromTotal(totalTrials: number): number {
 export function clampTrialThreads(value: number): number {
   const parsed = Math.round(Number(value));
   if (!Number.isFinite(parsed)) return DEFAULT_TRIAL_THREADS;
-  return Math.min(32, Math.max(1, parsed));
+  return Math.min(MAX_TRIAL_THREADS, Math.max(1, parsed));
 }
 
 export function clampTrialMemoryGb(value: number): number {
   const parsed = Math.round(Number(value));
   if (!Number.isFinite(parsed)) return DEFAULT_TRIAL_MEMORY_GB;
   return Math.min(128, Math.max(4, parsed));
+}
+
+export function clampConcurrency(value: number): number {
+  const parsed = Math.round(Number(value));
+  if (!Number.isFinite(parsed)) return 1;
+  return Math.min(MAX_CONCURRENCY, Math.max(1, parsed));
 }
 
 export function buildDispatchBaseConf(
@@ -137,6 +156,7 @@ export function createAssignment(
   context: FindCandidatesResponse,
   worker?: Pick<WorkerRecord, "id" | "name">,
 ): WorkerAssignment {
+  ensureManualDefaultsHydrated();
   const tool = (context.tool?.toLowerCase() as ToolkitOption) || DEFAULT_TOOLKIT;
   const resolvedTool = TOOLKIT_OPTIONS.includes(tool) ? tool : DEFAULT_TOOLKIT;
   const keys = listToolOptionKeys(candidate.base_conf, resolvedTool);
@@ -153,7 +173,7 @@ export function createAssignment(
       candidate.base_conf,
       selectedParams,
     ),
-    concurrency: savedDefaultConcurrency(),
+    concurrency: workerName ? workerDefaultConcurrency(workerName) : savedDefaultConcurrency(),
     limitSeconds: savedDefaultLimitSeconds(),
     trialThreads: workerName ? workerDefaultTrialThreads(workerName) : DEFAULT_TRIAL_THREADS,
     trialMemoryGb: workerName ? workerDefaultTrialMemoryGb(workerName) : DEFAULT_TRIAL_MEMORY_GB,
@@ -198,33 +218,65 @@ export interface WorkerAssignmentSummary {
   reassignmentLocked: boolean;
 }
 
+export function isWorkerOptimizationActive(
+  optimization?: WorkerOptimizationSnapshot | null,
+  assignment?: WorkerAssignment,
+  autoModeStatus?: AutoModeStatus | null,
+  nowMs = Date.now(),
+): boolean {
+  if (!optimization?.ok) return false;
+  return isWorkerJobRunning(
+    optimization.status,
+    resolveWorkerJobStartedAt(assignment, autoModeStatus),
+    resolveWorkerJobLimitSeconds(assignment, autoModeStatus),
+    nowMs,
+  );
+}
+
+export function resolveWorkerJobStartedAt(
+  assignment: WorkerAssignment | undefined,
+  autoModeStatus?: AutoModeStatus | null,
+): string | null {
+  if (assignment?.dispatchedAt) return assignment.dispatchedAt;
+  if (assignment?.autoManaged && autoModeStatus?.started_at) {
+    return autoModeStatus.started_at;
+  }
+  return null;
+}
+
+export function resolveWorkerJobLimitSeconds(
+  assignment: WorkerAssignment | undefined,
+  autoModeStatus?: AutoModeStatus | null,
+): number | null {
+  return assignment?.limitSeconds ?? autoModeStatus?.config?.limit_seconds ?? null;
+}
+
 export function isWorkerCandidateAssignmentLocked(
   assignment: WorkerAssignment | undefined,
   optimization?: WorkerOptimizationSnapshot | null,
+  autoModeStatus?: AutoModeStatus | null,
+  nowMs = Date.now(),
 ): boolean {
   if (assignment?.dispatching) return true;
-  if (Boolean(assignment?.dispatchedAt)) return true;
-  if (
-    optimization?.ok &&
-    (optimization.status === "optimizing" || optimization.status === "stopping")
-  ) {
-    return true;
-  }
-  return false;
+  return isWorkerOptimizationActive(optimization, assignment, autoModeStatus, nowMs);
 }
 
 /** @deprecated Use isWorkerCandidateAssignmentLocked */
 export function isBaseConfReassignmentLocked(
   assignment: WorkerAssignment | undefined,
   optimization?: WorkerOptimizationSnapshot | null,
+  autoModeStatus?: AutoModeStatus | null,
+  nowMs = Date.now(),
 ): boolean {
-  return isWorkerCandidateAssignmentLocked(assignment, optimization);
+  return isWorkerCandidateAssignmentLocked(assignment, optimization, autoModeStatus, nowMs);
 }
 
 export function buildWorkerAssignmentSummaries(
   workers: WorkerRecord[],
   assignments: Record<string, WorkerAssignment>,
   bestByWorker: Record<string, WorkerOptimizationSnapshot | "loading"> = {},
+  autoModeStatus?: AutoModeStatus | null,
+  nowMs = Date.now(),
 ): WorkerAssignmentSummary[] {
   return workers
     .map((worker) => {
@@ -236,7 +288,12 @@ export function buildWorkerAssignmentSummaries(
         workerName: assignmentLabel(worker),
         candidateIndex: assignment?.candidate.index ?? null,
         autoManaged: Boolean(assignment?.autoManaged),
-        reassignmentLocked: isWorkerCandidateAssignmentLocked(assignment, optimization),
+        reassignmentLocked: isWorkerCandidateAssignmentLocked(
+          assignment,
+          optimization,
+          autoModeStatus,
+          nowMs,
+        ),
       };
     })
     .sort((a, b) => a.workerName.localeCompare(b.workerName));

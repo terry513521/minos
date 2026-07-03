@@ -20,6 +20,8 @@ import {
   WorkerAssignmentSummary,
   clampTrialMemoryGb,
   clampTrialThreads,
+  CONCURRENCY_OPTIONS,
+  MAX_TRIAL_THREADS,
   clampTotalTrials,
   createAssignment,
   adaptiveMaxTrialsFromTotal,
@@ -42,13 +44,15 @@ import {
   ParamInterval,
 } from "../utils/paramBounds";
 import { parseToolOptionValue, setToolOption } from "../utils/confEdit";
-import { WORKERS_CHANGED_EVENT } from "./AddWorkerModal";
+import { WORKERS_CHANGED_EVENT, WORKERS_CHECK_ALL_HEALTH_EVENT, WORKERS_CHECK_ALL_HEALTH_RESULT_EVENT, WORKERS_CLEAR_ALL_EVENT, WORKERS_STOP_ALL_EVENT, WORKERS_START_ALL_EVENT, WORKERS_START_ALL_RESULT_EVENT } from "./AddWorkerModal";
 import { ConfParamPicker } from "./ConfParamPicker";
 import { ConfManualEditor } from "./ConfManualEditor";
 import { ConfTooltip } from "./ConfTooltip";
 import {
   clearWorkerPanelEntry,
+  clearAllWorkerPanelAssignments,
   clearDismissedWorkerAssignments,
+  dismissAllWorkerAssignments,
   dismissWorkerAssignment,
   loadDismissedWorkerAssignments,
   loadWorkerPanelState,
@@ -60,7 +64,7 @@ import {
   manualAssignmentsFromEndedAuto,
   previewAssignmentsFromAutoConfig,
 } from "../utils/autoModeSync";
-import { syncManualParamDefaultsFromAutoConfig } from "../utils/manualParamDefaults";
+import { syncManualParamDefaultsFromAutoConfig, ensureManualDefaultsHydrated } from "../utils/manualParamDefaults";
 import { loadAutoModeState, saveAutoModeState } from "../utils/autoModeStorage";
 import {
   isWorkerJobRunning,
@@ -71,15 +75,16 @@ import {
   shouldPollWorkerBest,
   sortWorkersForDisplay,
 } from "../utils/workerDisplayOrder";
+import { buildWorkerLiveStatuses, WorkerLiveStatus } from "../utils/workerLiveStatus";
 import { AUTO_MODE_CHANGED_EVENT } from "./AutoModePanel";
 
-const CONCURRENCY_OPTIONS = [1, 2, 3, 4, 6, 8];
 /** Background poll for worker GET /best while optimization is running. */
 const BEST_POLL_INTERVAL_MS = 1000;
 
 interface WorkersPanelProps {
   candidateContext?: FindCandidatesResponse | null;
   onWorkerAssignmentSummariesChange?: (summaries: WorkerAssignmentSummary[]) => void;
+  onWorkerLiveStatusesChange?: (statuses: WorkerLiveStatus[]) => void;
   /** Parent section provides header and panel chrome. */
   sectionChild?: boolean;
   onAssignHandlerReady?: (
@@ -125,7 +130,7 @@ function formatTrialProgress(
   const planned = total && total > 0 ? total : null;
   if (planned) {
     if (status === "optimizing") return `Trial ${done} / ${planned}`;
-    return `${done} / ${planned} trials`;
+    return `${done} / ${planned}`;
   }
   if (done > 0) return `${done} trial${done === 1 ? "" : "s"}`;
   return "";
@@ -204,6 +209,7 @@ function withoutLoadingHealth(
 export function WorkersPanel({
   candidateContext = null,
   onWorkerAssignmentSummariesChange,
+  onWorkerLiveStatusesChange,
   sectionChild = false,
   onAssignHandlerReady,
 }: WorkersPanelProps) {
@@ -277,22 +283,32 @@ export function WorkersPanel({
   );
 
   const effectiveAssignmentsByWorker = useMemo(() => {
-    const merged = { ...assignments };
-    for (const [workerId, assignment] of Object.entries(autoAssignmentsByWorker)) {
+    const merged: Record<string, WorkerAssignment> = {};
+
+    for (const [workerId, assignment] of Object.entries(autoPreviewByWorker)) {
       if (!dismissedWorkers.has(workerId)) {
         merged[workerId] = assignment;
       }
     }
-    for (const [workerId, assignment] of Object.entries(autoPreviewByWorker)) {
-      if (!dismissedWorkers.has(workerId) && !merged[workerId]) {
+    if (autoModeStatus?.running) {
+      for (const [workerId, assignment] of Object.entries(autoAssignmentsByWorker)) {
+        if (!dismissedWorkers.has(workerId)) {
+          merged[workerId] = assignment;
+        }
+      }
+    }
+    for (const [workerId, assignment] of Object.entries(assignments)) {
+      if (!dismissedWorkers.has(workerId)) {
         merged[workerId] = assignment;
       }
     }
     return merged;
-  }, [assignments, autoAssignmentsByWorker, autoPreviewByWorker, dismissedWorkers]);
+  }, [assignments, autoAssignmentsByWorker, autoPreviewByWorker, autoModeStatus?.running, dismissedWorkers]);
 
   const bestByWorkerRef = useRef(bestByWorker);
   bestByWorkerRef.current = bestByWorker;
+  const assignmentsRef = useRef(assignments);
+  assignmentsRef.current = assignments;
   const effectiveAssignmentsRef = useRef(effectiveAssignmentsByWorker);
   effectiveAssignmentsRef.current = effectiveAssignmentsByWorker;
 
@@ -345,7 +361,16 @@ export function WorkersPanel({
     return () => window.removeEventListener(WORKERS_CHANGED_EVENT, onChanged);
   }, [refresh]);
 
+  useEffect(() => {
+    if (initialAutoStatus?.config?.params?.length) {
+      syncManualParamDefaultsFromAutoConfig(initialAutoStatus.config);
+    } else {
+      ensureManualDefaultsHydrated();
+    }
+  }, []);
+
   const refreshAutoMode = useCallback(() => {
+    ensureManualDefaultsHydrated();
     api
       .getAutoMode()
       .then((status) => {
@@ -413,16 +438,55 @@ export function WorkersPanel({
       isWorkerCandidateAssignmentLocked(
         effectiveAssignmentsByWorker[workerId],
         workerOptimizationSnapshot(workerId),
+        autoModeStatus,
+        nowMs,
       ),
-    [effectiveAssignmentsByWorker, workerOptimizationSnapshot],
+    [effectiveAssignmentsByWorker, workerOptimizationSnapshot, autoModeStatus, nowMs],
   );
 
   useEffect(() => {
     if (!onWorkerAssignmentSummariesChange) return;
     onWorkerAssignmentSummariesChange(
-      buildWorkerAssignmentSummaries(workers, effectiveAssignmentsByWorker, bestByWorker),
+      buildWorkerAssignmentSummaries(
+        workers,
+        effectiveAssignmentsByWorker,
+        bestByWorker,
+        autoModeStatus,
+        nowMs,
+      ),
     );
-  }, [workers, effectiveAssignmentsByWorker, bestByWorker, onWorkerAssignmentSummariesChange]);
+  }, [
+    workers,
+    effectiveAssignmentsByWorker,
+    bestByWorker,
+    autoModeStatus,
+    nowMs,
+    onWorkerAssignmentSummariesChange,
+  ]);
+
+  useEffect(() => {
+    if (!onWorkerLiveStatusesChange) return;
+    onWorkerLiveStatusesChange(
+      buildWorkerLiveStatuses(
+        workers,
+        bestByWorker,
+        healthByWorker,
+        effectiveAssignmentsByWorker,
+        dispatchByWorker,
+        autoModeStatus,
+        nowMs,
+      ),
+    );
+  }, [
+    workers,
+    bestByWorker,
+    healthByWorker,
+    effectiveAssignmentsByWorker,
+    dispatchByWorker,
+    autoModeStatus,
+    nowMs,
+    onWorkerLiveStatusesChange,
+  ]);
 
   useEffect(() => {
     if (workers.length === 0) return;
@@ -483,6 +547,22 @@ export function WorkersPanel({
     });
     clearWorkerPanelEntry(workerId);
   }
+
+  function clearAllAssignments() {
+    const workerIds = workers.map((worker) => worker.id);
+    if (workerIds.length === 0) return;
+
+    dismissAllWorkerAssignments(workerIds);
+    setDismissedWorkers(new Set(workerIds));
+    setAssignments({});
+    setDispatchByWorker({});
+    setBaseConfByWorker({});
+    setAutoAssignmentsByWorker({});
+    clearAllWorkerPanelAssignments();
+  }
+
+  const clearAllAssignmentsRef = useRef(clearAllAssignments);
+  clearAllAssignmentsRef.current = clearAllAssignments;
 
   const assignCandidateToWorker = useCallback(
     (workerId: string, candidateIndex: number): boolean => {
@@ -579,6 +659,25 @@ export function WorkersPanel({
     try {
       const result = await api.fetchWorkerBest(workerId);
       setBestByWorker((prev) => ({ ...prev, [workerId]: result }));
+      if (
+        result.ok &&
+        result.status &&
+        !isWorkerJobRunning(result.status)
+      ) {
+        setAssignments((prev) => {
+          const current = prev[workerId];
+          if (!current || current.dispatching) return prev;
+          if (!current.dispatchedAt && !current.dispatchError) return prev;
+          return {
+            ...prev,
+            [workerId]: {
+              ...current,
+              dispatchedAt: null,
+              dispatchError: null,
+            },
+          };
+        });
+      }
     } catch (err) {
       if (!silent) {
         setBestByWorker((prev) => ({
@@ -668,6 +767,15 @@ export function WorkersPanel({
 
   useEffect(() => {
     if (workers.length === 0) return;
+    for (const worker of workers) {
+      if (worker.base_url) {
+        void pollWorkerBest(worker.id, true);
+      }
+    }
+  }, [workers, pollWorkerBest]);
+
+  useEffect(() => {
+    if (workers.length === 0) return;
 
     const pollable = workers.filter((worker) => worker.base_url);
     if (pollable.length === 0) return;
@@ -698,9 +806,159 @@ export function WorkersPanel({
     return () => window.clearInterval(intervalId);
   }, [workers, pollWorkerBest]);
 
-  async function handleDispatch(workerId: string) {
+  useEffect(() => {
+    function refreshAllBest() {
+      for (const worker of workers) {
+        if (worker.base_url) {
+          void pollWorkerBest(worker.id, true);
+        }
+      }
+    }
+    window.addEventListener(WORKERS_CHANGED_EVENT, refreshAllBest);
+    return () => window.removeEventListener(WORKERS_CHANGED_EVENT, refreshAllBest);
+  }, [workers, pollWorkerBest]);
+
+  useEffect(() => {
+    async function waitForAllWorkersIdle() {
+      const pollable = workers.filter((worker) => worker.base_url);
+      if (pollable.length === 0) return;
+
+      const deadline = Date.now() + 120_000;
+      while (Date.now() < deadline) {
+        let anyActive = false;
+        await Promise.all(
+          pollable.map(async (worker) => {
+            try {
+              const best = await api.fetchWorkerBest(worker.id);
+              setBestByWorker((prev) => ({ ...prev, [worker.id]: best }));
+              if (best.ok && best.status && isJobActive(best.status)) {
+                anyActive = true;
+              }
+            } catch {
+              // Keep polling until timeout.
+            }
+          }),
+        );
+        if (!anyActive) break;
+        await new Promise((resolve) => window.setTimeout(resolve, 500));
+      }
+    }
+
+    function onStopAll() {
+      void waitForAllWorkersIdle();
+    }
+    window.addEventListener(WORKERS_STOP_ALL_EVENT, onStopAll);
+
+    function onClearAll() {
+      clearAllAssignmentsRef.current();
+    }
+    window.addEventListener(WORKERS_CLEAR_ALL_EVENT, onClearAll);
+
+    async function onStartAll() {
+      const results = { started: 0, failed: 0, skipped: 0 };
+      for (const worker of workers) {
+        const assignment = assignmentsRef.current[worker.id];
+        if (!assignment || assignment.autoManaged) {
+          results.skipped += 1;
+          continue;
+        }
+        if (!worker.base_url || assignment.selectedParams.length === 0) {
+          results.skipped += 1;
+          continue;
+        }
+        if (assignment.dispatching) {
+          results.skipped += 1;
+          continue;
+        }
+        const best = bestByWorkerRef.current[worker.id];
+        if (
+          best &&
+          best !== "loading" &&
+          best.ok &&
+          best.status &&
+          isJobActive(best.status)
+        ) {
+          results.skipped += 1;
+          continue;
+        }
+        const ok = await handleDispatchRef.current(worker.id);
+        if (ok) results.started += 1;
+        else results.failed += 1;
+      }
+      window.dispatchEvent(
+        new CustomEvent(WORKERS_START_ALL_RESULT_EVENT, { detail: results }),
+      );
+    }
+
+    function onStartAllEvent() {
+      void onStartAll();
+    }
+    window.addEventListener(WORKERS_START_ALL_EVENT, onStartAllEvent);
+
+    async function onCheckAllHealth() {
+      const workerList = workers;
+      if (workerList.length === 0) {
+        window.dispatchEvent(
+          new CustomEvent(WORKERS_CHECK_ALL_HEALTH_RESULT_EVENT, {
+            detail: { total: 0, ok: 0, failed: 0 },
+          }),
+        );
+        return;
+      }
+
+      setHealthByWorker((prev) => ({
+        ...prev,
+        ...Object.fromEntries(workerList.map((worker) => [worker.id, "loading" as const])),
+      }));
+
+      let ok = 0;
+      let failed = 0;
+      await Promise.all(
+        workerList.map(async (worker) => {
+          try {
+            const result = await api.checkWorkerHealth(worker.id);
+            setHealthByWorker((prev) => ({ ...prev, [worker.id]: result }));
+            if (result.ok) ok += 1;
+            else failed += 1;
+          } catch (err) {
+            failed += 1;
+            setHealthByWorker((prev) => ({
+              ...prev,
+              [worker.id]: {
+                worker_id: worker.id,
+                ok: false,
+                status_code: null,
+                health: null,
+                error: err instanceof Error ? err.message : "Health check failed",
+              },
+            }));
+          }
+        }),
+      );
+
+      window.dispatchEvent(
+        new CustomEvent(WORKERS_CHECK_ALL_HEALTH_RESULT_EVENT, {
+          detail: { total: workerList.length, ok, failed },
+        }),
+      );
+    }
+
+    function onCheckAllHealthEvent() {
+      void onCheckAllHealth();
+    }
+    window.addEventListener(WORKERS_CHECK_ALL_HEALTH_EVENT, onCheckAllHealthEvent);
+
+    return () => {
+      window.removeEventListener(WORKERS_STOP_ALL_EVENT, onStopAll);
+      window.removeEventListener(WORKERS_CLEAR_ALL_EVENT, onClearAll);
+      window.removeEventListener(WORKERS_START_ALL_EVENT, onStartAllEvent);
+      window.removeEventListener(WORKERS_CHECK_ALL_HEALTH_EVENT, onCheckAllHealthEvent);
+    };
+  }, [workers]);
+
+  async function handleDispatch(workerId: string): Promise<boolean> {
     const assignment = assignments[workerId];
-    if (!assignment || assignment.selectedParams.length === 0) return;
+    if (!assignment || assignment.selectedParams.length === 0) return false;
 
     updateAssignment(workerId, { dispatching: true, dispatchError: null });
     try {
@@ -737,15 +995,28 @@ export function WorkersPanel({
           ...prev,
           [workerId]: assignment.candidate.base_conf,
         }));
+        setBestByWorker((prev) => {
+          const current = prev[workerId];
+          if (!current || current === "loading") return prev;
+          return {
+            ...prev,
+            [workerId]: { ...current, ok: true, status: "optimizing" },
+          };
+        });
         void pollWorkerBest(workerId, true);
       }
+      return result.ok;
     } catch (err) {
       updateAssignment(workerId, {
         dispatching: false,
         dispatchError: err instanceof Error ? err.message : "Dispatch failed",
       });
+      return false;
     }
   }
+
+  const handleDispatchRef = useRef(handleDispatch);
+  handleDispatchRef.current = handleDispatch;
 
   function toggleParam(workerId: string, param: string) {
     const assignment = assignments[workerId];
@@ -1174,7 +1445,7 @@ export function WorkersPanel({
                           </span>
                         )}
                       </span>
-                      {!autoManaged && !reassignmentLocked && (
+                      {!reassignmentLocked && (
                         <button
                           type="button"
                           className="button ghost worker-assignment-clear"
@@ -1198,15 +1469,20 @@ export function WorkersPanel({
                       tool={assignment.tool}
                       selectedParams={assignment.selectedParams}
                       paramIntervals={assignment.paramIntervals}
-                      onToggle={autoManaged ? () => {} : (param) => toggleParam(worker.id, param)}
+                      readOnly={reassignmentLocked || autoManaged}
+                      onToggle={
+                        autoManaged || reassignmentLocked
+                          ? () => {}
+                          : (param) => toggleParam(worker.id, param)
+                      }
                       onIntervalChange={
-                        autoManaged
+                        autoManaged || reassignmentLocked
                           ? () => {}
                           : (param, patch) => updateParamInterval(worker.id, param, patch)
                       }
                       onBaseValueChange={
-                        autoManaged
-                          ? () => {}
+                        autoManaged || reassignmentLocked
+                          ? undefined
                           : (param, raw) => updateBaseParamValue(worker.id, param, raw)
                       }
                     />
@@ -1312,7 +1588,7 @@ export function WorkersPanel({
                           <input
                             type="number"
                             min={1}
-                            max={32}
+                            max={MAX_TRIAL_THREADS}
                             step={1}
                             disabled={autoManaged}
                             value={assignment.trialThreads}
@@ -1368,7 +1644,9 @@ export function WorkersPanel({
                     {autoManaged ? (
                       <div className="worker-dispatch-success">
                         {assignment.dispatchError
-                          ? `Auto dispatch failed: ${assignment.dispatchError}`
+                          ? autoModeStatus?.running
+                            ? `Auto dispatch pending: ${assignment.dispatchError} (retrying)`
+                            : `Auto dispatch failed: ${assignment.dispatchError}`
                           : autoAssignmentsByWorker[worker.id]
                             ? "Dispatched by auto mode — live scores update above."
                             : "Waiting for auto start — config shown from auto mode policy."}
@@ -1405,10 +1683,10 @@ export function WorkersPanel({
                   </div>
                 )}
 
-                {!assignment && candidateContext && !autoModeEnabled && !reassignmentLocked && (
+                {!assignment && candidateContext && !reassignmentLocked && (
                   <p className="worker-drop-placeholder">Drop candidate here</p>
                 )}
-                {reassignmentLocked && !autoManaged && (
+                {reassignmentLocked && (
                   <p className="worker-drop-placeholder worker-drop-placeholder--locked">
                     Optimization running — cannot assign candidates
                   </p>

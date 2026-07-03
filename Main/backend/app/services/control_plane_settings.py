@@ -11,6 +11,8 @@ from app.models import ControlPlaneSetting
 
 LAST_AUTO_START_REGION_KEY = "last_auto_start_region"
 AUTO_MODE_TUNABLE_CONFIG_KEY = "auto_mode_tunable_config"
+AUTO_MODE_ENABLED_KEY = "auto_mode_enabled"
+AUTO_MODE_SESSION_KEY = "auto_mode_session"
 
 
 async def get_control_plane_setting(db: AsyncSession, key: str) -> str | None:

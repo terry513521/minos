@@ -166,6 +166,18 @@ export interface WorkerStopResult {
   error: string | null;
 }
 
+export interface WorkersStopAllResult {
+  workers: number;
+  stopped_ok: number;
+  results: Array<{
+    worker_id: string;
+    worker_name: string;
+    ok: boolean;
+    message: string | null;
+    error: string | null;
+  }>;
+}
+
 export interface PlatformRound {
   enabled: boolean;
   polled_at: string | null;
@@ -194,6 +206,9 @@ export interface AutoModeTunableConfigUpdate {
   worker_algorithms?: Record<string, string>;
   worker_trial_threads?: Record<string, number>;
   worker_trial_memory_gb?: Record<string, number>;
+  worker_concurrency?: Record<string, number>;
+  worker_limit_seconds?: Record<string, number>;
+  worker_adaptive_max_trials?: Record<string, number>;
 }
 
 export interface AutoModeConfig {
@@ -204,6 +219,9 @@ export interface AutoModeConfig {
   worker_algorithms: Record<string, string>;
   worker_trial_threads: Record<string, number>;
   worker_trial_memory_gb: Record<string, number>;
+  worker_concurrency: Record<string, number>;
+  worker_limit_seconds: Record<string, number>;
+  worker_adaptive_max_trials: Record<string, number>;
   assignment_strategy: string;
   limit_seconds: number;
   adaptive_max_trials: number;
@@ -229,6 +247,7 @@ export interface AutoDispatchAssignment {
   param_intervals: Record<string, ParamIntervalPayload>;
   concurrency: number;
   limit_seconds: number;
+  adaptive_max_trials: number;
   dispatch_ok: boolean;
   dispatch_error: string | null;
   job_id: string | null;
@@ -327,6 +346,8 @@ export const api = {
     }),
   stopWorkerOptimization: (workerId: string) =>
     request<WorkerStopResult>(`/workers/${workerId}/stop`, { method: "POST" }),
+  stopAllWorkersOptimization: () =>
+    request<WorkersStopAllResult>("/workers/stop-all", { method: "POST" }),
   deleteWorker: (workerId: string) =>
     request<{ ok: string; worker_id: string }>(`/workers/${workerId}`, {
       method: "DELETE",

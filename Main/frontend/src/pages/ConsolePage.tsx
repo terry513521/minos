@@ -3,15 +3,18 @@ import { FindCandidatesResponse } from "../api/client";
 import { CandidateFinderPanel } from "../components/CandidateFinderPanel";
 import { AutoModePanel } from "../components/AutoModePanel";
 import { SectionHeader } from "../components/SectionHeader";
+import { WorkerStatusOverview } from "../components/WorkerStatusOverview";
 import { WorkersPanel } from "../components/WorkersPanel";
 import { useAutoModeEnabled } from "../hooks/useAutoModeEnabled";
 import { WorkerAssignmentSummary } from "../types/workerAssignment";
+import { WorkerLiveStatus } from "../utils/workerLiveStatus";
 
 export function ConsolePage() {
   const [candidateContext, setCandidateContext] = useState<FindCandidatesResponse | null>(null);
   const [workerAssignmentSummaries, setWorkerAssignmentSummaries] = useState<
     WorkerAssignmentSummary[]
   >([]);
+  const [workerLiveStatuses, setWorkerLiveStatuses] = useState<WorkerLiveStatus[]>([]);
   const autoModeEnabled = useAutoModeEnabled();
   const assignCandidateRef = useRef<
     ((workerId: string, candidateIndex: number) => boolean) | null
@@ -23,6 +26,10 @@ export function ConsolePage() {
     },
     [],
   );
+
+  const handleWorkerLiveStatusesChange = useCallback((statuses: WorkerLiveStatus[]) => {
+    setWorkerLiveStatuses(statuses);
+  }, []);
 
   const handleAssignHandlerReady = useCallback(
     (handler: (workerId: string, candidateIndex: number) => boolean) => {
@@ -46,13 +53,14 @@ export function ConsolePage() {
 
   return (
     <div className="console-page">
+      <WorkerStatusOverview statuses={workerLiveStatuses} />
       <div className="bento-grid">
         {autoModeEnabled ? (
           <section id="auto" className="panel">
             <SectionHeader
               step={1}
               title="Auto mode"
-              lead="Overnight orchestration for VM, Big, and Igno. Workers run after POST /api/v1/auto/start."
+              lead="Overnight orchestration for registered workers. Workers run after POST /api/v1/auto/start."
             />
             <AutoModePanel embedded />
           </section>
@@ -78,13 +86,14 @@ export function ConsolePage() {
             title="Workers"
             lead={
               autoModeEnabled
-                ? "Live scores and controls for VM, Big, and Igno during auto runs."
+                ? "Live scores and controls for registered workers during auto runs."
                 : "Assigned base conf appears here — tune params and dispatch optimization."
             }
           />
           <WorkersPanel
             candidateContext={candidateContext}
             onWorkerAssignmentSummariesChange={handleWorkerAssignmentSummariesChange}
+            onWorkerLiveStatusesChange={handleWorkerLiveStatusesChange}
             onAssignHandlerReady={handleAssignHandlerReady}
             sectionChild
           />
