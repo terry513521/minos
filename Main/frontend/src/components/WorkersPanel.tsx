@@ -472,6 +472,8 @@ export function WorkersPanel({
       const candidate = candidateContext.candidates.find((c) => c.index === candidateIndex);
       if (!candidate) return false;
 
+      const worker = workers.find((item) => item.id === workerId);
+
       restoreWorkerAssignment(workerId);
       setDismissedWorkers((prev) => {
         if (!prev.has(workerId)) return prev;
@@ -482,7 +484,7 @@ export function WorkersPanel({
 
       setAssignments((prev) => ({
         ...prev,
-        [workerId]: createAssignment(candidate, candidateContext),
+        [workerId]: createAssignment(candidate, candidateContext, worker),
       }));
       setDispatchByWorker((prev) => {
         const next = { ...prev };
@@ -491,7 +493,7 @@ export function WorkersPanel({
       });
       return true;
     },
-    [candidateContext],
+    [candidateContext, workers],
   );
 
   useEffect(() => {

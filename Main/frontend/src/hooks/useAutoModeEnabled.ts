@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
 import { AUTO_MODE_CHANGED_EVENT } from "../components/AutoModePanel";
 import { loadAutoModeState, saveAutoModeState } from "../utils/autoModeStorage";
+import { syncManualParamDefaultsFromAutoConfig } from "../utils/manualParamDefaults";
 
 export function useAutoModeEnabled(): boolean {
   const [enabled, setEnabled] = useState(
@@ -17,6 +18,7 @@ export function useAutoModeEnabled(): boolean {
       .getAutoMode()
       .then((status) => {
         saveAutoModeState(status);
+        syncManualParamDefaultsFromAutoConfig(status.config);
         setEnabled(status.enabled);
       })
       .catch(() => {});

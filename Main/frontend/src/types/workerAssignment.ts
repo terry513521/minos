@@ -1,6 +1,14 @@
 import { CandidatePreview, FindCandidatesResponse, WorkerRecord } from "../api/client";
 import { defaultSelectedParams, listToolOptionKeys } from "../utils/candidateAssign";
-import { buildSelectedParamIntervals } from "../utils/manualParamDefaults";
+import {
+  buildSelectedParamIntervals,
+  savedDefaultConcurrency,
+  savedDefaultLimitSeconds,
+  savedDefaultTrialCount,
+  workerDefaultAlgorithm,
+  workerDefaultTrialMemoryGb,
+  workerDefaultTrialThreads,
+} from "../utils/manualParamDefaults";
 import { defaultParamInterval, ParamInterval } from "../utils/paramBounds";
 
 export const TOOLKIT_OPTIONS = ["gatk", "bcftools", "deepvariant"] as const;
@@ -127,27 +135,29 @@ export function resolveAssignmentWindow(
 export function createAssignment(
   candidate: CandidatePreview,
   context: FindCandidatesResponse,
+  worker?: Pick<WorkerRecord, "id" | "name">,
 ): WorkerAssignment {
   const tool = (context.tool?.toLowerCase() as ToolkitOption) || DEFAULT_TOOLKIT;
   const resolvedTool = TOOLKIT_OPTIONS.includes(tool) ? tool : DEFAULT_TOOLKIT;
   const keys = listToolOptionKeys(candidate.base_conf, resolvedTool);
   const selectedParams = defaultSelectedParams(resolvedTool, keys);
+  const workerName = worker?.name?.trim() ?? "";
   return {
     candidate,
     window: resolveAssignmentWindow(candidate, context.window),
     tool: resolvedTool,
-    algorithm: DEFAULT_ALGORITHM,
+    algorithm: workerName ? workerDefaultAlgorithm(workerName) : DEFAULT_ALGORITHM,
     selectedParams,
     paramIntervals: buildSelectedParamIntervals(
       resolvedTool,
       candidate.base_conf,
       selectedParams,
     ),
-    concurrency: 1,
-    limitSeconds: DEFAULT_LIMIT_SECONDS,
-    trialThreads: DEFAULT_TRIAL_THREADS,
-    trialMemoryGb: DEFAULT_TRIAL_MEMORY_GB,
-    trialCount: DEFAULT_TOTAL_TRIALS,
+    concurrency: savedDefaultConcurrency(),
+    limitSeconds: savedDefaultLimitSeconds(),
+    trialThreads: workerName ? workerDefaultTrialThreads(workerName) : DEFAULT_TRIAL_THREADS,
+    trialMemoryGb: workerName ? workerDefaultTrialMemoryGb(workerName) : DEFAULT_TRIAL_MEMORY_GB,
+    trialCount: savedDefaultTrialCount(),
     dispatching: false,
     dispatchError: null,
   };

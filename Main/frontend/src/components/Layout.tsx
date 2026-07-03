@@ -5,6 +5,7 @@ import { AddWorkerModal } from "./AddWorkerModal";
 import { AUTO_MODE_CHANGED_EVENT } from "./AutoModePanel";
 import { AutoModeTunableEditor } from "./AutoModeTunableEditor";
 import { saveAutoModeState } from "../utils/autoModeStorage";
+import { syncManualParamDefaultsFromAutoConfig } from "../utils/manualParamDefaults";
 
 const sectionsWhenAuto = [
   { hash: "#auto", label: "Auto mode" },
@@ -37,6 +38,7 @@ export function Layout() {
       .getAutoMode()
       .then((status) => {
         saveAutoModeState(status);
+        syncManualParamDefaultsFromAutoConfig(status.config);
         setAutoModeStatus(status);
         setAutoEnabled(status.enabled);
         setAutoRunning(status.running);
@@ -64,6 +66,7 @@ export function Layout() {
       try {
         const status = await api.setAutoMode(false);
         saveAutoModeState(status);
+        syncManualParamDefaultsFromAutoConfig(status.config);
         setAutoModeStatus(status);
         setAutoEnabled(status.enabled);
         setAutoRunning(status.running);
@@ -98,6 +101,7 @@ export function Layout() {
     try {
       const status = await api.setAutoMode(true);
       saveAutoModeState(status);
+      syncManualParamDefaultsFromAutoConfig(status.config);
       setAutoModeStatus(status);
       setAutoEnabled(status.enabled);
       setAutoRunning(status.running);
