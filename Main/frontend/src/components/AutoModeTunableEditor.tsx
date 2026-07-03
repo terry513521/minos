@@ -14,9 +14,23 @@ import {
   defaultParamInterval,
   ParamInterval,
 } from "../utils/paramBounds";
-import { paramIntervalsFromAutoConfig, workerAlgorithmsFromAutoConfig, workerConcurrencyFromAutoConfig, workerSettingForName, workerTrialMemoryGbFromAutoConfig, workerTrialThreadsFromAutoConfig } from "../utils/autoModeSync";
+import { paramIntervalsFromAutoConfig, workerAlgorithmsFromAutoConfig, workerConcurrencyFromAutoConfig, workerLimitSecondsFromAutoConfig, workerSettingForName, workerTrialCountsFromAutoConfig, workerTrialMemoryGbFromAutoConfig, workerTrialThreadsFromAutoConfig } from "../utils/autoModeSync";
 import { syncManualParamDefaultsFromAutoConfig } from "../utils/manualParamDefaults";
-import { ALGORITHM_OPTIONS, AlgorithmOption, clampConcurrency, clampTrialMemoryGb, clampTrialThreads, CONCURRENCY_OPTIONS, MAX_TRIAL_THREADS } from "../types/workerAssignment";
+import {
+  ALGORITHM_OPTIONS,
+  AlgorithmOption,
+  adaptiveMaxTrialsFromTotal,
+  clampConcurrency,
+  clampTrialMemoryGb,
+  clampTrialThreads,
+  clampTotalTrials,
+  CONCURRENCY_OPTIONS,
+  DEFAULT_LIMIT_MINUTES,
+  DEFAULT_TOTAL_TRIALS,
+  limitMinutesToSeconds,
+  MAX_TRIAL_THREADS,
+  secondsToLimitMinutes,
+} from "../types/workerAssignment";
 import { ConfParamPicker } from "./ConfParamPicker";
 import { DeferredNumberInput } from "./DeferredNumberInput";
 import { AUTO_MODE_CHANGED_EVENT } from "./AutoModePanel";
@@ -62,6 +76,12 @@ export function AutoModeTunableEditor({
   );
   const [workerConcurrency, setWorkerConcurrency] = useState<Record<string, number>>(() =>
     workerConcurrencyFromAutoConfig(config),
+  );
+  const [workerLimitSeconds, setWorkerLimitSeconds] = useState<Record<string, number>>(() =>
+    workerLimitSecondsFromAutoConfig(config),
+  );
+  const [workerTrialCounts, setWorkerTrialCounts] = useState<Record<string, number>>(() =>
+    workerTrialCountsFromAutoConfig(config),
   );
   const [loading, setLoading] = useState(false);
   const [hydrating, setHydrating] = useState(false);
@@ -115,6 +135,26 @@ export function AutoModeTunableEditor({
         names.map((name) => [
           name,
           clampConcurrency(workerSettingForName(workerConcurrencyFromAutoConfig(nextConfig), name) ?? 1),
+        ]),
+      ),
+    );
+    setWorkerLimitSeconds(
+      Object.fromEntries(
+        names.map((name) => [
+          name,
+          workerSettingForName(workerLimitSecondsFromAutoConfig(nextConfig), name) ??
+            nextConfig.limit_seconds,
+        ]),
+      ),
+    );
+    setWorkerTrialCounts(
+      Object.fromEntries(
+        names.map((name) => [
+          name,
+          clampTotalTrials(
+            workerSettingForName(workerTrialCountsFromAutoConfig(nextConfig), name) ??
+              DEFAULT_TOTAL_TRIALS,
+          ),
         ]),
       ),
     );
@@ -248,6 +288,26 @@ export function AutoModeTunableEditor({
         ),
       );
     }
+    if (data.workerLimitSeconds) {
+      setWorkerLimitSeconds(
+        Object.fromEntries(
+          workerNames.map((name) => [
+            name,
+            data.workerLimitSeconds?.[name] ?? workerLimitSeconds[name] ?? limitMinutesToSeconds(DEFAULT_LIMIT_MINUTES),
+          ]),
+        ),
+      );
+    }
+    if (data.workerTrialCounts) {
+      setWorkerTrialCounts(
+        Object.fromEntries(
+          workerNames.map((name) => [
+            name,
+            clampTotalTrials(data.workerTrialCounts?.[name] ?? workerTrialCounts[name] ?? DEFAULT_TOTAL_TRIALS),
+          ]),
+        ),
+      );
+    }
   }
 
   function handleExport() {
@@ -271,6 +331,8 @@ export function AutoModeTunableEditor({
         workerTrialThreads,
         workerTrialMemoryGb,
         workerConcurrency,
+        workerLimitSeconds,
+        workerTrialCounts,
       }),
     );
   }
@@ -336,6 +398,12 @@ export function AutoModeTunableEditor({
       worker_trial_threads: Object.fromEntries(workerNames.map((name) => [name, 4])),
       worker_trial_memory_gb: Object.fromEntries(workerNames.map((name) => [name, 6])),
       worker_concurrency: Object.fromEntries(workerNames.map((name) => [name, 1])),
+      worker_limit_seconds: Object.fromEntries(
+        workerNames.map((name) => [name, limitMinutesToSeconds(DEFAULT_LIMIT_MINUTES)]),
+      ),
+      worker_adaptive_max_trials: Object.fromEntries(
+        workerNames.map((name) => [name, adaptiveMaxTrialsFromTotal(DEFAULT_TOTAL_TRIALS)]),
+      ),
     };
     applyConfigToState(defaults, workerNames);
   }
@@ -364,6 +432,13 @@ export function AutoModeTunableEditor({
         worker_trial_threads: workerTrialThreads,
         worker_trial_memory_gb: workerTrialMemoryGb,
         worker_concurrency: workerConcurrency,
+        worker_limit_seconds: workerLimitSeconds,
+        worker_adaptive_max_trials: Object.fromEntries(
+          workerNames.map((name) => [
+            name,
+            adaptiveMaxTrialsFromTotal(workerTrialCounts[name] ?? DEFAULT_TOTAL_TRIALS),
+          ]),
+        ),
       });
       syncManualParamDefaultsFromAutoConfig(status.config);
       window.dispatchEvent(new Event(AUTO_MODE_CHANGED_EVENT));
@@ -433,7 +508,8 @@ export function AutoModeTunableEditor({
         )}
         {running && (
           <div className="alert warn">
-            An auto session is running — stop or restart the session before saving changes.
+            Auto session is running — saved changes apply on the next{" "}
+            <code>POST /api/v1/auto/start</code>. Current worker jobs keep their existing limits.
           </div>
         )}
         {error && <div className="alert error">{error}</div>}
@@ -448,7 +524,7 @@ export function AutoModeTunableEditor({
             <button
               type="button"
               className="button ghost"
-              disabled={hydrating || loading || running}
+              disabled={hydrating || loading}
               onClick={() => importFileRef.current?.click()}
             >
               Import
@@ -482,15 +558,18 @@ export function AutoModeTunableEditor({
             <div className="auto-mode-worker-algorithms">
             <span className="auto-mode-section-title">Worker settings</span>
             <p className="auto-mode-worker-algorithms-lead">
-              Algorithm, parallel trials, and per-trial Docker CPU/RAM for each auto worker.
+              Algorithm, concurrency, trial limit, time limit, and per-trial Docker CPU/RAM for each
+              auto worker.
             </p>
             <div className="auto-mode-worker-settings-table-wrap">
-              <table className="auto-mode-worker-settings-table">
+              <table className="auto-mode-worker-settings-table auto-mode-worker-settings-table--wide">
                 <thead>
                   <tr>
                     <th>Worker</th>
                     <th>Algorithm</th>
                     <th>Concurrency</th>
+                    <th>Trials</th>
+                    <th>Limit (min)</th>
                     <th>CPUs / trial</th>
                     <th>RAM (GB) / trial</th>
                   </tr>
@@ -538,6 +617,40 @@ export function AutoModeTunableEditor({
                             </option>
                           ))}
                         </select>
+                      </td>
+                      <td>
+                        <DeferredNumberInput
+                          className="auto-mode-worker-resource-input input-mono"
+                          value={workerTrialCounts[workerName] ?? DEFAULT_TOTAL_TRIALS}
+                          min={1}
+                          max={1001}
+                          step={1}
+                          onCommit={(value) =>
+                            setWorkerTrialCounts({
+                              ...workerTrialCounts,
+                              [workerName]: clampTotalTrials(value ?? DEFAULT_TOTAL_TRIALS),
+                            })
+                          }
+                          disabled={hydrating || loading}
+                          aria-label={`Trial limit for ${workerName}`}
+                        />
+                      </td>
+                      <td>
+                        <DeferredNumberInput
+                          className="auto-mode-worker-resource-input input-mono"
+                          value={secondsToLimitMinutes(workerLimitSeconds[workerName] ?? limitMinutesToSeconds(DEFAULT_LIMIT_MINUTES))}
+                          min={1}
+                          max={1440}
+                          step={1}
+                          onCommit={(value) =>
+                            setWorkerLimitSeconds({
+                              ...workerLimitSeconds,
+                              [workerName]: limitMinutesToSeconds(value ?? DEFAULT_LIMIT_MINUTES),
+                            })
+                          }
+                          disabled={hydrating || loading}
+                          aria-label={`Time limit for ${workerName}`}
+                        />
                       </td>
                       <td>
                         <DeferredNumberInput
@@ -597,7 +710,7 @@ export function AutoModeTunableEditor({
               type="button"
               className="button ghost"
               onClick={resetDefaults}
-              disabled={loading || hydrating || running}
+              disabled={loading || hydrating}
             >
               Reset to defaults
             </button>
@@ -608,7 +721,7 @@ export function AutoModeTunableEditor({
               <button
                 type="button"
                 className="button ghost"
-                disabled={loading || hydrating || running || workerNames.length === 0}
+                disabled={loading || hydrating || workerNames.length === 0}
                 onClick={(e) => void handleSaveOnly(e)}
               >
                 {loading ? "Saving…" : "Save parameters only"}
@@ -617,7 +730,7 @@ export function AutoModeTunableEditor({
             <button
               type="submit"
               className="button primary"
-              disabled={loading || hydrating || running || workerNames.length === 0}
+              disabled={loading || hydrating || workerNames.length === 0}
             >
               {loading
                 ? isEnable

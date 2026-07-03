@@ -207,6 +207,8 @@ export interface AutoModeTunableConfigUpdate {
   worker_trial_threads?: Record<string, number>;
   worker_trial_memory_gb?: Record<string, number>;
   worker_concurrency?: Record<string, number>;
+  worker_limit_seconds?: Record<string, number>;
+  worker_adaptive_max_trials?: Record<string, number>;
 }
 
 export interface AutoModeConfig {
@@ -218,6 +220,8 @@ export interface AutoModeConfig {
   worker_trial_threads: Record<string, number>;
   worker_trial_memory_gb: Record<string, number>;
   worker_concurrency: Record<string, number>;
+  worker_limit_seconds: Record<string, number>;
+  worker_adaptive_max_trials: Record<string, number>;
   assignment_strategy: string;
   limit_seconds: number;
   adaptive_max_trials: number;
@@ -243,6 +247,7 @@ export interface AutoDispatchAssignment {
   param_intervals: Record<string, ParamIntervalPayload>;
   concurrency: number;
   limit_seconds: number;
+  adaptive_max_trials: number;
   dispatch_ok: boolean;
   dispatch_error: string | null;
   job_id: string | null;

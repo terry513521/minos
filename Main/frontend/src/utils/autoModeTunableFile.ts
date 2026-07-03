@@ -1,4 +1,4 @@
-import { AlgorithmOption } from "../types/workerAssignment";
+import { AlgorithmOption, adaptiveMaxTrialsFromTotal, clampTotalTrials, DEFAULT_TOTAL_TRIALS } from "../types/workerAssignment";
 import { getToolOptions, parseToolOptionValue, setToolOptions } from "./confEdit";
 import { confToDotConf, downloadConfFile } from "./confDisplay";
 import { clampParamInterval, ParamInterval, buildGatkReferenceConf } from "./paramBounds";
@@ -21,6 +21,8 @@ export interface AutoModeTunableFile {
   worker_trial_threads: Record<string, number>;
   worker_trial_memory_gb: Record<string, number>;
   worker_concurrency: Record<string, number>;
+  worker_limit_seconds: Record<string, number>;
+  worker_adaptive_max_trials: Record<string, number>;
   /** Miner-style key=value lines for the full base conf (export convenience). */
   conf_dot: string;
 }
@@ -33,6 +35,8 @@ export interface AutoModeTunableImportData {
   workerTrialThreads?: Record<string, number>;
   workerTrialMemoryGb?: Record<string, number>;
   workerConcurrency?: Record<string, number>;
+  workerLimitSeconds?: Record<string, number>;
+  workerTrialCounts?: Record<string, number>;
 }
 
 export function parseDotConfText(text: string): Record<string, string> {
@@ -153,6 +157,8 @@ export function buildAutoModeTunableFile(input: {
   workerTrialThreads: Record<string, number>;
   workerTrialMemoryGb: Record<string, number>;
   workerConcurrency: Record<string, number>;
+  workerLimitSeconds: Record<string, number>;
+  workerTrialCounts: Record<string, number>;
 }): AutoModeTunableFile {
   const param_intervals: Record<string, ParamInterval> = {};
   for (const param of input.params) {
@@ -178,6 +184,13 @@ export function buildAutoModeTunableFile(input: {
     worker_trial_threads: pickWorkerRecord(input.workerNames, input.workerTrialThreads, 4),
     worker_trial_memory_gb: pickWorkerRecord(input.workerNames, input.workerTrialMemoryGb, 6),
     worker_concurrency: pickWorkerRecord(input.workerNames, input.workerConcurrency, 1),
+    worker_limit_seconds: pickWorkerRecord(input.workerNames, input.workerLimitSeconds, 3000),
+    worker_adaptive_max_trials: Object.fromEntries(
+      input.workerNames.map((name) => [
+        name,
+        adaptiveMaxTrialsFromTotal(input.workerTrialCounts[name] ?? DEFAULT_TOTAL_TRIALS),
+      ]),
+    ),
     conf_dot: confToDotConf(base_conf),
   };
 }
@@ -234,6 +247,8 @@ function parseTunablePayload(
   const workerTrialThreads = parseStringNumberRecord(parsed.worker_trial_threads);
   const workerTrialMemoryGb = parseStringNumberRecord(parsed.worker_trial_memory_gb);
   const workerConcurrency = parseStringNumberRecord(parsed.worker_concurrency);
+  const workerLimitSeconds = parseStringNumberRecord(parsed.worker_limit_seconds);
+  const workerAdaptiveMaxTrials = parseStringNumberRecord(parsed.worker_adaptive_max_trials);
 
   if (requireFull) {
     if (!workerAlgorithms) {
@@ -258,6 +273,15 @@ function parseTunablePayload(
     workerTrialThreads: workerTrialThreads ?? undefined,
     workerTrialMemoryGb: workerTrialMemoryGb ?? undefined,
     workerConcurrency: workerConcurrency ?? undefined,
+    workerLimitSeconds: workerLimitSeconds ?? undefined,
+    workerTrialCounts: workerAdaptiveMaxTrials
+      ? Object.fromEntries(
+          Object.entries(workerAdaptiveMaxTrials).map(([name, adaptive]) => [
+            name,
+            clampTotalTrials(adaptive + 1),
+          ]),
+        )
+      : undefined,
   };
 
   return { ok: true, data };

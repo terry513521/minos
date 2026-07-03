@@ -13,6 +13,8 @@ import {
   paramIntervalsFromAutoConfig,
   workerAlgorithmsFromAutoConfig,
   workerConcurrencyFromAutoConfig,
+  workerLimitSecondsFromAutoConfig,
+  workerTrialCountsFromAutoConfig,
   workerTrialMemoryGbFromAutoConfig,
   workerTrialThreadsFromAutoConfig,
 } from "../utils/autoModeSync";
@@ -79,6 +81,8 @@ export function AutoModePanel({ embedded = false }: AutoModePanelProps) {
   const workerAlgorithms = workerAlgorithmsFromAutoConfig(config);
   const workerTrialThreads = workerTrialThreadsFromAutoConfig(config);
   const workerTrialMemoryGb = workerTrialMemoryGbFromAutoConfig(config);
+  const workerTrialCounts = workerTrialCountsFromAutoConfig(config);
+  const workerLimitSeconds = workerLimitSecondsFromAutoConfig(config);
   const selectionByIndex = selectionSlotsByIndex(status.selected_candidates);
   const foundCount = status.found_candidates.length || status.candidates_found;
   const canRestartSession =
@@ -169,12 +173,7 @@ export function AutoModePanel({ embedded = false }: AutoModePanelProps) {
             type="button"
             className="button ghost auto-mode-edit-params-btn"
             onClick={() => setEditingParams(true)}
-            disabled={status.running}
-            title={
-              status.running
-                ? "Stop or restart the session before editing parameters"
-                : "Edit parameters for the next auto start"
-            }
+            title="Edit parameters — changes apply on the next auto start"
           >
             Edit parameters
           </button>
@@ -204,8 +203,9 @@ export function AutoModePanel({ embedded = false }: AutoModePanelProps) {
         <div className="auto-mode-worker-algorithm-summary">
           {config.worker_names.map((workerName) => (
             <span key={workerName} className="chip chip-muted">
-              {workerName}: {workerAlgorithms[workerName]} · {workerTrialThreads[workerName]} CPU ·{" "}
-              {workerTrialMemoryGb[workerName]} GB
+              {workerName}: {workerAlgorithms[workerName]} · {workerTrialCounts[workerName]} trials ·{" "}
+              {Math.round((workerLimitSeconds[workerName] ?? config.limit_seconds) / 60)} min ·{" "}
+              {workerTrialThreads[workerName]} CPU · {workerTrialMemoryGb[workerName]} GB
             </span>
           ))}
         </div>

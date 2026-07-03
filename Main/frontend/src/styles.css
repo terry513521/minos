@@ -2053,12 +2053,15 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   max-width: 100%;
 }
 .modal-panel.modal-panel-auto-tunable .auto-mode-worker-settings-table-wrap {
-  overflow-x: hidden;
+  overflow-x: auto;
   max-width: 100%;
 }
 .modal-panel.modal-panel-auto-tunable .auto-mode-worker-settings-table {
   width: 100%;
   table-layout: fixed;
+}
+.modal-panel.modal-panel-auto-tunable .auto-mode-worker-settings-table--wide {
+  min-width: 44rem;
 }
 .modal-panel.modal-panel-auto-tunable .worker-conf-picker {
   max-width: 100%;

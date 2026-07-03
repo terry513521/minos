@@ -336,6 +336,8 @@ class AutoModeConfig(BaseModel):
     worker_trial_threads: dict[str, int] = Field(default_factory=dict)
     worker_trial_memory_gb: dict[str, int] = Field(default_factory=dict)
     worker_concurrency: dict[str, int] = Field(default_factory=dict)
+    worker_limit_seconds: dict[str, int] = Field(default_factory=dict)
+    worker_adaptive_max_trials: dict[str, int] = Field(default_factory=dict)
     assignment_strategy: str = "score_similarity_composite"
     limit_seconds: int
     adaptive_max_trials: int
@@ -359,6 +361,8 @@ class AutoModeTunableConfigUpdate(BaseModel):
     worker_trial_threads: dict[str, int] | None = None
     worker_trial_memory_gb: dict[str, int] | None = None
     worker_concurrency: dict[str, int] | None = None
+    worker_limit_seconds: dict[str, int] | None = None
+    worker_adaptive_max_trials: dict[str, int] | None = None
 
 
 class AutoDispatchAssignment(BaseModel):
@@ -376,6 +380,7 @@ class AutoDispatchAssignment(BaseModel):
     param_intervals: dict[str, ParamIntervalSpec] = Field(default_factory=dict)
     concurrency: int = 1
     limit_seconds: int = 1800
+    adaptive_max_trials: int = 44
     dispatch_ok: bool = False
     dispatch_error: str | None = None
     job_id: str | None = None
