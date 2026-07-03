@@ -278,19 +278,27 @@ export function WorkersPanel({
   );
 
   const effectiveAssignmentsByWorker = useMemo(() => {
-    const merged = { ...assignments };
-    for (const [workerId, assignment] of Object.entries(autoAssignmentsByWorker)) {
+    const merged: Record<string, WorkerAssignment> = {};
+
+    for (const [workerId, assignment] of Object.entries(autoPreviewByWorker)) {
       if (!dismissedWorkers.has(workerId)) {
         merged[workerId] = assignment;
       }
     }
-    for (const [workerId, assignment] of Object.entries(autoPreviewByWorker)) {
-      if (!dismissedWorkers.has(workerId) && !merged[workerId]) {
+    if (autoModeStatus?.running) {
+      for (const [workerId, assignment] of Object.entries(autoAssignmentsByWorker)) {
+        if (!dismissedWorkers.has(workerId)) {
+          merged[workerId] = assignment;
+        }
+      }
+    }
+    for (const [workerId, assignment] of Object.entries(assignments)) {
+      if (!dismissedWorkers.has(workerId)) {
         merged[workerId] = assignment;
       }
     }
     return merged;
-  }, [assignments, autoAssignmentsByWorker, autoPreviewByWorker, dismissedWorkers]);
+  }, [assignments, autoAssignmentsByWorker, autoPreviewByWorker, autoModeStatus?.running, dismissedWorkers]);
 
   const bestByWorkerRef = useRef(bestByWorker);
   bestByWorkerRef.current = bestByWorker;
@@ -423,16 +431,31 @@ export function WorkersPanel({
       isWorkerCandidateAssignmentLocked(
         effectiveAssignmentsByWorker[workerId],
         workerOptimizationSnapshot(workerId),
+        autoModeStatus,
+        nowMs,
       ),
-    [effectiveAssignmentsByWorker, workerOptimizationSnapshot],
+    [effectiveAssignmentsByWorker, workerOptimizationSnapshot, autoModeStatus, nowMs],
   );
 
   useEffect(() => {
     if (!onWorkerAssignmentSummariesChange) return;
     onWorkerAssignmentSummariesChange(
-      buildWorkerAssignmentSummaries(workers, effectiveAssignmentsByWorker, bestByWorker),
+      buildWorkerAssignmentSummaries(
+        workers,
+        effectiveAssignmentsByWorker,
+        bestByWorker,
+        autoModeStatus,
+        nowMs,
+      ),
     );
-  }, [workers, effectiveAssignmentsByWorker, bestByWorker, onWorkerAssignmentSummariesChange]);
+  }, [
+    workers,
+    effectiveAssignmentsByWorker,
+    bestByWorker,
+    autoModeStatus,
+    nowMs,
+    onWorkerAssignmentSummariesChange,
+  ]);
 
   useEffect(() => {
     if (workers.length === 0) return;
@@ -589,6 +612,25 @@ export function WorkersPanel({
     try {
       const result = await api.fetchWorkerBest(workerId);
       setBestByWorker((prev) => ({ ...prev, [workerId]: result }));
+      if (
+        result.ok &&
+        result.status &&
+        !isWorkerJobRunning(result.status)
+      ) {
+        setAssignments((prev) => {
+          const current = prev[workerId];
+          if (!current || current.dispatching) return prev;
+          if (!current.dispatchedAt && !current.dispatchError) return prev;
+          return {
+            ...prev,
+            [workerId]: {
+              ...current,
+              dispatchedAt: null,
+              dispatchError: null,
+            },
+          };
+        });
+      }
     } catch (err) {
       if (!silent) {
         setBestByWorker((prev) => ({
@@ -1237,7 +1279,7 @@ export function WorkersPanel({
                           </span>
                         )}
                       </span>
-                      {!autoManaged && !reassignmentLocked && (
+                      {!reassignmentLocked && (
                         <button
                           type="button"
                           className="button ghost worker-assignment-clear"
@@ -1473,10 +1515,10 @@ export function WorkersPanel({
                   </div>
                 )}
 
-                {!assignment && candidateContext && !autoModeEnabled && !reassignmentLocked && (
+                {!assignment && candidateContext && !reassignmentLocked && (
                   <p className="worker-drop-placeholder">Drop candidate here</p>
                 )}
-                {reassignmentLocked && !autoManaged && (
+                {reassignmentLocked && (
                   <p className="worker-drop-placeholder worker-drop-placeholder--locked">
                     Optimization running — cannot assign candidates
                   </p>

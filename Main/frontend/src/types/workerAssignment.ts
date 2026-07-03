@@ -1,4 +1,4 @@
-import { CandidatePreview, FindCandidatesResponse, WorkerRecord } from "../api/client";
+import { AutoModeStatus, CandidatePreview, FindCandidatesResponse, WorkerRecord } from "../api/client";
 import { defaultSelectedParams, listToolOptionKeys } from "../utils/candidateAssign";
 import {
   buildSelectedParamIntervals,
@@ -12,6 +12,7 @@ import {
   workerDefaultTrialThreads,
 } from "../utils/manualParamDefaults";
 import { defaultParamInterval, ParamInterval } from "../utils/paramBounds";
+import { isWorkerJobRunning } from "../utils/workerJobStatus";
 
 export const TOOLKIT_OPTIONS = ["gatk", "bcftools", "deepvariant"] as const;
 export type ToolkitOption = (typeof TOOLKIT_OPTIONS)[number];
@@ -219,33 +220,63 @@ export interface WorkerAssignmentSummary {
 
 export function isWorkerOptimizationActive(
   optimization?: WorkerOptimizationSnapshot | null,
+  assignment?: WorkerAssignment,
+  autoModeStatus?: AutoModeStatus | null,
+  nowMs = Date.now(),
 ): boolean {
-  return Boolean(
-    optimization?.ok &&
-      (optimization.status === "optimizing" || optimization.status === "stopping"),
+  if (!optimization?.ok) return false;
+  return isWorkerJobRunning(
+    optimization.status,
+    resolveWorkerJobStartedAt(assignment, autoModeStatus),
+    resolveWorkerJobLimitSeconds(assignment, autoModeStatus),
+    nowMs,
   );
+}
+
+export function resolveWorkerJobStartedAt(
+  assignment: WorkerAssignment | undefined,
+  autoModeStatus?: AutoModeStatus | null,
+): string | null {
+  if (assignment?.dispatchedAt) return assignment.dispatchedAt;
+  if (assignment?.autoManaged && autoModeStatus?.started_at) {
+    return autoModeStatus.started_at;
+  }
+  return null;
+}
+
+export function resolveWorkerJobLimitSeconds(
+  assignment: WorkerAssignment | undefined,
+  autoModeStatus?: AutoModeStatus | null,
+): number | null {
+  return assignment?.limitSeconds ?? autoModeStatus?.config?.limit_seconds ?? null;
 }
 
 export function isWorkerCandidateAssignmentLocked(
   assignment: WorkerAssignment | undefined,
   optimization?: WorkerOptimizationSnapshot | null,
+  autoModeStatus?: AutoModeStatus | null,
+  nowMs = Date.now(),
 ): boolean {
   if (assignment?.dispatching) return true;
-  return isWorkerOptimizationActive(optimization);
+  return isWorkerOptimizationActive(optimization, assignment, autoModeStatus, nowMs);
 }
 
 /** @deprecated Use isWorkerCandidateAssignmentLocked */
 export function isBaseConfReassignmentLocked(
   assignment: WorkerAssignment | undefined,
   optimization?: WorkerOptimizationSnapshot | null,
+  autoModeStatus?: AutoModeStatus | null,
+  nowMs = Date.now(),
 ): boolean {
-  return isWorkerCandidateAssignmentLocked(assignment, optimization);
+  return isWorkerCandidateAssignmentLocked(assignment, optimization, autoModeStatus, nowMs);
 }
 
 export function buildWorkerAssignmentSummaries(
   workers: WorkerRecord[],
   assignments: Record<string, WorkerAssignment>,
   bestByWorker: Record<string, WorkerOptimizationSnapshot | "loading"> = {},
+  autoModeStatus?: AutoModeStatus | null,
+  nowMs = Date.now(),
 ): WorkerAssignmentSummary[] {
   return workers
     .map((worker) => {
@@ -257,7 +288,12 @@ export function buildWorkerAssignmentSummaries(
         workerName: assignmentLabel(worker),
         candidateIndex: assignment?.candidate.index ?? null,
         autoManaged: Boolean(assignment?.autoManaged),
-        reassignmentLocked: isWorkerCandidateAssignmentLocked(assignment, optimization),
+        reassignmentLocked: isWorkerCandidateAssignmentLocked(
+          assignment,
+          optimization,
+          autoModeStatus,
+          nowMs,
+        ),
       };
     })
     .sort((a, b) => a.workerName.localeCompare(b.workerName));
