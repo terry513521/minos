@@ -64,6 +64,12 @@ class OptimizeRequest(BaseModel):
         default=None,
         description="Optional per-parameter min/max/step or enum values for this worker's search slice",
     )
+    adaptive_max_trials: int | None = Field(
+        default=None,
+        ge=1,
+        le=1000,
+        description="Override worker default: adaptive trials after base benchmark",
+    )
 
 
 class OptimizeResponse(BaseModel):

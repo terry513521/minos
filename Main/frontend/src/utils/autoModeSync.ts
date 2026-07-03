@@ -6,7 +6,33 @@ import {
   WorkerRecord,
 } from "../api/client";
 import { ParamInterval } from "./paramBounds";
-import { AlgorithmOption, ToolkitOption, WorkerAssignment } from "../types/workerAssignment";
+import {
+  AlgorithmOption,
+  clampTrialMemoryGb,
+  clampTrialThreads,
+  clampTotalTrials,
+  DEFAULT_TRIAL_MEMORY_GB,
+  DEFAULT_TRIAL_THREADS,
+  ToolkitOption,
+  WorkerAssignment,
+} from "../types/workerAssignment";
+
+function trialResourcesFromConf(baseConf: Record<string, unknown>) {
+  const threads = baseConf.threads;
+  const memoryGb = baseConf.memory_gb;
+  return {
+    trialThreads: clampTrialThreads(
+      typeof threads === "number" ? threads : Number(threads) || DEFAULT_TRIAL_THREADS,
+    ),
+    trialMemoryGb: clampTrialMemoryGb(
+      typeof memoryGb === "number" ? memoryGb : Number(memoryGb) || DEFAULT_TRIAL_MEMORY_GB,
+    ),
+  };
+}
+
+function trialCountFromAutoConfig(config: AutoModeConfig): number {
+  return clampTotalTrials(config.adaptive_max_trials + 1);
+}
 
 export function paramIntervalsFromAutoConfig(
   config: AutoModeConfig,
@@ -63,6 +89,8 @@ export function assignmentFromAutoDispatch(
     paramIntervals,
     concurrency: autoAssignment.concurrency || config.concurrency,
     limitSeconds: autoAssignment.limit_seconds || config.limit_seconds,
+    ...trialResourcesFromConf(autoAssignment.base_conf),
+    trialCount: trialCountFromAutoConfig(config),
     dispatching: false,
     dispatchError: autoAssignment.dispatch_error,
     dispatchedAt:
@@ -101,6 +129,9 @@ export function previewAssignmentsFromAutoConfig(
       paramIntervals: intervals,
       concurrency: status.config.concurrency,
       limitSeconds: status.config.limit_seconds,
+      trialThreads: DEFAULT_TRIAL_THREADS,
+      trialMemoryGb: DEFAULT_TRIAL_MEMORY_GB,
+      trialCount: trialCountFromAutoConfig(status.config),
       dispatching: false,
       dispatchError: null,
       autoManaged: true,

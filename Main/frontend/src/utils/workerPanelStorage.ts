@@ -3,7 +3,7 @@ import {
   WorkerDispatchResult,
   WorkerHealthCheckResult,
 } from "../api/client";
-import { WorkerAssignment } from "../types/workerAssignment";
+import { WorkerAssignment, normalizeWorkerAssignment } from "../types/workerAssignment";
 
 const STORAGE_KEY = "effortless:worker-panel:v1";
 
@@ -16,10 +16,10 @@ export interface PersistedWorkerPanelState {
 }
 
 function sanitizeAssignment(assignment: WorkerAssignment): WorkerAssignment {
-  return {
+  return normalizeWorkerAssignment({
     ...assignment,
     dispatching: false,
-  };
+  });
 }
 
 export function loadWorkerPanelState(): PersistedWorkerPanelState | null {

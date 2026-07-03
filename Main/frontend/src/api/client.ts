@@ -145,6 +145,7 @@ export interface WorkerDispatchPayload {
   concurrency: number;
   algorithm?: string;
   limit_seconds?: number;
+  adaptive_max_trials?: number;
   candidate_index?: number;
 }
 
@@ -194,9 +195,8 @@ export interface AutoModeConfig {
   worker_names: string[];
   worker_algorithms: Record<string, string>;
   assignment_strategy: string;
-  algorithm_optuna_ratio: number;
-  algorithm_random_ratio: number;
   limit_seconds: number;
+  adaptive_max_trials: number;
   concurrency: number;
   find_k: number;
   select_k: number;
@@ -340,9 +340,9 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ region, tool }),
     }),
-  fetchAutoBest: () =>
-    request<AutoBestResult>("/auto/best", {
+  fetchAutoBest: () => request<AutoBestResult>("/auto/best"),
+  restartAutoMode: () =>
+    request<AutoModeStatus>("/auto/restart", {
       method: "POST",
-      body: JSON.stringify({}),
     }),
 };

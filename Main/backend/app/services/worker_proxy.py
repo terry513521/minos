@@ -135,6 +135,7 @@ async def dispatch_to_worker(
         "concurrency": str(body.concurrency),
         "algorithm": body.algorithm,
         "limit": str(body.limit_seconds),
+        "adaptive_max_trials": body.adaptive_max_trials,
         "base_conf": body.base_conf,
         "params": body.params,
     }

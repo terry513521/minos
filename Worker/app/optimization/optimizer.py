@@ -28,9 +28,16 @@ from app.paths import WORKER_ROOT
 logger = logging.getLogger(__name__)
 
 
+def resolve_adaptive_max_trials(request: OptimizeRequest, settings: Settings) -> int:
+    if request.adaptive_max_trials is not None:
+        return max(1, int(request.adaptive_max_trials))
+    return settings.adaptive_max_trials
+
+
 def validate_optimize_request(request: OptimizeRequest, settings: Settings | None = None) -> int:
     """Validate payload and return search space size (no benchmarks)."""
     settings = settings or get_settings()
+    adaptive_max_trials = resolve_adaptive_max_trials(request, settings)
     validate_tool_supported(request.tool)
     algorithm = normalize_algorithm(request.algorithm)
     _parse_limit_seconds(request.limit)
@@ -48,7 +55,7 @@ def validate_optimize_request(request: OptimizeRequest, settings: Settings | Non
         request.params,
         intervals,
         algorithm=algorithm,
-        adaptive_max_trials=settings.adaptive_max_trials,
+        adaptive_max_trials=adaptive_max_trials,
     )
 
 
@@ -195,6 +202,7 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
     settings = settings or get_settings()
     worker_name = settings.name
     algorithm = normalize_algorithm(request.algorithm)
+    adaptive_max_trials = resolve_adaptive_max_trials(request, settings)
     benchmark_window, source_window = resolve_benchmark_window(
         request.window, settings.benchmark_subwindow_mb, seed=request.job_id
     )
@@ -213,7 +221,7 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
         concurrency=concurrency,
         limit_seconds=limit_seconds,
         algorithm=algorithm,
-        adaptive_max_trials=settings.adaptive_max_trials,
+        adaptive_max_trials=adaptive_max_trials,
         vcf_cache_enabled=True,
         gatk_persistent_container=False,
         benchmark_window=benchmark_window
@@ -309,6 +317,66 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
             return time.time() >= deadline or is_stop_requested()
 
         if not timed_out():
+<<<<<<< HEAD
+            if is_adaptive_algorithm(algorithm):
+                logger.info(
+                    "Starting %s search: up to %s trials after base",
+                    algorithm,
+                    adaptive_max_trials,
+                )
+                _run_adaptive_search(
+                    request=job_request,
+                    base_conf=job_request.base_conf,
+                    intervals=intervals,
+                    algorithm=algorithm,
+                    concurrency=concurrency,
+                    max_trials=adaptive_max_trials,
+                    work_root=work_root,
+                    settings=settings,
+                    timed_out=timed_out,
+                    record_result=record_result,
+                )
+            elif use_param_split:
+                logger.info(
+                    "Starting param-split search: %s lane(s), %s trials after base",
+                    len(plan["lanes"]),
+                    max(0, search_space_size - 1),
+                )
+                _run_param_split_lanes(
+                    request=job_request,
+                    base_conf=job_request.base_conf,
+                    intervals=intervals,
+                    concurrency=concurrency,
+                    work_root=work_root,
+                    settings=settings,
+                    timed_out=timed_out,
+                    record_result=record_result,
+                )
+            else:
+                variants = build_search_space(
+                    job_request.base_conf, job_request.tool, job_request.params, intervals
+                )
+                candidate_variants = [
+                    v for v in variants if not conf_equals(v, job_request.base_conf)
+                ]
+                logger.info(
+                    "Starting full grid: %s configs (%s trials after base), concurrency %s",
+                    plan["full_cartesian_grid"],
+                    len(candidate_variants),
+                    concurrency,
+                )
+                if candidate_variants:
+                    evaluate = lambda conf: _evaluate_conf(
+                        job_request, conf, work_root, settings
+                    )
+                    _run_parallel_grid(
+                        candidate_variants=candidate_variants,
+                        concurrency=concurrency,
+                        timed_out=timed_out,
+                        evaluate=evaluate,
+                        record_result=record_result,
+                    )
+=======
             logger.info(
                 "Starting %s search: up to %s trials after base",
                 algorithm,
@@ -326,6 +394,7 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
                 timed_out=timed_out,
                 record_result=record_result,
             )
+>>>>>>> e87a6ff604bb77a556a2525b4658384b8cee650b
 
         if best_score is None:
             message = errors[0] if errors else "No successful benchmark trials"

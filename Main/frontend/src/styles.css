@@ -1268,6 +1268,13 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   background: rgba(56, 120, 90, 0.18);
 }
 
+.topbar-auto-restart {
+  padding: 0.45rem 0.85rem;
+  font-size: 0.82rem;
+  border-color: rgba(232, 176, 112, 0.55);
+  color: #e8b070;
+}
+
 .auto-mode-banner {
   margin: 0 var(--pad-2);
   padding: 0.55rem 0.85rem;
@@ -1294,8 +1301,13 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 0.75rem;
   margin-bottom: 0.65rem;
+}
+
+.auto-mode-restart-btn {
+  margin-left: auto;
 }
 
 .auto-mode-panel-title {

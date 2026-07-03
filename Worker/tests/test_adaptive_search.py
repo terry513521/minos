@@ -33,6 +33,9 @@ def test_adaptive_trial_counts():
     assert count_search_trials(
         base, "gatk", list(intervals), intervals, algorithm="optuna", adaptive_max_trials=12
     ) == 13
+    assert count_search_trials(
+        base, "gatk", list(intervals), intervals, algorithm="optuna", adaptive_max_trials=44
+    ) == 45
     assert is_adaptive_algorithm("random")
 
 

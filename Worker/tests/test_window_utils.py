@@ -37,6 +37,12 @@ def test_resolve_benchmark_window_no_crop():
     assert source is None
 
 
+def test_resolve_benchmark_window_full_5m_round():
+    benchmark, source = resolve_benchmark_window("chr21:1-5000000", 5, seed="job-1")
+    assert benchmark == "chr21:1-5000000"
+    assert source is None
+
+
 def test_resolve_benchmark_window_random_slice():
     benchmark, source = resolve_benchmark_window("chr21:1-5000000", 3, seed="job-1")
     assert source == "chr21:1-5000000"
