@@ -77,10 +77,20 @@ class AutoModeTunableConfig:
     params: list[str]
     param_intervals: dict[str, ParamIntervalSpec]
     worker_algorithms: dict[str, str] = field(default_factory=dict)
+    worker_trial_threads: dict[str, int] = field(default_factory=dict)
+    worker_trial_memory_gb: dict[str, int] = field(default_factory=dict)
 
 
 def default_worker_algorithms() -> dict[str, str]:
     return {name: AUTO_ALGORITHM for name in AUTO_WORKER_NAMES}
+
+
+def default_worker_trial_threads() -> dict[str, int]:
+    return {name: AUTO_TRIAL_THREADS for name in AUTO_WORKER_NAMES}
+
+
+def default_worker_trial_memory_gb() -> dict[str, int]:
+    return {name: AUTO_TRIAL_MEMORY_GB for name in AUTO_WORKER_NAMES}
 
 
 def default_auto_tunable_config() -> AutoModeTunableConfig:
@@ -88,6 +98,8 @@ def default_auto_tunable_config() -> AutoModeTunableConfig:
         params=list(AUTO_PARAMS),
         param_intervals=dict(AUTO_PARAM_INTERVALS),
         worker_algorithms=default_worker_algorithms(),
+        worker_trial_threads=default_worker_trial_threads(),
+        worker_trial_memory_gb=default_worker_trial_memory_gb(),
     )
 
 
@@ -100,6 +112,8 @@ def _tunable_config_to_json(config: AutoModeTunableConfig) -> str:
                 for name, spec in config.param_intervals.items()
             },
             "worker_algorithms": dict(config.worker_algorithms),
+            "worker_trial_threads": dict(config.worker_trial_threads),
+            "worker_trial_memory_gb": dict(config.worker_trial_memory_gb),
         }
     )
 
@@ -125,10 +139,30 @@ def _tunable_config_from_json(raw: str) -> AutoModeTunableConfig:
         for name, algorithm in worker_algorithms_raw.items():
             if isinstance(name, str) and isinstance(algorithm, str) and name in AUTO_WORKER_NAMES:
                 worker_algorithms[name] = algorithm.strip().lower()
+    worker_trial_threads = default_worker_trial_threads()
+    threads_raw = payload.get("worker_trial_threads")
+    if isinstance(threads_raw, dict):
+        for name, threads in threads_raw.items():
+            if isinstance(name, str) and name in AUTO_WORKER_NAMES:
+                try:
+                    worker_trial_threads[name] = clamp_trial_threads(int(threads))
+                except (TypeError, ValueError):
+                    pass
+    worker_trial_memory_gb = default_worker_trial_memory_gb()
+    memory_raw = payload.get("worker_trial_memory_gb")
+    if isinstance(memory_raw, dict):
+        for name, memory_gb in memory_raw.items():
+            if isinstance(name, str) and name in AUTO_WORKER_NAMES:
+                try:
+                    worker_trial_memory_gb[name] = clamp_trial_memory_gb(int(memory_gb))
+                except (TypeError, ValueError):
+                    pass
     return AutoModeTunableConfig(
         params=[str(p) for p in params],
         param_intervals=intervals,
         worker_algorithms=worker_algorithms,
+        worker_trial_threads=worker_trial_threads,
+        worker_trial_memory_gb=worker_trial_memory_gb,
     )
 
 
@@ -139,21 +173,49 @@ def validate_auto_tunable_config(config: AutoModeTunableConfig) -> None:
         if param not in config.param_intervals:
             raise ValueError(f"Missing search interval for parameter: {param}")
     validate_worker_algorithms(config.worker_algorithms)
+    validate_worker_trial_resources(
+        config.worker_trial_threads,
+        config.worker_trial_memory_gb,
+    )
 
 
-def validate_worker_algorithms(worker_algorithms: dict[str, str]) -> None:
+def clamp_trial_threads(value: int) -> int:
+    return max(1, min(32, int(value)))
+
+
+def clamp_trial_memory_gb(value: int) -> int:
+    return max(4, min(128, int(value)))
+
+
+def validate_worker_trial_resources(
+    worker_trial_threads: dict[str, int],
+    worker_trial_memory_gb: dict[str, int],
+) -> None:
     for worker_name in AUTO_WORKER_NAMES:
-        algorithm = worker_algorithms.get(worker_name, AUTO_ALGORITHM)
-        if algorithm not in AUTO_ALGORITHMS:
-            raise ValueError(
-                f"Unsupported algorithm for {worker_name}: {algorithm!r} "
-                f"(use {', '.join(sorted(AUTO_ALGORITHMS))})"
-            )
+        threads = worker_trial_threads.get(worker_name, AUTO_TRIAL_THREADS)
+        memory_gb = worker_trial_memory_gb.get(worker_name, AUTO_TRIAL_MEMORY_GB)
+        if threads != clamp_trial_threads(threads):
+            raise ValueError(f"CPUs per trial for {worker_name} must be between 1 and 32")
+        if memory_gb != clamp_trial_memory_gb(memory_gb):
+            raise ValueError(f"RAM per trial for {worker_name} must be between 4 and 128 GB")
 
 
 def effective_worker_algorithms() -> dict[str, str]:
     stored = auto_mode_store.tunable.worker_algorithms
     return {name: stored.get(name, AUTO_ALGORITHM) for name in AUTO_WORKER_NAMES}
+
+
+def effective_worker_trial_threads() -> dict[str, int]:
+    stored = auto_mode_store.tunable.worker_trial_threads
+    return {name: clamp_trial_threads(stored.get(name, AUTO_TRIAL_THREADS)) for name in AUTO_WORKER_NAMES}
+
+
+def effective_worker_trial_memory_gb() -> dict[str, int]:
+    stored = auto_mode_store.tunable.worker_trial_memory_gb
+    return {
+        name: clamp_trial_memory_gb(stored.get(name, AUTO_TRIAL_MEMORY_GB))
+        for name in AUTO_WORKER_NAMES
+    }
 
 
 def effective_auto_params() -> list[str]:

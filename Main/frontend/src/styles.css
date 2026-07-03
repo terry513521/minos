@@ -1582,6 +1582,11 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   max-height: none;
 }
 
+.modal-panel.modal-panel-auto-tunable .worker-conf-picker-list {
+  max-height: none;
+  overflow: visible;
+}
+
 .auto-mode-worker-algorithms {
   margin-bottom: 1.25rem;
   padding-bottom: 1.1rem;
