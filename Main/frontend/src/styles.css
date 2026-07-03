@@ -1890,6 +1890,16 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   overflow: hidden;
   max-width: 100%;
 }
+.auto-mode-tunable-fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
 .modal-panel.modal-panel-auto-tunable .auto-mode-tunable-scroll {
   flex: 1;
   min-height: 0;

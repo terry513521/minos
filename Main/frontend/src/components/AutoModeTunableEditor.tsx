@@ -56,9 +56,9 @@ export function AutoModeTunableEditor({
     workerConcurrencyFromAutoConfig(config),
   );
   const [loading, setLoading] = useState(false);
+  const [hydrating, setHydrating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [registeredWorkers, setRegisteredWorkers] = useState<WorkerRecord[]>([]);
-  const wasOpenRef = useRef(false);
 
   const workerNames = useMemo(() => {
     if (registeredWorkers.length > 0) {
@@ -69,111 +69,83 @@ export function AutoModeTunableEditor({
     return [...config.worker_names];
   }, [registeredWorkers, config.worker_names]);
 
-  function mergeWorkerAlgorithms(names: string[]): Record<string, AlgorithmOption> {
-    const base = workerAlgorithmsFromAutoConfig(config);
-    return Object.fromEntries(
-      names.map((name) => [name, workerSettingForName(base, name) ?? "optuna"]),
-    ) as Record<string, AlgorithmOption>;
-  }
-
-  function mergeWorkerTrialThreads(names: string[]): Record<string, number> {
-    const base = workerTrialThreadsFromAutoConfig(config);
-    return Object.fromEntries(
-      names.map((name) => [name, clampTrialThreads(workerSettingForName(base, name) ?? 4)]),
+  function applyConfigToState(nextConfig: AutoModeConfig, names: string[]) {
+    setSelectedParams([...nextConfig.params]);
+    setParamIntervals(paramIntervalsFromAutoConfig(nextConfig));
+    setWorkerAlgorithms(
+      Object.fromEntries(
+        names.map((name) => [
+          name,
+          workerSettingForName(workerAlgorithmsFromAutoConfig(nextConfig), name) ?? "optuna",
+        ]),
+      ) as Record<string, AlgorithmOption>,
     );
-  }
-
-  function mergeWorkerTrialMemoryGb(names: string[]): Record<string, number> {
-    const base = workerTrialMemoryGbFromAutoConfig(config);
-    return Object.fromEntries(
-      names.map((name) => [name, clampTrialMemoryGb(workerSettingForName(base, name) ?? 6)]),
+    setWorkerTrialThreads(
+      Object.fromEntries(
+        names.map((name) => [
+          name,
+          clampTrialThreads(
+            workerSettingForName(workerTrialThreadsFromAutoConfig(nextConfig), name) ?? 4,
+          ),
+        ]),
+      ),
     );
-  }
-
-  function mergeWorkerConcurrency(names: string[]): Record<string, number> {
-    const base = workerConcurrencyFromAutoConfig(config);
-    return Object.fromEntries(
-      names.map((name) => [name, clampConcurrency(workerSettingForName(base, name) ?? 1)]),
+    setWorkerTrialMemoryGb(
+      Object.fromEntries(
+        names.map((name) => [
+          name,
+          clampTrialMemoryGb(
+            workerSettingForName(workerTrialMemoryGbFromAutoConfig(nextConfig), name) ?? 6,
+          ),
+        ]),
+      ),
+    );
+    setWorkerConcurrency(
+      Object.fromEntries(
+        names.map((name) => [
+          name,
+          clampConcurrency(workerSettingForName(workerConcurrencyFromAutoConfig(nextConfig), name) ?? 1),
+        ]),
+      ),
     );
   }
 
   useEffect(() => {
     if (!open) {
-      wasOpenRef.current = false;
       setRegisteredWorkers([]);
+      setHydrating(false);
       return;
     }
-    if (wasOpenRef.current) return;
 
     let cancelled = false;
-    api
-      .listWorkers()
-      .then((workers) => {
+    setHydrating(true);
+    setError(null);
+
+    void (async () => {
+      try {
+        const [workers, status] = await Promise.all([api.listWorkers(), api.getAutoMode()]);
         if (cancelled) return;
+
         setRegisteredWorkers(workers);
         const names =
           workers.length > 0
             ? [...workers].sort((a, b) => a.name.localeCompare(b.name)).map((worker) => worker.name)
-            : [...config.worker_names];
-        setSelectedParams([...config.params]);
-        setParamIntervals(paramIntervalsFromAutoConfig(config));
-        setWorkerAlgorithms(
-          Object.fromEntries(
-            names.map((name) => [
-              name,
-              workerSettingForName(workerAlgorithmsFromAutoConfig(config), name) ?? "optuna",
-            ]),
-          ) as Record<string, AlgorithmOption>,
-        );
-        setWorkerTrialThreads(
-          Object.fromEntries(
-            names.map((name) => [
-              name,
-              clampTrialThreads(
-                workerSettingForName(workerTrialThreadsFromAutoConfig(config), name) ?? 4,
-              ),
-            ]),
-          ),
-        );
-        setWorkerTrialMemoryGb(
-          Object.fromEntries(
-            names.map((name) => [
-              name,
-              clampTrialMemoryGb(
-                workerSettingForName(workerTrialMemoryGbFromAutoConfig(config), name) ?? 6,
-              ),
-            ]),
-          ),
-        );
-        setWorkerConcurrency(
-          Object.fromEntries(
-            names.map((name) => [
-              name,
-              clampConcurrency(workerSettingForName(workerConcurrencyFromAutoConfig(config), name) ?? 1),
-            ]),
-          ),
-        );
-        setError(null);
-        wasOpenRef.current = true;
-      })
-      .catch(() => {
+            : [...status.config.worker_names];
+        applyConfigToState(status.config, names);
+      } catch {
         if (cancelled) return;
         const names = [...config.worker_names];
         setRegisteredWorkers([]);
-        setSelectedParams([...config.params]);
-        setParamIntervals(paramIntervalsFromAutoConfig(config));
-        setWorkerAlgorithms(mergeWorkerAlgorithms(names));
-        setWorkerTrialThreads(mergeWorkerTrialThreads(names));
-        setWorkerTrialMemoryGb(mergeWorkerTrialMemoryGb(names));
-        setWorkerConcurrency(mergeWorkerConcurrency(names));
-        setError(null);
-        wasOpenRef.current = true;
-      });
+        applyConfigToState(config, names);
+      } finally {
+        if (!cancelled) setHydrating(false);
+      }
+    })();
 
     return () => {
       cancelled = true;
     };
-  }, [open, config]);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -226,14 +198,30 @@ export function AutoModeTunableEditor({
     }
     setSelectedParams(params);
     setParamIntervals(intervals);
-    setWorkerAlgorithms(mergeWorkerAlgorithms(workerNames));
-    setWorkerTrialThreads(mergeWorkerTrialThreads(workerNames));
-    setWorkerTrialMemoryGb(mergeWorkerTrialMemoryGb(workerNames));
-    setWorkerConcurrency(mergeWorkerConcurrency(workerNames));
+    const defaults: AutoModeConfig = {
+      ...config,
+      worker_names: workerNames,
+      params,
+      param_intervals: Object.fromEntries(
+        Object.entries(intervals).map(([name, interval]) => [
+          name,
+          {
+            min: interval.min,
+            max: interval.max,
+            step: interval.step,
+            values: interval.values,
+          },
+        ]),
+      ),
+      worker_algorithms: Object.fromEntries(workerNames.map((name) => [name, "optuna"])),
+      worker_trial_threads: Object.fromEntries(workerNames.map((name) => [name, 4])),
+      worker_trial_memory_gb: Object.fromEntries(workerNames.map((name) => [name, 6])),
+      worker_concurrency: Object.fromEntries(workerNames.map((name) => [name, 1])),
+    };
+    applyConfigToState(defaults, workerNames);
   }
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
+  async function saveTunableConfig(enableAfterSave = false) {
     if (selectedParams.length === 0) {
       setError("Select at least one parameter to tune.");
       return;
@@ -250,7 +238,7 @@ export function AutoModeTunableEditor({
     setLoading(true);
     setError(null);
     try {
-      await api.updateAutoModeConfig({
+      const status = await api.updateAutoModeConfig({
         params: selectedParams,
         param_intervals: dispatchIntervals,
         worker_algorithms: workerAlgorithms,
@@ -258,20 +246,11 @@ export function AutoModeTunableEditor({
         worker_trial_memory_gb: workerTrialMemoryGb,
         worker_concurrency: workerConcurrency,
       });
-      syncManualParamDefaultsFromAutoConfig({
-        ...config,
-        worker_names: workerNames,
-        params: selectedParams,
-        param_intervals: dispatchIntervals,
-        worker_algorithms: workerAlgorithms,
-        worker_trial_threads: workerTrialThreads,
-        worker_trial_memory_gb: workerTrialMemoryGb,
-        worker_concurrency: workerConcurrency,
-      });
-      if (variant === "enable" && onEnable) {
+      syncManualParamDefaultsFromAutoConfig(status.config);
+      window.dispatchEvent(new Event(AUTO_MODE_CHANGED_EVENT));
+      if (enableAfterSave && onEnable) {
         await onEnable();
       } else {
-        window.dispatchEvent(new Event(AUTO_MODE_CHANGED_EVENT));
         onSaved?.();
       }
       onClose();
@@ -280,6 +259,16 @@ export function AutoModeTunableEditor({
     } finally {
       setLoading(false);
     }
+  }
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    await saveTunableConfig(variant === "enable");
+  }
+
+  async function handleSaveOnly(e: FormEvent) {
+    e.preventDefault();
+    await saveTunableConfig(false);
   }
 
   const isEnable = variant === "enable";
@@ -329,8 +318,10 @@ export function AutoModeTunableEditor({
           </div>
         )}
         {error && <div className="alert error">{error}</div>}
+        {hydrating && <div className="alert">Loading saved auto mode parameters…</div>}
 
         <form className="form modal-form modal-form-auto-tunable" onSubmit={(e) => void handleSubmit(e)}>
+          <fieldset className="auto-mode-tunable-fieldset" disabled={hydrating || loading || running}>
           <div className="auto-mode-tunable-scroll">
             <div className="auto-mode-worker-algorithms">
             <span className="auto-mode-section-title">Worker settings</span>
@@ -442,15 +433,35 @@ export function AutoModeTunableEditor({
             onIntervalChange={updateInterval}
           />
           </div>
+          </fieldset>
 
           <div className="modal-actions modal-actions-auto-tunable">
-            <button type="button" className="button ghost" onClick={resetDefaults} disabled={loading}>
+            <button
+              type="button"
+              className="button ghost"
+              onClick={resetDefaults}
+              disabled={loading || hydrating || running}
+            >
               Reset to defaults
             </button>
             <button type="button" className="button ghost" onClick={onClose} disabled={loading}>
               Cancel
             </button>
-            <button type="submit" className="button primary" disabled={loading || running || workerNames.length === 0}>
+            {isEnable && (
+              <button
+                type="button"
+                className="button ghost"
+                disabled={loading || hydrating || running || workerNames.length === 0}
+                onClick={(e) => void handleSaveOnly(e)}
+              >
+                {loading ? "Saving…" : "Save parameters only"}
+              </button>
+            )}
+            <button
+              type="submit"
+              className="button primary"
+              disabled={loading || hydrating || running || workerNames.length === 0}
+            >
               {loading
                 ? isEnable
                   ? "Enabling…"
