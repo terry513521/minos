@@ -1601,6 +1601,11 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   background: rgba(56, 120, 90, 0.18);
 }
 
+.topbar-auto-configure {
+  padding: 0.45rem 0.85rem;
+  font-size: 0.82rem;
+}
+
 .topbar-auto-restart {
   padding: 0.45rem 0.85rem;
   font-size: 0.82rem;

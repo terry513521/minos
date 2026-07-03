@@ -28,6 +28,7 @@ from app.services.candidate_finder import load_history_entries, scored_pool_to_p
 from app.engine.candidate_finder import CandidateFinderEngine
 from app.defaults import default_tool_conf, MAX_TRIAL_THREADS
 from app.services.control_plane_settings import (
+    AUTO_MODE_ENABLED_KEY,
     AUTO_MODE_TUNABLE_CONFIG_KEY,
     LAST_AUTO_START_REGION_KEY,
     get_control_plane_setting,
@@ -563,6 +564,9 @@ async def load_auto_mode_state(db: AsyncSession) -> None:
     auto_mode_store.last_started_region = await get_control_plane_setting(
         db, LAST_AUTO_START_REGION_KEY
     )
+    raw_enabled = await get_control_plane_setting(db, AUTO_MODE_ENABLED_KEY)
+    if raw_enabled is not None:
+        auto_mode_store.enabled = raw_enabled.strip().lower() in ("true", "1", "yes")
     raw_tunable = await get_control_plane_setting(db, AUTO_MODE_TUNABLE_CONFIG_KEY)
     if raw_tunable:
         try:
@@ -648,6 +652,20 @@ async def update_auto_mode_tunable_config(
     validate_auto_tunable_config(config, worker_names)
     status = auto_mode_store.set_tunable(config, worker_names)
     await set_control_plane_setting(db, AUTO_MODE_TUNABLE_CONFIG_KEY, _tunable_config_to_json(config))
+    return status
+
+
+async def set_auto_mode_enabled(
+    db: AsyncSession,
+    enabled: bool,
+    worker_names: list[str],
+) -> AutoModeStatus:
+    status = auto_mode_store.set_enabled(enabled, worker_names)
+    await set_control_plane_setting(
+        db,
+        AUTO_MODE_ENABLED_KEY,
+        "true" if enabled else "false",
+    )
     return status
 
 

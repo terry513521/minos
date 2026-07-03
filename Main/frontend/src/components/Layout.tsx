@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
-import { api, AutoModeStatus } from "../api/client";
+import { api } from "../api/client";
 import { AddWorkerModal, WORKERS_CHANGED_EVENT, WORKERS_CHECK_ALL_HEALTH_EVENT, WORKERS_CHECK_ALL_HEALTH_RESULT_EVENT, WORKERS_CLEAR_ALL_EVENT, WORKERS_START_ALL_EVENT, WORKERS_START_ALL_RESULT_EVENT, WORKERS_STOP_ALL_EVENT, WorkersCheckAllHealthResultDetail, WorkersStartAllResultDetail } from "./AddWorkerModal";
 import { AUTO_MODE_CHANGED_EVENT } from "./AutoModePanel";
 import { AutoModeTunableEditor } from "./AutoModeTunableEditor";
+import { useAutoModeStatus } from "../hooks/useAutoModeStatus";
 import { saveAutoModeState } from "../utils/autoModeStorage";
-import { syncManualParamDefaultsFromAutoConfig, ensureManualDefaultsHydrated } from "../utils/manualParamDefaults";
+import { syncManualParamDefaultsFromAutoConfig } from "../utils/manualParamDefaults";
 
 const sectionsWhenAuto = [
   { hash: "#auto", label: "Auto mode" },
@@ -21,12 +22,11 @@ export function Layout() {
   const location = useLocation();
   const [health, setHealth] = useState("…");
   const [workerModalOpen, setWorkerModalOpen] = useState(false);
-  const [autoEnabled, setAutoEnabled] = useState(false);
-  const [autoRunning, setAutoRunning] = useState(false);
-  const [autoModeStatus, setAutoModeStatus] = useState<AutoModeStatus | null>(null);
-  const [enableConfirmOpen, setEnableConfirmOpen] = useState(false);
-  const enableConfirmOpenRef = useRef(false);
-  enableConfirmOpenRef.current = enableConfirmOpen;
+  const [configureAutoOpen, setConfigureAutoOpen] = useState(false);
+  const configureAutoOpenRef = useRef(false);
+  configureAutoOpenRef.current = configureAutoOpen;
+  const { status: autoModeStatus, enabled: autoEnabled, running: autoRunning, refresh: refreshAutoMode, applyStatus: applyAutoModeStatus } =
+    useAutoModeStatus(() => configureAutoOpenRef.current);
   const [autoBusy, setAutoBusy] = useState(false);
   const [autoRestarting, setAutoRestarting] = useState(false);
   const [stoppingAllWorkers, setStoppingAllWorkers] = useState(false);
@@ -38,86 +38,30 @@ export function Layout() {
     api.health().then((h) => setHealth(h.status)).catch(() => {});
   }, []);
 
-  const refreshAutoMode = useCallback(() => {
-    ensureManualDefaultsHydrated();
-    api
-      .getAutoMode()
-      .then((status) => {
-        saveAutoModeState(status);
-        syncManualParamDefaultsFromAutoConfig(status.config);
-        setAutoModeStatus(status);
-        setAutoEnabled(status.enabled);
-        setAutoRunning(status.running);
-      })
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    refreshAutoMode();
-    function onChanged() {
-      refreshAutoMode();
-    }
-    window.addEventListener(AUTO_MODE_CHANGED_EVENT, onChanged);
-    const intervalId = window.setInterval(() => {
-      if (!enableConfirmOpenRef.current) refreshAutoMode();
-    }, 5000);
-    return () => {
-      window.removeEventListener(AUTO_MODE_CHANGED_EVENT, onChanged);
-      window.clearInterval(intervalId);
-    };
-  }, [refreshAutoMode]);
-
   async function handleToggleAutoMode() {
-    if (autoEnabled) {
-      setAutoBusy(true);
-      setAutoMessage(null);
-      try {
-        const status = await api.setAutoMode(false);
-        saveAutoModeState(status);
-        syncManualParamDefaultsFromAutoConfig(status.config);
-        setAutoModeStatus(status);
-        setAutoEnabled(status.enabled);
-        setAutoRunning(status.running);
-        setAutoMessage(
-          status.running
-            ? "Auto mode disabled — worker optimizations continue"
-            : "Auto mode disabled",
-        );
-        window.dispatchEvent(new Event(AUTO_MODE_CHANGED_EVENT));
-      } catch (err) {
-        setAutoMessage(err instanceof Error ? err.message : "Failed to update auto mode");
-      } finally {
-        setAutoBusy(false);
-      }
-      return;
+    if (configureAutoOpen) {
+      setConfigureAutoOpen(false);
     }
 
-    setAutoMessage(null);
-    try {
-      const status = await api.getAutoMode();
-      saveAutoModeState(status);
-      setAutoModeStatus(status);
-      setEnableConfirmOpen(true);
-    } catch (err) {
-      setAutoMessage(err instanceof Error ? err.message : "Failed to load auto mode config");
-    }
-  }
-
-  async function handleConfirmEnableAutoMode() {
     setAutoBusy(true);
     setAutoMessage(null);
     try {
-      const status = await api.setAutoMode(true);
+      const nextEnabled = !autoEnabled;
+      const status = await api.setAutoMode(nextEnabled);
       saveAutoModeState(status);
       syncManualParamDefaultsFromAutoConfig(status.config);
-      setAutoModeStatus(status);
-      setAutoEnabled(status.enabled);
-      setAutoRunning(status.running);
-      setAutoMessage("Auto mode enabled — call POST /api/v1/auto/start when ready.");
+      applyAutoModeStatus(status);
+      setConfigureAutoOpen(false);
+      setAutoMessage(
+        nextEnabled
+          ? "Auto mode enabled — call POST /api/v1/auto/start when ready."
+          : status.running
+            ? "Auto mode disabled — worker optimizations continue"
+            : "Auto mode disabled",
+      );
       window.dispatchEvent(new Event(AUTO_MODE_CHANGED_EVENT));
     } catch (err) {
-      setAutoMessage(err instanceof Error ? err.message : "Failed to enable auto mode");
-      throw err;
+      setAutoMessage(err instanceof Error ? err.message : "Failed to update auto mode");
     } finally {
       setAutoBusy(false);
     }
@@ -212,7 +156,7 @@ export function Layout() {
     setAutoMessage(null);
     try {
       const result = await api.stopAllWorkersOptimization();
-      refreshAutoMode();
+      void refreshAutoMode();
       window.dispatchEvent(new Event(WORKERS_STOP_ALL_EVENT));
       window.dispatchEvent(new Event(WORKERS_CHANGED_EVENT));
       window.dispatchEvent(new Event(AUTO_MODE_CHANGED_EVENT));
@@ -247,8 +191,8 @@ export function Layout() {
     setAutoMessage(null);
     try {
       const status = await api.restartAutoMode();
-      setAutoEnabled(status.enabled);
-      setAutoRunning(status.running);
+      saveAutoModeState(status);
+      applyAutoModeStatus(status);
       setAutoMessage("Auto session cleared — POST /api/v1/auto/start is ready.");
       window.dispatchEvent(new Event(AUTO_MODE_CHANGED_EVENT));
     } catch (err) {
@@ -358,15 +302,26 @@ export function Layout() {
               {stoppingAllWorkers ? "Stopping…" : "Stop all"}
             </button>
           </div>
+          {!autoEnabled && (
+            <button
+              type="button"
+              className="button ghost topbar-auto-configure"
+              onClick={() => setConfigureAutoOpen(true)}
+              disabled={autoBusy || autoRestarting || stoppingAllWorkers || startingAllWorkers || checkingAllWorkers}
+              title="Edit auto mode parameters before enabling"
+            >
+              Configure
+            </button>
+          )}
           <button
             type="button"
             className={`button ghost topbar-auto-mode${autoEnabled ? " is-on" : ""}`}
-            onClick={handleToggleAutoMode}
+            onClick={() => void handleToggleAutoMode()}
             disabled={autoBusy || autoRestarting || stoppingAllWorkers || startingAllWorkers || checkingAllWorkers}
             aria-pressed={autoEnabled}
             title={
               autoEnabled
-                ? "Auto mode armed — call POST /api/v1/auto/start to begin; GET /api/v1/auto/best to stop"
+                ? "Disable auto mode"
                 : "Enable auto mode for unattended overnight runs"
             }
           >
@@ -401,13 +356,16 @@ export function Layout() {
       <AddWorkerModal open={workerModalOpen} onClose={() => setWorkerModalOpen(false)} />
       {autoModeStatus && (
         <AutoModeTunableEditor
-          open={enableConfirmOpen}
+          open={configureAutoOpen}
           config={autoModeStatus.config}
           tool={autoModeStatus.config.tool}
           running={autoModeStatus.running}
-          variant="enable"
-          onClose={() => setEnableConfirmOpen(false)}
-          onEnable={handleConfirmEnableAutoMode}
+          variant="edit"
+          onClose={() => setConfigureAutoOpen(false)}
+          onSaved={() => {
+            void refreshAutoMode();
+            setAutoMessage("Auto mode parameters saved.");
+          }}
         />
       )}
       <main className="content">

@@ -15,6 +15,7 @@ from app.services.auto_mode import (
     collect_best_and_stop,
     get_registered_worker_names,
     restart_auto_mode_session,
+    set_auto_mode_enabled,
     start_auto_mode,
     update_auto_mode_tunable_config,
 )
@@ -34,7 +35,7 @@ async def set_auto_mode(
     db: AsyncSession = Depends(get_db),
 ) -> AutoModeStatus:
     worker_names = await get_registered_worker_names(db)
-    return auto_mode_store.set_enabled(body.enabled, worker_names)
+    return await set_auto_mode_enabled(db, body.enabled, worker_names)
 
 
 @router.put("/config", response_model=AutoModeStatus)
