@@ -6,6 +6,7 @@ export const WORKERS_CHANGED_EVENT = "effortless:workers-changed";
 export const WORKERS_STOP_ALL_EVENT = "effortless:workers-stop-all";
 export const WORKERS_START_ALL_EVENT = "effortless:workers-start-all";
 export const WORKERS_START_ALL_RESULT_EVENT = "effortless:workers-start-all-result";
+export const WORKERS_CLEAR_ALL_EVENT = "effortless:workers-clear-all";
 
 export interface WorkersStartAllResultDetail {
   started: number;

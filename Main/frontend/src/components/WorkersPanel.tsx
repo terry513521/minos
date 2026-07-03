@@ -44,7 +44,7 @@ import {
   ParamInterval,
 } from "../utils/paramBounds";
 import { parseToolOptionValue, setToolOption } from "../utils/confEdit";
-import { WORKERS_CHANGED_EVENT, WORKERS_STOP_ALL_EVENT, WORKERS_START_ALL_EVENT, WORKERS_START_ALL_RESULT_EVENT } from "./AddWorkerModal";
+import { WORKERS_CHANGED_EVENT, WORKERS_CLEAR_ALL_EVENT, WORKERS_STOP_ALL_EVENT, WORKERS_START_ALL_EVENT, WORKERS_START_ALL_RESULT_EVENT } from "./AddWorkerModal";
 import { ConfParamPicker } from "./ConfParamPicker";
 import { ConfManualEditor } from "./ConfManualEditor";
 import { ConfTooltip } from "./ConfTooltip";
@@ -845,10 +845,14 @@ export function WorkersPanel({
     }
 
     function onStopAll() {
-      clearAllAssignmentsRef.current();
       void waitForAllWorkersIdle();
     }
     window.addEventListener(WORKERS_STOP_ALL_EVENT, onStopAll);
+
+    function onClearAll() {
+      clearAllAssignmentsRef.current();
+    }
+    window.addEventListener(WORKERS_CLEAR_ALL_EVENT, onClearAll);
 
     async function onStartAll() {
       const results = { started: 0, failed: 0, skipped: 0 };
@@ -893,6 +897,7 @@ export function WorkersPanel({
 
     return () => {
       window.removeEventListener(WORKERS_STOP_ALL_EVENT, onStopAll);
+      window.removeEventListener(WORKERS_CLEAR_ALL_EVENT, onClearAll);
       window.removeEventListener(WORKERS_START_ALL_EVENT, onStartAllEvent);
     };
   }, [workers]);

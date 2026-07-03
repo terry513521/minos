@@ -1568,6 +1568,13 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   color: #9be8c3;
 }
 
+.topbar-clear-all {
+  padding: 0.45rem 0.85rem;
+  font-size: 0.82rem;
+  border-color: var(--border);
+  color: var(--muted);
+}
+
 .topbar-stop-all {
   padding: 0.45rem 0.85rem;
   font-size: 0.82rem;

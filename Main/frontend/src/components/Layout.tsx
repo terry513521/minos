@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { api, AutoModeStatus } from "../api/client";
-import { AddWorkerModal, WORKERS_CHANGED_EVENT, WORKERS_START_ALL_EVENT, WORKERS_START_ALL_RESULT_EVENT, WORKERS_STOP_ALL_EVENT, WorkersStartAllResultDetail } from "./AddWorkerModal";
+import { AddWorkerModal, WORKERS_CHANGED_EVENT, WORKERS_CLEAR_ALL_EVENT, WORKERS_START_ALL_EVENT, WORKERS_START_ALL_RESULT_EVENT, WORKERS_STOP_ALL_EVENT, WorkersStartAllResultDetail } from "./AddWorkerModal";
 import { AUTO_MODE_CHANGED_EVENT } from "./AutoModePanel";
 import { AutoModeTunableEditor } from "./AutoModeTunableEditor";
 import { saveAutoModeState } from "../utils/autoModeStorage";
@@ -147,6 +147,19 @@ export function Layout() {
     return () => window.removeEventListener(WORKERS_START_ALL_RESULT_EVENT, onStartAllResult);
   }, []);
 
+  function handleClearAllWorkers() {
+    if (
+      !window.confirm(
+        "Clear candidate assignments on all workers? Running optimizations are not stopped — use Stop all first if needed.",
+      )
+    ) {
+      return;
+    }
+    setAutoMessage(null);
+    window.dispatchEvent(new Event(WORKERS_CLEAR_ALL_EVENT));
+    setAutoMessage("Cleared assignments on all workers.");
+  }
+
   function handleStartAllWorkers() {
     if (
       !window.confirm(
@@ -270,6 +283,15 @@ export function Layout() {
               }
             >
               {startingAllWorkers ? "Starting…" : "Start all"}
+            </button>
+            <button
+              type="button"
+              className="button ghost topbar-clear-all"
+              onClick={handleClearAllWorkers}
+              disabled={startingAllWorkers || stoppingAllWorkers || autoBusy || autoRestarting}
+              title="Clear candidate assignments on every worker"
+            >
+              Clear all
             </button>
             <button
               type="button"
