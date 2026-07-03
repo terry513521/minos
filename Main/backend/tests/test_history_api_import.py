@@ -48,4 +48,4 @@ def test_entry_to_row_includes_instance_in_source_key():
     assert row.window == "chr21:14558002-19558002"
     assert row.score == 0.93
     assert row.source_key == _source_key(label, entry)
-    assert row.source_key.endswith(":newgatk")
+    assert row.source_key == "gatk:2026-07-02T17:52:00+00:00:chr21:14558002-19558002:newgatk"

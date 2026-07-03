@@ -54,11 +54,13 @@ def _wrap_conf(tool: str, snapshot: dict) -> dict:
 
 
 def _source_key(source_label: str, entry: dict) -> str:
+    """Canonical dedupe key — same round from JSON files and API must collide."""
+    del source_label  # legacy param kept for call sites
     round_id = entry.get("round_id") or ""
     region = entry.get("region") or ""
-    tool = entry.get("tool") or "gatk"
+    tool = str(entry.get("tool") or "gatk").lower()
     instance_id = entry.get("instance_id") or ""
-    base = f"{source_label}:{tool}:{round_id}:{region}"
+    base = f"{tool}:{round_id}:{region}"
     if instance_id:
         return f"{base}:{instance_id}"
     return base
