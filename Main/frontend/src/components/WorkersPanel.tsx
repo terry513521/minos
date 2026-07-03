@@ -413,7 +413,9 @@ export function WorkersPanel({
       .getAutoMode()
       .then((status) => {
         saveAutoModeState(status);
-        syncManualParamDefaultsFromAutoConfig(status.config);
+        syncManualParamDefaultsFromAutoConfig(status.config, {
+          syncPerWorkerTunables: status.enabled,
+        });
         setAutoModeEnabled(status.enabled);
         setAutoModeStatus(status);
         setAutoAssignmentsByWorker(autoAssignmentsForStatus(status));
@@ -422,12 +424,14 @@ export function WorkersPanel({
           const dismissed = dismissedWorkersRef.current;
           setAssignments((prev) => {
             const next = { ...prev };
+            let changed = false;
             for (const [workerId, assignment] of Object.entries(manualFromAuto)) {
-              if (!dismissed.has(workerId)) {
+              if (!dismissed.has(workerId) && !prev[workerId]) {
                 next[workerId] = assignment;
+                changed = true;
               }
             }
-            return next;
+            return changed ? next : prev;
           });
         }
       })

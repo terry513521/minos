@@ -19,7 +19,9 @@ export function useAutoModeStatus(pausePolling?: PausePollingFn) {
       .getAutoMode()
       .then((next) => {
         saveAutoModeState(next);
-        syncManualParamDefaultsFromAutoConfig(next.config);
+        syncManualParamDefaultsFromAutoConfig(next.config, {
+          syncPerWorkerTunables: next.enabled,
+        });
         setStatus(next);
         return next;
       })

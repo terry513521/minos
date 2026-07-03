@@ -194,10 +194,15 @@ export function saveManualWorkerDefaults(defaults: ManualWorkerDefaults): void {
 }
 
 /** Keep manual worker-card defaults aligned with saved auto-mode tunable config. */
-export function syncManualParamDefaultsFromAutoConfig(config: AutoModeConfig): void {
+export function syncManualParamDefaultsFromAutoConfig(
+  config: AutoModeConfig,
+  options?: { syncPerWorkerTunables?: boolean },
+): void {
   if (config.params.length === 0) return;
   saveManualWorkerDefaults(manualWorkerDefaultsFromAutoConfig(config));
-  void syncPerWorkerTunablesFromAutoConfig(config);
+  if (options?.syncPerWorkerTunables !== false) {
+    void syncPerWorkerTunablesFromAutoConfig(config);
+  }
 }
 
 /** @deprecated Use loadManualWorkerDefaults */
