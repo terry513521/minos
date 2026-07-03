@@ -907,6 +907,32 @@ code, .input-mono {
   max-width: 16rem;
   text-align: right;
 }
+.candidate-worker-assign-dropzone {
+  margin-bottom: 0.85rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--border-strong);
+  background: rgba(255, 255, 255, 0.02);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.candidate-worker-assign-dropzone:hover,
+.candidate-worker-assign-dropzone--active {
+  border-color: rgba(167, 139, 250, 0.65);
+  background: rgba(167, 139, 250, 0.06);
+}
+.candidate-worker-assign-dropzone-title {
+  display: block;
+  font-size: 0.88rem;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+.candidate-worker-assign-dropzone-hint {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
 .candidate-worker-assign-message {
   margin-bottom: 0.75rem;
 }

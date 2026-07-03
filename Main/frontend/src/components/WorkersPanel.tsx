@@ -67,6 +67,12 @@ import {
 } from "../utils/autoModeSync";
 import { syncManualParamDefaultsFromAutoConfig, ensureManualDefaultsHydrated } from "../utils/manualParamDefaults";
 import { getWorkerTunableDefaults, saveWorkerTunableDefaults } from "../utils/workerTunableStorage";
+import {
+  assignmentPatchFromImportedTunable,
+  ApplyConfImportResult,
+  mergeImportedConfIntoCandidate,
+} from "../utils/workerConfImport";
+import { parseAutoModeTunableImport } from "../utils/autoModeTunableFile";
 import { loadAutoModeState, saveAutoModeState } from "../utils/autoModeStorage";
 import {
   isWorkerJobRunning,
@@ -91,6 +97,9 @@ interface WorkersPanelProps {
   sectionChild?: boolean;
   onAssignHandlerReady?: (
     handler: (workerId: string, candidateIndex: number) => boolean,
+  ) => void;
+  onApplyConfHandlerReady?: (
+    handler: (text: string, candidateIndex: number) => ApplyConfImportResult,
   ) => void;
 }
 
@@ -214,6 +223,7 @@ export function WorkersPanel({
   onWorkerLiveStatusesChange,
   sectionChild = false,
   onAssignHandlerReady,
+  onApplyConfHandlerReady,
 }: WorkersPanelProps) {
   const persistedRef = useRef(loadWorkerPanelState());
   const persisted = persistedRef.current;
@@ -603,10 +613,125 @@ export function WorkersPanel({
     [candidateContext, workers, isWorkerAssignmentLocked],
   );
 
+  const applyConfImportToAllWorkers = useCallback(
+    (text: string, candidateIndex: number): ApplyConfImportResult => {
+      if (!candidateContext) {
+        return { ok: false, message: "Find candidates before importing a conf file.", applied: 0, skipped: 0 };
+      }
+      if (autoModeEnabled) {
+        return { ok: false, message: "Conf import is not available during auto mode.", applied: 0, skipped: 0 };
+      }
+
+      const candidate = candidateContext.candidates.find((item) => item.index === candidateIndex);
+      if (!candidate) {
+        return { ok: false, message: "Selected candidate not found.", applied: 0, skipped: 0 };
+      }
+
+      const toolRaw = (candidateContext.tool?.toLowerCase() ?? "gatk") as ToolkitOption;
+      const tool: ToolkitOption = TOOLKIT_OPTIONS.includes(toolRaw) ? toolRaw : "gatk";
+      const parsed = parseAutoModeTunableImport(text, tool, candidate.base_conf);
+      if (!parsed.ok) {
+        return { ok: false, message: parsed.error, applied: 0, skipped: 0 };
+      }
+
+      const nextAssignments: Record<string, WorkerAssignment> = {};
+      const restoredDismissed: string[] = [];
+      const clearedDispatch: string[] = [];
+      let applied = 0;
+      let skipped = 0;
+
+      for (const worker of workers) {
+        const effective = effectiveAssignmentsRef.current[worker.id];
+        if (effective?.autoManaged) {
+          skipped += 1;
+          continue;
+        }
+        if (isWorkerAssignmentLocked(worker.id)) {
+          skipped += 1;
+          continue;
+        }
+
+        restoreWorkerAssignment(worker.id);
+        restoredDismissed.push(worker.id);
+
+        let assignment = createAssignment(candidate, candidateContext, worker);
+        if (parsed.result.kind === "tunable") {
+          assignment = {
+            ...assignment,
+            ...assignmentPatchFromImportedTunable(
+              worker.name,
+              tool,
+              parsed.result.data,
+              assignment,
+            ),
+          };
+        } else {
+          assignment = {
+            ...assignment,
+            candidate: mergeImportedConfIntoCandidate(
+              assignment.candidate,
+              parsed.result.baseConf,
+            ),
+          };
+        }
+
+        nextAssignments[worker.id] = assignment;
+        saveWorkerTunableDefaults(worker, assignment);
+        clearedDispatch.push(worker.id);
+        applied += 1;
+      }
+
+      if (applied === 0) {
+        return {
+          ok: false,
+          message:
+            skipped > 0
+              ? "No workers updated — all are locked or managed by auto mode."
+              : "No workers registered.",
+          applied: 0,
+          skipped,
+        };
+      }
+
+      if (restoredDismissed.length > 0) {
+        setDismissedWorkers((prev) => {
+          const next = new Set(prev);
+          for (const workerId of restoredDismissed) {
+            next.delete(workerId);
+          }
+          return next;
+        });
+      }
+
+      setAssignments((prev) => ({ ...prev, ...nextAssignments }));
+      setDispatchByWorker((prev) => {
+        const next = { ...prev };
+        for (const workerId of clearedDispatch) {
+          delete next[workerId];
+        }
+        return next;
+      });
+
+      const skippedNote = skipped > 0 ? ` (${skipped} skipped: auto or running)` : "";
+      return {
+        ok: true,
+        message: `Applied conf to ${applied} worker${applied === 1 ? "" : "s"}${skippedNote}.`,
+        applied,
+        skipped,
+      };
+    },
+    [candidateContext, autoModeEnabled, workers, isWorkerAssignmentLocked],
+  );
+
   useEffect(() => {
     if (!onAssignHandlerReady) return;
     onAssignHandlerReady(assignCandidateToWorker);
   }, [assignCandidateToWorker, onAssignHandlerReady]);
+
+  useEffect(() => {
+    if (!onApplyConfHandlerReady) return;
+    onApplyConfHandlerReady(applyConfImportToAllWorkers);
+  }, [applyConfImportToAllWorkers, onApplyConfHandlerReady]);
 
   function handleDragOver(e: DragEvent, workerId: string) {
     if (!candidateContext) return;

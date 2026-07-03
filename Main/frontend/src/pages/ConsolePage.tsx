@@ -8,6 +8,7 @@ import { WorkersPanel } from "../components/WorkersPanel";
 import { useAutoModeEnabled } from "../hooks/useAutoModeEnabled";
 import { WorkerAssignmentSummary } from "../types/workerAssignment";
 import { WorkerLiveStatus } from "../utils/workerLiveStatus";
+import { ApplyConfImportResult } from "../utils/workerConfImport";
 
 export function ConsolePage() {
   const [candidateContext, setCandidateContext] = useState<FindCandidatesResponse | null>(null);
@@ -18,6 +19,9 @@ export function ConsolePage() {
   const autoModeEnabled = useAutoModeEnabled();
   const assignCandidateRef = useRef<
     ((workerId: string, candidateIndex: number) => boolean) | null
+  >(null);
+  const applyConfImportRef = useRef<
+    ((text: string, candidateIndex: number) => ApplyConfImportResult) | null
   >(null);
 
   const handleWorkerAssignmentSummariesChange = useCallback(
@@ -38,11 +42,29 @@ export function ConsolePage() {
     [],
   );
 
+  const handleApplyConfHandlerReady = useCallback(
+    (handler: (text: string, candidateIndex: number) => ApplyConfImportResult) => {
+      applyConfImportRef.current = handler;
+    },
+    [],
+  );
+
   const handleAssignCandidateToWorker = useCallback(
     (workerId: string, candidateIndex: number) =>
       assignCandidateRef.current?.(workerId, candidateIndex) ?? false,
     [],
   );
+
+  const handleApplyConfToAllWorkers = useCallback((text: string, candidateIndex: number) => {
+    return (
+      applyConfImportRef.current?.(text, candidateIndex) ?? {
+        ok: false,
+        message: "Workers panel is not ready yet.",
+        applied: 0,
+        skipped: 0,
+      }
+    );
+  }, []);
 
   useEffect(() => {
     if (!autoModeEnabled) return;
@@ -75,6 +97,7 @@ export function ConsolePage() {
               onResultChange={setCandidateContext}
               workerAssignmentSummaries={workerAssignmentSummaries}
               onAssignCandidateToWorker={handleAssignCandidateToWorker}
+              onApplyConfToAllWorkers={handleApplyConfToAllWorkers}
               embedded
             />
           </section>
@@ -95,6 +118,7 @@ export function ConsolePage() {
             onWorkerAssignmentSummariesChange={handleWorkerAssignmentSummariesChange}
             onWorkerLiveStatusesChange={handleWorkerLiveStatusesChange}
             onAssignHandlerReady={handleAssignHandlerReady}
+            onApplyConfHandlerReady={handleApplyConfHandlerReady}
             sectionChild
           />
         </section>

@@ -14,6 +14,7 @@ import { loadAutoModeState } from "../utils/autoModeStorage";
 import { ConfTooltip } from "./ConfTooltip";
 import { DeferredNumberInput } from "./DeferredNumberInput";
 import { WorkerAssignmentSummary } from "../types/workerAssignment";
+import { ApplyConfImportResult } from "../utils/workerConfImport";
 
 const DEFAULT_REGION = "chr20:10000000-15000000";
 
@@ -23,6 +24,7 @@ interface CandidateFinderPanelProps {
   onResultChange?: (result: FindCandidatesResponse | null) => void;
   workerAssignmentSummaries?: WorkerAssignmentSummary[];
   onAssignCandidateToWorker?: (workerId: string, candidateIndex: number) => boolean;
+  onApplyConfToAllWorkers?: (text: string, candidateIndex: number) => ApplyConfImportResult;
   embedded?: boolean;
 }
 
@@ -30,6 +32,7 @@ export function CandidateFinderPanel({
   onResultChange,
   workerAssignmentSummaries = [],
   onAssignCandidateToWorker,
+  onApplyConfToAllWorkers,
   embedded = false,
 }: CandidateFinderPanelProps) {
   const regionInitializedRef = useRef(false);
@@ -226,6 +229,11 @@ export function CandidateFinderPanel({
               workerSlots={workerAssignmentSummaries}
               assignMessage={assignMessage}
               onAssign={handleAssignWorker}
+              onApplyConfFile={
+                onApplyConfToAllWorkers
+                  ? (text) => onApplyConfToAllWorkers(text, selectedCandidate.index)
+                  : undefined
+              }
             />
           )}
         </div>
@@ -325,13 +333,70 @@ function CandidateWorkerAssignPanel({
   workerSlots,
   assignMessage,
   onAssign,
+  onApplyConfFile,
 }: {
   candidate: CandidatePreview;
   workerSlots: WorkerAssignmentSummary[];
   assignMessage: string | null;
   onAssign: (workerId: string, workerName: string) => void;
+  onApplyConfFile?: (text: string) => ApplyConfImportResult;
 }) {
   const region = candidate.source_window?.trim();
+  const importFileRef = useRef<HTMLInputElement>(null);
+  const [confDropActive, setConfDropActive] = useState(false);
+  const [confImportMessage, setConfImportMessage] = useState<string | null>(null);
+  const [confImportError, setConfImportError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!confImportMessage && !confImportError) return;
+    const timerId = window.setTimeout(() => {
+      setConfImportMessage(null);
+      setConfImportError(null);
+    }, 3200);
+    return () => window.clearTimeout(timerId);
+  }, [confImportMessage, confImportError]);
+
+  async function applyConfText(text: string) {
+    if (!onApplyConfFile) return;
+    setConfImportMessage(null);
+    setConfImportError(null);
+    const result = onApplyConfFile(text);
+    if (result.ok) {
+      setConfImportMessage(result.message);
+    } else {
+      setConfImportError(result.message);
+    }
+  }
+
+  async function handleConfFile(file: File | null | undefined) {
+    if (!file || !onApplyConfFile) return;
+    try {
+      const text = await file.text();
+      await applyConfText(text);
+    } catch (err) {
+      setConfImportError(err instanceof Error ? err.message : "Failed to read conf file");
+    }
+  }
+
+  function handleConfDragOver(e: DragEvent<HTMLDivElement>) {
+    if (!onApplyConfFile) return;
+    if (!e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    setConfDropActive(true);
+  }
+
+  function handleConfDragLeave() {
+    setConfDropActive(false);
+  }
+
+  async function handleConfDrop(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setConfDropActive(false);
+    if (!onApplyConfFile) return;
+    const file = e.dataTransfer.files?.[0];
+    await handleConfFile(file);
+  }
 
   return (
     <section className="candidate-worker-assign-panel" aria-label="Assign candidate to worker">
@@ -346,10 +411,47 @@ function CandidateWorkerAssignPanel({
             <span className="candidate-worker-assign-region-missing">No history region</span>
           )}
         </div>
-        <span className="candidate-worker-assign-hint">Click a worker to assign this base conf.</span>
+        <span className="candidate-worker-assign-hint">
+          Click a worker to assign, or drop a conf file below to apply to all workers.
+        </span>
       </div>
 
+      {onApplyConfFile && (
+        <div
+          className={`candidate-worker-assign-dropzone${confDropActive ? " candidate-worker-assign-dropzone--active" : ""}`}
+          onDragOver={handleConfDragOver}
+          onDragLeave={handleConfDragLeave}
+          onDrop={handleConfDrop}
+          onClick={() => importFileRef.current?.click()}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              importFileRef.current?.click();
+            }
+          }}
+        >
+          <span className="candidate-worker-assign-dropzone-title">Drop conf file here</span>
+          <span className="candidate-worker-assign-dropzone-hint">
+            JSON tunable export or <code>.conf</code> — applies params, intervals, CPUs, trials, and
+            time limits to every manual worker (skips auto mode).
+          </span>
+          <input
+            ref={importFileRef}
+            type="file"
+            accept=".json,.conf,.txt,application/json,text/plain"
+            className="sr-only"
+            onChange={(e) => void handleConfFile(e.target.files?.[0])}
+          />
+        </div>
+      )}
+
       {assignMessage && <div className="alert ok candidate-worker-assign-message">{assignMessage}</div>}
+      {confImportMessage && (
+        <div className="alert ok candidate-worker-assign-message">{confImportMessage}</div>
+      )}
+      {confImportError && <div className="alert error candidate-worker-assign-message">{confImportError}</div>}
 
       {workerSlots.length > 0 ? (
         <ul className="candidate-worker-assign-list">
