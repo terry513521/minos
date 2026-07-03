@@ -201,8 +201,9 @@ export function AutoModeTunableEditor({
         )}
         {error && <div className="alert error">{error}</div>}
 
-        <form className="form modal-form" onSubmit={(e) => void handleSubmit(e)}>
-          <div className="auto-mode-worker-algorithms">
+        <form className="form modal-form modal-form-auto-tunable" onSubmit={(e) => void handleSubmit(e)}>
+          <div className="auto-mode-tunable-scroll">
+            <div className="auto-mode-worker-algorithms">
             <span className="auto-mode-section-title">Worker settings</span>
             <p className="auto-mode-worker-algorithms-lead">
               Algorithm and per-trial Docker CPU/RAM for each auto worker.
@@ -290,8 +291,9 @@ export function AutoModeTunableEditor({
             onToggle={toggleParam}
             onIntervalChange={updateInterval}
           />
+          </div>
 
-          <div className="modal-actions">
+          <div className="modal-actions modal-actions-auto-tunable">
             <button type="button" className="button ghost" onClick={resetDefaults} disabled={loading}>
               Reset to defaults
             </button>
