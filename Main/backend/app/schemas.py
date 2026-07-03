@@ -240,6 +240,20 @@ class WorkerStopResponse(BaseModel):
     error: str | None = None
 
 
+class WorkerStopAllResult(BaseModel):
+    worker_id: str
+    worker_name: str
+    ok: bool
+    message: str | None = None
+    error: str | None = None
+
+
+class WorkersStopAllResponse(BaseModel):
+    workers: int
+    stopped_ok: int
+    results: list[WorkerStopAllResult] = Field(default_factory=list)
+
+
 class HistoryRecord(BaseModel):
     id: str
     window: str

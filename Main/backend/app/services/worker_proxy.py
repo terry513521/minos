@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 import httpx
 from sqlalchemy import select
@@ -247,3 +248,22 @@ async def stop_worker_optimization(db: AsyncSession, worker_id: str) -> WorkerSt
             status_code=None,
             error=str(exc),
         )
+
+
+async def stop_all_workers_optimization(db: AsyncSession) -> list[dict[str, Any]]:
+    """POST /stop on every registered worker."""
+    result = await db.execute(select(Worker).order_by(Worker.name))
+    workers = list(result.scalars().all())
+    stop_results: list[dict[str, Any]] = []
+    for worker in workers:
+        stop = await stop_worker_optimization(db, worker.id)
+        stop_results.append(
+            {
+                "worker_id": worker.id,
+                "worker_name": worker.name,
+                "ok": stop.ok,
+                "message": stop.message,
+                "error": stop.error,
+            }
+        )
+    return stop_results

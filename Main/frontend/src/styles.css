@@ -1456,6 +1456,13 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   font-size: 0.82rem;
 }
 
+.topbar-stop-all {
+  padding: 0.45rem 0.85rem;
+  font-size: 0.82rem;
+  border-color: rgba(248, 113, 113, 0.45);
+  color: #fca5a5;
+}
+
 .topbar-auto-mode {
   padding: 0.45rem 0.85rem;
   font-size: 0.82rem;

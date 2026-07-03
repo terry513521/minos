@@ -33,7 +33,7 @@ from app.services.control_plane_settings import (
     get_control_plane_setting,
     set_control_plane_setting,
 )
-from app.services.worker_proxy import dispatch_to_worker, fetch_worker_best, stop_worker_optimization
+from app.services.worker_proxy import dispatch_to_worker, fetch_worker_best, stop_all_workers_optimization, stop_worker_optimization
 
 SelectionReason = Literal["top_score", "most_similar", "best_composite"]
 
@@ -727,24 +727,7 @@ def build_dispatch_request(
 
 async def stop_all_auto_workers(db: AsyncSession) -> list[dict[str, Any]]:
     """Stop optimization on every registered worker."""
-    worker_names = await get_registered_worker_names(db)
-    if not worker_names:
-        return []
-    workers = await resolve_workers_by_name(db, tuple(worker_names))
-    stop_results: list[dict[str, Any]] = []
-    for worker_name in worker_names:
-        worker = workers[worker_name]
-        stop = await stop_worker_optimization(db, worker.id)
-        stop_results.append(
-            {
-                "worker_id": worker.id,
-                "worker_name": worker_name,
-                "ok": stop.ok,
-                "message": stop.message,
-                "error": stop.error,
-            }
-        )
-    return stop_results
+    return await stop_all_workers_optimization(db)
 
 
 def _session_time_remaining_seconds(session: AutoSession) -> int:

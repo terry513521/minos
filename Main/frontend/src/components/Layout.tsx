@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { api, AutoModeStatus } from "../api/client";
-import { AddWorkerModal } from "./AddWorkerModal";
+import { AddWorkerModal, WORKERS_CHANGED_EVENT } from "./AddWorkerModal";
 import { AUTO_MODE_CHANGED_EVENT } from "./AutoModePanel";
 import { AutoModeTunableEditor } from "./AutoModeTunableEditor";
 import { saveAutoModeState } from "../utils/autoModeStorage";
@@ -29,6 +29,7 @@ export function Layout() {
   enableConfirmOpenRef.current = enableConfirmOpen;
   const [autoBusy, setAutoBusy] = useState(false);
   const [autoRestarting, setAutoRestarting] = useState(false);
+  const [stoppingAllWorkers, setStoppingAllWorkers] = useState(false);
   const [autoMessage, setAutoMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -120,6 +121,40 @@ export function Layout() {
     }
   }
 
+  async function handleStopAllWorkers() {
+    if (
+      !window.confirm(
+        "Stop optimization on all registered workers?",
+      )
+    ) {
+      return;
+    }
+    setStoppingAllWorkers(true);
+    setAutoMessage(null);
+    try {
+      const result = await api.stopAllWorkersOptimization();
+      refreshAutoMode();
+      window.dispatchEvent(new Event(WORKERS_CHANGED_EVENT));
+      window.dispatchEvent(new Event(AUTO_MODE_CHANGED_EVENT));
+      if (result.workers === 0) {
+        setAutoMessage("No workers registered.");
+      } else if (result.stopped_ok === result.workers) {
+        setAutoMessage(`Stopped optimization on ${result.stopped_ok} worker(s).`);
+      } else {
+        const failed = result.results.filter((row) => !row.ok).map((row) => row.worker_name);
+        setAutoMessage(
+          `Stopped ${result.stopped_ok}/${result.workers} worker(s)${
+            failed.length ? ` — failed: ${failed.join(", ")}` : ""
+          }`,
+        );
+      }
+    } catch (err) {
+      setAutoMessage(err instanceof Error ? err.message : "Failed to stop workers");
+    } finally {
+      setStoppingAllWorkers(false);
+    }
+  }
+
   async function handleRestartAutoMode() {
     if (
       !window.confirm(
@@ -178,9 +213,18 @@ export function Layout() {
         <div className="topbar-right">
           <button
             type="button"
+            className="button ghost topbar-stop-all"
+            onClick={() => void handleStopAllWorkers()}
+            disabled={stoppingAllWorkers || autoBusy || autoRestarting}
+            title="Stop optimization on every registered worker"
+          >
+            {stoppingAllWorkers ? "Stopping…" : "Stop all"}
+          </button>
+          <button
+            type="button"
             className={`button ghost topbar-auto-mode${autoEnabled ? " is-on" : ""}`}
             onClick={handleToggleAutoMode}
-            disabled={autoBusy || autoRestarting}
+            disabled={autoBusy || autoRestarting || stoppingAllWorkers}
             aria-pressed={autoEnabled}
             title={
               autoEnabled
@@ -196,7 +240,7 @@ export function Layout() {
               type="button"
               className="button ghost topbar-auto-restart"
               onClick={() => void handleRestartAutoMode()}
-              disabled={autoRestarting || autoBusy}
+              disabled={autoRestarting || autoBusy || stoppingAllWorkers}
               title="Stop workers and clear session so POST /api/v1/auto/start works again"
             >
               {autoRestarting ? "Restarting…" : "Restart session"}

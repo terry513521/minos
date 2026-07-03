@@ -166,6 +166,18 @@ export interface WorkerStopResult {
   error: string | null;
 }
 
+export interface WorkersStopAllResult {
+  workers: number;
+  stopped_ok: number;
+  results: Array<{
+    worker_id: string;
+    worker_name: string;
+    ok: boolean;
+    message: string | null;
+    error: string | null;
+  }>;
+}
+
 export interface PlatformRound {
   enabled: boolean;
   polled_at: string | null;
@@ -327,6 +339,8 @@ export const api = {
     }),
   stopWorkerOptimization: (workerId: string) =>
     request<WorkerStopResult>(`/workers/${workerId}/stop`, { method: "POST" }),
+  stopAllWorkersOptimization: () =>
+    request<WorkersStopAllResult>("/workers/stop-all", { method: "POST" }),
   deleteWorker: (workerId: string) =>
     request<{ ok: string; worker_id: string }>(`/workers/${workerId}`, {
       method: "DELETE",

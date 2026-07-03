@@ -16,8 +16,10 @@ from app.schemas import (
     WorkerHealthCheckResponse,
     WorkerRegisterResponse,
     WorkerResponse,
+    WorkerStopAllResult,
     WorkerStatus,
     WorkerStopResponse,
+    WorkersStopAllResponse,
     WorkerUpdate,
 )
 from app.serializers import worker_to_response
@@ -25,6 +27,7 @@ from app.services.worker_proxy import (
     dispatch_to_worker,
     fetch_worker_best,
     get_worker,
+    stop_all_workers_optimization,
     stop_worker_optimization,
 )
 from app.worker_urls import normalize_worker_urls, resolve_worker_base_url
@@ -155,6 +158,26 @@ async def worker_heartbeat(
     await db.commit()
     await db.refresh(worker)
     return worker_to_response(worker)
+
+
+@router.post("/stop-all", response_model=WorkersStopAllResponse)
+async def stop_all_workers_endpoint(
+    db: AsyncSession = Depends(get_db),
+) -> WorkersStopAllResponse:
+    from app.services.auto_mode import auto_mode_store
+
+    raw_results = await stop_all_workers_optimization(db)
+    session = auto_mode_store.session
+    if session:
+        session.running = False
+
+    results = [WorkerStopAllResult(**row) for row in raw_results]
+    stopped_ok = sum(1 for row in results if row.ok)
+    return WorkersStopAllResponse(
+        workers=len(results),
+        stopped_ok=stopped_ok,
+        results=results,
+    )
 
 
 @router.get("/{worker_id}/health-check", response_model=WorkerHealthCheckResponse)

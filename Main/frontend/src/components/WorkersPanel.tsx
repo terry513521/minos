@@ -708,6 +708,18 @@ export function WorkersPanel({
     return () => window.clearInterval(intervalId);
   }, [workers, pollWorkerBest]);
 
+  useEffect(() => {
+    function refreshAllBest() {
+      for (const worker of workers) {
+        if (worker.base_url) {
+          void pollWorkerBest(worker.id, true);
+        }
+      }
+    }
+    window.addEventListener(WORKERS_CHANGED_EVENT, refreshAllBest);
+    return () => window.removeEventListener(WORKERS_CHANGED_EVENT, refreshAllBest);
+  }, [workers, pollWorkerBest]);
+
   async function handleDispatch(workerId: string) {
     const assignment = assignments[workerId];
     if (!assignment || assignment.selectedParams.length === 0) return;
