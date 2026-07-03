@@ -23,20 +23,10 @@ export function WorkerStatusOverview({ statuses }: WorkerStatusOverviewProps) {
         <p className="worker-status-overview-lead">Live best score and trial progress, highest score first.</p>
       </div>
       <ul className="worker-status-overview-list">
-        {rows.map((row, index) => (
-          <li
-            key={row.workerId}
-            className={`worker-status-overview-card${index === 0 && row.bestScore != null ? " worker-status-overview-card--leader" : ""}`}
-          >
+        {rows.map((row) => (
+          <li key={row.workerId} className="worker-status-overview-card">
             <div className="worker-status-overview-card-top">
-              <span className="worker-status-overview-name">
-                {index === 0 && row.bestScore != null && (
-                  <span className="worker-status-overview-rank" aria-hidden>
-                    1
-                  </span>
-                )}
-                {row.workerName}
-              </span>
+              <span className="worker-status-overview-name">{row.workerName}</span>
               <span
                 className={`badge ${row.connected ? "online" : "offline"}`}
                 title={row.connected ? "Connected" : "Not connected"}
