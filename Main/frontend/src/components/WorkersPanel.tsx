@@ -51,7 +51,7 @@ import { ConfManualEditor } from "./ConfManualEditor";
 import { ConfTooltip } from "./ConfTooltip";
 import {
   clearWorkerPanelEntry,
-  clearAllWorkerPanelAssignments,
+  clearAllWorkerPanelData,
   clearDismissedWorkerAssignments,
   dismissAllWorkerAssignments,
   dismissWorkerAssignment,
@@ -591,21 +591,23 @@ export function WorkersPanel({
     clearWorkerPanelEntry(workerId);
   }
 
-  function clearAllAssignments() {
+  function clearAllWorkerData() {
     const workerIds = workers.map((worker) => worker.id);
-    if (workerIds.length === 0) return;
-
-    dismissAllWorkerAssignments(workerIds);
+    if (workerIds.length > 0) {
+      dismissAllWorkerAssignments(workerIds);
+    }
     setDismissedWorkers(new Set(workerIds));
     setAssignments({});
     setDispatchByWorker({});
     setBaseConfByWorker({});
     setAutoAssignmentsByWorker({});
-    clearAllWorkerPanelAssignments();
+    setBestByWorker({});
+    setHealthByWorker({});
+    clearAllWorkerPanelData();
   }
 
-  const clearAllAssignmentsRef = useRef(clearAllAssignments);
-  clearAllAssignmentsRef.current = clearAllAssignments;
+  const clearAllWorkerDataRef = useRef(clearAllWorkerData);
+  clearAllWorkerDataRef.current = clearAllWorkerData;
 
   const assignCandidateToWorker = useCallback(
     (workerId: string, candidateIndex: number): boolean => {
@@ -1003,12 +1005,15 @@ export function WorkersPanel({
     }
 
     function onStopAll() {
-      void waitForAllWorkersIdle();
+      void (async () => {
+        await waitForAllWorkersIdle();
+        clearAllWorkerDataRef.current();
+      })();
     }
     window.addEventListener(WORKERS_STOP_ALL_EVENT, onStopAll);
 
     function onClearAll() {
-      clearAllAssignmentsRef.current();
+      clearAllWorkerDataRef.current();
     }
     window.addEventListener(WORKERS_CLEAR_ALL_EVENT, onClearAll);
 

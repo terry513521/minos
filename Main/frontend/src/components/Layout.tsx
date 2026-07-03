@@ -121,14 +121,14 @@ export function Layout() {
   function handleClearAllWorkers() {
     if (
       !window.confirm(
-        "Clear candidate assignments on all workers? Running optimizations are not stopped — use Stop all first if needed.",
+        "Clear all worker data? This removes assignments, best scores, and trial history from the dashboard.",
       )
     ) {
       return;
     }
     setAutoMessage(null);
     window.dispatchEvent(new Event(WORKERS_CLEAR_ALL_EVENT));
-    setAutoMessage("Cleared assignments on all workers.");
+    setAutoMessage("Cleared all worker dashboard data.");
   }
 
   function handleStartAllWorkers() {
@@ -147,7 +147,7 @@ export function Layout() {
   async function handleStopAllWorkers() {
     if (
       !window.confirm(
-        "Stop optimization on all registered workers?",
+        "Stop optimization on all workers and clear assignments, best scores, and trial history from the dashboard?",
       )
     ) {
       return;

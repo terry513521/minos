@@ -111,14 +111,17 @@ export function dismissAllWorkerAssignments(workerIds: string[]): void {
 }
 
 export function clearAllWorkerPanelAssignments(): void {
-  const current = loadWorkerPanelState();
-  if (!current) return;
-  saveWorkerPanelState({
-    ...current,
-    assignments: {},
-    baseConfByWorker: {},
-    dispatchByWorker: {},
-  });
+  clearAllWorkerPanelData();
+}
+
+/** Remove all persisted worker-panel data (assignments, bests, health, dismissed). */
+export function clearAllWorkerPanelData(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(DISMISSED_KEY);
+  } catch {
+    // Ignore private-mode errors.
+  }
 }
 
 export function restoreWorkerAssignment(workerId: string): void {
