@@ -333,6 +333,13 @@ class AutoModeUpdateRequest(BaseModel):
     enabled: bool
 
 
+class AutoModeTunableConfigUpdate(BaseModel):
+    """Editable auto-mode search parameters (persisted across restarts)."""
+
+    params: list[str] = Field(..., min_length=1)
+    param_intervals: dict[str, ParamIntervalSpec]
+
+
 class AutoDispatchAssignment(BaseModel):
     worker_id: str
     worker_name: str

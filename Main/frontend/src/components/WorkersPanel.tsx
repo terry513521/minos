@@ -45,7 +45,11 @@ import { ConfManualEditor } from "./ConfManualEditor";
 import { ConfTooltip } from "./ConfTooltip";
 import {
   clearWorkerPanelEntry,
+  clearDismissedWorkerAssignments,
+  dismissWorkerAssignment,
+  loadDismissedWorkerAssignments,
   loadWorkerPanelState,
+  restoreWorkerAssignment,
   saveWorkerPanelState,
 } from "../utils/workerPanelStorage";
 import {
@@ -192,6 +196,7 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
   const persisted = persistedRef.current;
   const persistedAutoRef = useRef(loadAutoModeState());
   const initialAutoStatus = persistedAutoRef.current?.status ?? null;
+  const initialDismissed = loadDismissedWorkerAssignments();
 
   const [workers, setWorkers] = useState<WorkerRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -203,9 +208,22 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
         normalizeWorkerAssignment(assignment),
       ]),
     );
-    if (!initialAutoStatus) return base;
-    return { ...base, ...manualAssignmentsFromEndedAuto(initialAutoStatus) };
+    if (!initialAutoStatus) {
+      return Object.fromEntries(
+        Object.entries(base).filter(([workerId]) => !initialDismissed.has(workerId)),
+      );
+    }
+    const manualFromAuto = manualAssignmentsFromEndedAuto(initialAutoStatus);
+    const merged = { ...base, ...manualFromAuto };
+    return Object.fromEntries(
+      Object.entries(merged).filter(([workerId]) => !initialDismissed.has(workerId)),
+    );
   });
+  const [dismissedWorkers, setDismissedWorkers] = useState<Set<string>>(
+    () => new Set(initialDismissed),
+  );
+  const dismissedWorkersRef = useRef(dismissedWorkers);
+  dismissedWorkersRef.current = dismissedWorkers;
   const [dragOverWorkerId, setDragOverWorkerId] = useState<string | null>(null);
   const [healthByWorker, setHealthByWorker] = useState<
     Record<string, WorkerHealthCheckResult | "loading">
@@ -246,13 +264,17 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
   const effectiveAssignmentsByWorker = useMemo(() => {
     const merged = { ...assignments };
     for (const [workerId, assignment] of Object.entries(autoAssignmentsByWorker)) {
-      merged[workerId] = assignment;
+      if (!dismissedWorkers.has(workerId)) {
+        merged[workerId] = assignment;
+      }
     }
     for (const [workerId, assignment] of Object.entries(autoPreviewByWorker)) {
-      if (!merged[workerId]) merged[workerId] = assignment;
+      if (!dismissedWorkers.has(workerId) && !merged[workerId]) {
+        merged[workerId] = assignment;
+      }
     }
     return merged;
-  }, [assignments, autoAssignmentsByWorker, autoPreviewByWorker]);
+  }, [assignments, autoAssignmentsByWorker, autoPreviewByWorker, dismissedWorkers]);
 
   const bestByWorkerRef = useRef(bestByWorker);
   bestByWorkerRef.current = bestByWorker;
@@ -318,7 +340,16 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
         setAutoAssignmentsByWorker(autoAssignmentsForStatus(status));
         const manualFromAuto = manualAssignmentsFromEndedAuto(status);
         if (Object.keys(manualFromAuto).length > 0) {
-          setAssignments((prev) => ({ ...prev, ...manualFromAuto }));
+          const dismissed = dismissedWorkersRef.current;
+          setAssignments((prev) => {
+            const next = { ...prev };
+            for (const [workerId, assignment] of Object.entries(manualFromAuto)) {
+              if (!dismissed.has(workerId)) {
+                next[workerId] = assignment;
+              }
+            }
+            return next;
+          });
         }
       })
       .catch(() => {});
@@ -336,6 +367,12 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
       window.clearInterval(intervalId);
     };
   }, [refreshAutoMode]);
+
+  useEffect(() => {
+    if (!autoModeStatus?.running) return;
+    setDismissedWorkers(new Set());
+    clearDismissedWorkerAssignments();
+  }, [autoModeStatus?.running, autoModeStatus?.started_at]);
 
   useEffect(() => {
     saveWorkerPanelState({
@@ -382,12 +419,23 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
   }
 
   function clearAssignment(workerId: string) {
+    setDismissedWorkers((prev) => {
+      const next = new Set(prev);
+      next.add(workerId);
+      dismissWorkerAssignment(workerId);
+      return next;
+    });
     setAssignments((prev) => {
       const next = { ...prev };
       delete next[workerId];
       return next;
     });
     setDispatchByWorker((prev) => {
+      const next = { ...prev };
+      delete next[workerId];
+      return next;
+    });
+    setBaseConfByWorker((prev) => {
       const next = { ...prev };
       delete next[workerId];
       return next;
@@ -424,6 +472,14 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
 
     const candidate = candidateContext.candidates.find((c) => c.index === payload.index);
     if (!candidate) return;
+
+    restoreWorkerAssignment(workerId);
+    setDismissedWorkers((prev) => {
+      if (!prev.has(workerId)) return prev;
+      const next = new Set(prev);
+      next.delete(workerId);
+      return next;
+    });
 
     setAssignments((prev) => ({
       ...prev,
@@ -800,9 +856,11 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
       ) : (
         <div className="worker-card-grid">
           {displayWorkers.map((worker) => {
-            const autoAssignment =
-              autoAssignmentsByWorker[worker.id] ?? autoPreviewByWorker[worker.id];
-            const assignment = autoAssignment ?? assignments[worker.id];
+            const dismissed = dismissedWorkers.has(worker.id);
+            const autoAssignment = dismissed
+              ? undefined
+              : autoAssignmentsByWorker[worker.id] ?? autoPreviewByWorker[worker.id];
+            const assignment = autoAssignment ?? (dismissed ? undefined : assignments[worker.id]);
             const autoManaged = Boolean(autoAssignment?.autoManaged);
             const health = healthByWorker[worker.id];
             const best = bestByWorker[worker.id];
@@ -1058,7 +1116,10 @@ export function WorkersPanel({ candidateContext = null }: WorkersPanelProps) {
                         <button
                           type="button"
                           className="button ghost worker-assignment-clear"
-                          onClick={() => clearAssignment(worker.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            clearAssignment(worker.id);
+                          }}
                         >
                           Clear
                         </button>

@@ -419,70 +419,10 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
             return time.time() >= deadline or is_stop_requested()
 
         if not timed_out():
-<<<<<<< HEAD
-            if is_adaptive_algorithm(algorithm):
-                logger.info(
-                    "Starting %s search: up to %s trials after base",
-                    algorithm,
-                    adaptive_max_trials,
-                )
-                _run_adaptive_search(
-                    request=job_request,
-                    base_conf=job_request.base_conf,
-                    intervals=intervals,
-                    algorithm=algorithm,
-                    concurrency=concurrency,
-                    max_trials=adaptive_max_trials,
-                    work_root=work_root,
-                    settings=settings,
-                    timed_out=timed_out,
-                    record_result=record_result,
-                )
-            elif use_param_split:
-                logger.info(
-                    "Starting param-split search: %s lane(s), %s trials after base",
-                    len(plan["lanes"]),
-                    max(0, search_space_size - 1),
-                )
-                _run_param_split_lanes(
-                    request=job_request,
-                    base_conf=job_request.base_conf,
-                    intervals=intervals,
-                    concurrency=concurrency,
-                    work_root=work_root,
-                    settings=settings,
-                    timed_out=timed_out,
-                    record_result=record_result,
-                )
-            else:
-                variants = build_search_space(
-                    job_request.base_conf, job_request.tool, job_request.params, intervals
-                )
-                candidate_variants = [
-                    v for v in variants if not conf_equals(v, job_request.base_conf)
-                ]
-                logger.info(
-                    "Starting full grid: %s configs (%s trials after base), concurrency %s",
-                    plan["full_cartesian_grid"],
-                    len(candidate_variants),
-                    concurrency,
-                )
-                if candidate_variants:
-                    evaluate = lambda conf: _evaluate_conf(
-                        job_request, conf, work_root, settings
-                    )
-                    _run_parallel_grid(
-                        candidate_variants=candidate_variants,
-                        concurrency=concurrency,
-                        timed_out=timed_out,
-                        evaluate=evaluate,
-                        record_result=record_result,
-                    )
-=======
             logger.info(
                 "Starting %s search: up to %s trials after base",
                 algorithm,
-                settings.adaptive_max_trials,
+                adaptive_max_trials,
             )
             _run_adaptive_search(
                 request=job_request,
@@ -490,13 +430,12 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
                 intervals=intervals,
                 algorithm=algorithm,
                 concurrency=concurrency,
-                max_trials=settings.adaptive_max_trials,
+                max_trials=adaptive_max_trials,
                 work_root=work_root,
                 settings=settings,
                 timed_out=timed_out,
                 record_result=record_result,
             )
->>>>>>> e87a6ff604bb77a556a2525b4658384b8cee650b
 
         if best_score is None:
             message = errors[0] if errors else "No successful benchmark trials"

@@ -188,6 +188,11 @@ export interface PlatformRound {
   hotkey_ss58: string | null;
 }
 
+export interface AutoModeTunableConfigUpdate {
+  params: string[];
+  param_intervals: Record<string, ParamIntervalPayload>;
+}
+
 export interface AutoModeConfig {
   tool: string;
   params: string[];
@@ -344,5 +349,10 @@ export const api = {
   restartAutoMode: () =>
     request<AutoModeStatus>("/auto/restart", {
       method: "POST",
+    }),
+  updateAutoModeConfig: (body: AutoModeTunableConfigUpdate) =>
+    request<AutoModeStatus>("/auto/config", {
+      method: "PUT",
+      body: JSON.stringify(body),
     }),
 };

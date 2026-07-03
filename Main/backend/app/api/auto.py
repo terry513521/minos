@@ -5,11 +5,18 @@ from app.database import get_db
 from app.schemas import (
     AutoBestResponse,
     AutoModeStatus,
+    AutoModeTunableConfigUpdate,
     AutoModeUpdateRequest,
     AutoStartRequest,
     AutoStartResponse,
 )
-from app.services.auto_mode import auto_mode_store, collect_best_and_stop, restart_auto_mode_session, start_auto_mode
+from app.services.auto_mode import (
+    auto_mode_store,
+    collect_best_and_stop,
+    restart_auto_mode_session,
+    start_auto_mode,
+    update_auto_mode_tunable_config,
+)
 
 router = APIRouter(prefix="/auto", tags=["auto"])
 
@@ -22,6 +29,21 @@ async def get_auto_mode() -> AutoModeStatus:
 @router.put("/mode", response_model=AutoModeStatus)
 async def set_auto_mode(body: AutoModeUpdateRequest) -> AutoModeStatus:
     return auto_mode_store.set_enabled(body.enabled)
+
+
+@router.put("/config", response_model=AutoModeStatus)
+async def set_auto_mode_config(
+    body: AutoModeTunableConfigUpdate,
+    db: AsyncSession = Depends(get_db),
+) -> AutoModeStatus:
+    try:
+        return await update_auto_mode_tunable_config(
+            db,
+            params=body.params,
+            param_intervals=body.param_intervals,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/start", response_model=AutoStartResponse)

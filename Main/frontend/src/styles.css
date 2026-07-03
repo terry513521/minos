@@ -1364,6 +1364,28 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   margin-top: 0.85rem;
 }
 
+.auto-mode-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.auto-mode-section-head .auto-mode-section-title {
+  margin-bottom: 0;
+}
+
+.auto-mode-edit-params-btn {
+  flex-shrink: 0;
+  font-size: 0.8125rem;
+}
+
+.modal-panel-wide {
+  max-width: 52rem;
+  width: min(52rem, calc(100vw - 2rem));
+}
+
 .auto-mode-section-title {
   display: block;
   margin-bottom: 0.45rem;

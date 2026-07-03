@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -27,6 +28,7 @@ from app.services.candidate_finder import load_history_entries, scored_pool_to_p
 from app.engine.candidate_finder import CandidateFinderEngine
 from app.defaults import default_tool_conf
 from app.services.control_plane_settings import (
+    AUTO_MODE_TUNABLE_CONFIG_KEY,
     LAST_AUTO_START_REGION_KEY,
     get_control_plane_setting,
     set_control_plane_setting,
@@ -42,17 +44,7 @@ WORKER_SELECTION_RULES: tuple[tuple[str, SelectionReason], ...] = (
     ("Big", "most_similar"),
     ("Igno", "best_composite"),
 )
-<<<<<<< HEAD
 AUTO_ALGORITHM = "optuna"
-=======
-AUTO_ALGORITHM_OPTUNA_WEIGHT = 2
-AUTO_ALGORITHM_RANDOM_WEIGHT = 1
-AUTO_WORKER_ALGORITHMS: dict[str, str] = {
-    "VM": "optuna",
-    "Big": "optuna",
-    "Igno": "random",
-}
->>>>>>> e87a6ff604bb77a556a2525b4658384b8cee650b
 AUTO_FIND_K = 6
 AUTO_SELECT_K = 3
 AUTO_LIMIT_SECONDS = 50 * 60
@@ -80,6 +72,65 @@ AUTO_PARAM_INTERVALS: dict[str, ParamIntervalSpec] = {
 
 
 @dataclass
+class AutoModeTunableConfig:
+    params: list[str]
+    param_intervals: dict[str, ParamIntervalSpec]
+
+
+def default_auto_tunable_config() -> AutoModeTunableConfig:
+    return AutoModeTunableConfig(
+        params=list(AUTO_PARAMS),
+        param_intervals=dict(AUTO_PARAM_INTERVALS),
+    )
+
+
+def _tunable_config_to_json(config: AutoModeTunableConfig) -> str:
+    return json.dumps(
+        {
+            "params": config.params,
+            "param_intervals": {
+                name: spec.model_dump(exclude_none=True)
+                for name, spec in config.param_intervals.items()
+            },
+        }
+    )
+
+
+def _tunable_config_from_json(raw: str) -> AutoModeTunableConfig:
+    payload = json.loads(raw)
+    if not isinstance(payload, dict):
+        raise ValueError("auto_mode_tunable_config must be a JSON object")
+    params = payload.get("params")
+    intervals_raw = payload.get("param_intervals")
+    if not isinstance(params, list) or not params:
+        raise ValueError("auto_mode_tunable_config.params must be a non-empty list")
+    if not isinstance(intervals_raw, dict):
+        raise ValueError("auto_mode_tunable_config.param_intervals must be an object")
+    intervals = {
+        str(name): ParamIntervalSpec(**spec)
+        for name, spec in intervals_raw.items()
+        if isinstance(spec, dict)
+    }
+    return AutoModeTunableConfig(params=[str(p) for p in params], param_intervals=intervals)
+
+
+def validate_auto_tunable_config(config: AutoModeTunableConfig) -> None:
+    if not config.params:
+        raise ValueError("At least one tunable parameter is required")
+    for param in config.params:
+        if param not in config.param_intervals:
+            raise ValueError(f"Missing search interval for parameter: {param}")
+
+
+def effective_auto_params() -> list[str]:
+    return list(auto_mode_store.tunable.params)
+
+
+def effective_auto_param_intervals() -> dict[str, ParamIntervalSpec]:
+    return dict(auto_mode_store.tunable.param_intervals)
+
+
+@dataclass
 class SelectedCandidateSlot:
     worker_name: str
     candidate: CandidatePreview
@@ -99,12 +150,13 @@ class AutoSession:
 
 
 def auto_mode_config() -> AutoModeConfig:
+    tunable = auto_mode_store.tunable
     return AutoModeConfig(
         tool=AUTO_TOOL,
-        params=list(AUTO_PARAMS),
-        param_intervals=dict(AUTO_PARAM_INTERVALS),
+        params=list(tunable.params),
+        param_intervals=dict(tunable.param_intervals),
         worker_names=list(AUTO_WORKER_NAMES),
-        worker_algorithms=dict(AUTO_WORKER_ALGORITHMS),
+        worker_algorithms={},
         assignment_strategy=AUTO_ASSIGNMENT_STRATEGY,
         limit_seconds=AUTO_LIMIT_SECONDS,
         adaptive_max_trials=AUTO_ADAPTIVE_MAX_TRIALS,
@@ -137,6 +189,7 @@ class AutoModeStore:
         self.enabled = False
         self.session: AutoSession | None = None
         self.last_started_region: str | None = None
+        self.tunable: AutoModeTunableConfig = default_auto_tunable_config()
 
     def status(self) -> AutoModeStatus:
         session = self.session
@@ -172,6 +225,14 @@ class AutoModeStore:
         self.last_started_region = None
         return self.status()
 
+    def set_tunable(self, config: AutoModeTunableConfig) -> AutoModeStatus:
+        validate_auto_tunable_config(config)
+        self.tunable = AutoModeTunableConfig(
+            params=list(config.params),
+            param_intervals=dict(config.param_intervals),
+        )
+        return self.status()
+
 
 auto_mode_store = AutoModeStore()
 
@@ -181,6 +242,28 @@ async def load_auto_mode_state(db: AsyncSession) -> None:
     auto_mode_store.last_started_region = await get_control_plane_setting(
         db, LAST_AUTO_START_REGION_KEY
     )
+    raw_tunable = await get_control_plane_setting(db, AUTO_MODE_TUNABLE_CONFIG_KEY)
+    if raw_tunable:
+        try:
+            auto_mode_store.tunable = _tunable_config_from_json(raw_tunable)
+            validate_auto_tunable_config(auto_mode_store.tunable)
+        except (ValueError, TypeError, json.JSONDecodeError):
+            auto_mode_store.tunable = default_auto_tunable_config()
+
+
+async def update_auto_mode_tunable_config(
+    db: AsyncSession,
+    *,
+    params: list[str],
+    param_intervals: dict[str, ParamIntervalSpec],
+) -> AutoModeStatus:
+    if auto_mode_store.session and auto_mode_store.session.running:
+        raise ValueError("Cannot edit tunable parameters while an auto session is running")
+    config = AutoModeTunableConfig(params=list(params), param_intervals=dict(param_intervals))
+    validate_auto_tunable_config(config)
+    status = auto_mode_store.set_tunable(config)
+    await set_control_plane_setting(db, AUTO_MODE_TUNABLE_CONFIG_KEY, _tunable_config_to_json(config))
+    return status
 
 
 def _skipped_start_response(*, region: str, tool: str, message: str) -> AutoStartResponse:
@@ -314,7 +397,6 @@ def assign_workers_by_metric(
     for worker_name, reason in WORKER_SELECTION_RULES:
         if worker_name not in worker_names:
             continue
-        algorithm = AUTO_WORKER_ALGORITHMS[worker_name]
         score_fn = score_fns[reason]
         available = [candidate for candidate in candidates if candidate.index not in used_indices]
         if not available:
@@ -389,8 +471,8 @@ def build_dispatch_request(
         window=window,
         tool=tool,
         base_conf=with_trial_resources(base_conf),
-        params=list(AUTO_PARAMS),
-        param_intervals=dict(AUTO_PARAM_INTERVALS),
+        params=effective_auto_params(),
+        param_intervals=effective_auto_param_intervals(),
         concurrency=AUTO_CONCURRENCY,
         algorithm=AUTO_ALGORITHM,
         limit_seconds=AUTO_LIMIT_SECONDS,
@@ -500,11 +582,11 @@ async def start_auto_mode(
             similarity=candidate.similarity,
             base_conf=with_trial_resources(candidate.base_conf),
             window=dispatch_window,
-            params=list(AUTO_PARAMS),
-            param_intervals=dict(AUTO_PARAM_INTERVALS),
+            params=effective_auto_params(),
+            param_intervals=effective_auto_param_intervals(),
             concurrency=AUTO_CONCURRENCY,
             limit_seconds=AUTO_LIMIT_SECONDS,
-        adaptive_max_trials=AUTO_ADAPTIVE_MAX_TRIALS,
+            adaptive_max_trials=AUTO_ADAPTIVE_MAX_TRIALS,
             dispatch_ok=response.ok,
             dispatch_error=response.error,
             job_id=(response.result or {}).get("job_id") if response.result else None,

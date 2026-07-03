@@ -5,7 +5,6 @@ from app.services.auto_mode import (
     AUTO_ALGORITHM,
     AUTO_SCORE_WEIGHT,
     AUTO_SIMILARITY_WEIGHT,
-    AUTO_WORKER_ALGORITHMS,
     AutoModeStore,
     AutoSession,
     assign_workers_by_metric,
@@ -45,17 +44,6 @@ def test_composite_candidate_score():
     assert composite_candidate_score(candidate) == expected
 
 
-<<<<<<< HEAD
-=======
-def test_auto_worker_algorithms_are_fixed_per_worker():
-    assert AUTO_WORKER_ALGORITHMS == {
-        "VM": "optuna",
-        "Big": "optuna",
-        "Igno": "random",
-    }
-
-
->>>>>>> e87a6ff604bb77a556a2525b4658384b8cee650b
 def test_build_diverse_candidate_pool_prioritizes_score_similarity_composite():
     pool = [
         CandidatePreview(
@@ -141,7 +129,37 @@ def test_auto_dispatch_uses_fixed_algorithm():
 
     merged = with_trial_resources({"gatk_options": {"x": 1}, "threads": 8})
     assert merged["threads"] == 4
-    assert merged["memory_gb"] == 7
+    assert merged["memory_gb"] == 6
+
+
+def test_update_auto_tunable_config_persists():
+    from app.schemas import ParamIntervalSpec
+    from app.services.auto_mode import (
+        auto_mode_store,
+        default_auto_tunable_config,
+        update_auto_mode_tunable_config,
+    )
+
+    auto_mode_store.tunable = default_auto_tunable_config()
+    auto_mode_store.session = None
+
+    async def _run():
+        from app.database import SessionLocal
+
+        async with SessionLocal() as db:
+            status = await update_auto_mode_tunable_config(
+                db,
+                params=["min_base_quality_score"],
+                param_intervals={
+                    "min_base_quality_score": ParamIntervalSpec(min=8.0, max=18.0, step=2.0),
+                },
+            )
+            assert status.config.params == ["min_base_quality_score"]
+            assert status.config.param_intervals["min_base_quality_score"].min == 8.0
+
+    import asyncio
+
+    asyncio.run(_run())
 
 
 def test_disable_auto_mode_keeps_session_running():

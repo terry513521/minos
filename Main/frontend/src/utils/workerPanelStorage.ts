@@ -6,6 +6,7 @@ import {
 import { WorkerAssignment, normalizeWorkerAssignment } from "../types/workerAssignment";
 
 const STORAGE_KEY = "effortless:worker-panel:v1";
+const DISMISSED_KEY = "effortless:worker-panel:dismissed:v1";
 
 export interface PersistedWorkerPanelState {
   assignments: Record<string, WorkerAssignment>;
@@ -64,12 +65,57 @@ export function saveWorkerPanelState(state: PersistedWorkerPanelState): void {
 
 export function clearWorkerPanelEntry(workerId: string): void {
   const current = loadWorkerPanelState();
-  if (!current) return;
-  const next = { ...current };
+  const next: PersistedWorkerPanelState = current ?? {
+    assignments: {},
+    baseConfByWorker: {},
+    dispatchByWorker: {},
+    bestByWorker: {},
+    healthByWorker: {},
+  };
   delete next.assignments[workerId];
   delete next.baseConfByWorker[workerId];
   delete next.dispatchByWorker[workerId];
   delete next.bestByWorker[workerId];
   delete next.healthByWorker[workerId];
   saveWorkerPanelState(next);
+}
+
+export function loadDismissedWorkerAssignments(): Set<string> {
+  try {
+    const raw = localStorage.getItem(DISMISSED_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(parsed.filter((id): id is string => typeof id === "string" && id.length > 0));
+  } catch {
+    return new Set();
+  }
+}
+
+function saveDismissedWorkerAssignments(ids: Set<string>): void {
+  try {
+    localStorage.setItem(DISMISSED_KEY, JSON.stringify([...ids]));
+  } catch {
+    // Ignore quota / private-mode errors.
+  }
+}
+
+export function dismissWorkerAssignment(workerId: string): void {
+  const next = loadDismissedWorkerAssignments();
+  next.add(workerId);
+  saveDismissedWorkerAssignments(next);
+}
+
+export function restoreWorkerAssignment(workerId: string): void {
+  const next = loadDismissedWorkerAssignments();
+  next.delete(workerId);
+  saveDismissedWorkerAssignments(next);
+}
+
+export function clearDismissedWorkerAssignments(): void {
+  try {
+    localStorage.removeItem(DISMISSED_KEY);
+  } catch {
+    // Ignore private-mode errors.
+  }
 }

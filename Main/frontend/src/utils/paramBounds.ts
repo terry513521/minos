@@ -251,3 +251,51 @@ export function buildDispatchParamIntervals(
   }
   return Object.keys(out).length > 0 ? out : undefined;
 }
+
+/** Reference GATK conf for auto-mode param picker (all whitelisted params). */
+const GATK_REFERENCE_VALUES: Record<string, string | number | boolean> = {
+  min_base_quality_score: 10,
+  min_mapping_quality_score: 20,
+  base_quality_score_threshold: 18,
+  standard_min_confidence_threshold_for_calling: 30,
+  emit_ref_confidence: "NONE",
+  pcr_indel_model: "CONSERVATIVE",
+  min_pruning: 2,
+  max_alternate_alleles: 6,
+  min_dangling_branch_length: 4,
+  recover_all_dangling_branches: false,
+  max_num_haplotypes_in_population: 128,
+  adaptive_pruning_initial_error_rate: 0.001,
+  pruning_lod_threshold: 2.302585,
+  active_probability_threshold: 0.002,
+  min_assembly_region_size: 50,
+  max_assembly_region_size: 300,
+  assembly_region_padding: 100,
+  pair_hmm_gap_continuation_penalty: 10,
+  phred_scaled_global_read_mismapping_rate: 45,
+  heterozygosity: 0.001,
+  indel_heterozygosity: 0.000125,
+  sample_ploidy: 2,
+  contamination_fraction_to_filter: 0,
+  max_reads_per_alignment_start: 50,
+  dont_use_soft_clipped_bases: false,
+};
+
+export function listGatkParamNames(): string[] {
+  return Object.keys(GATK_BOUNDS);
+}
+
+export function buildGatkReferenceConf(): Record<string, unknown> {
+  const gatk_options: Record<string, unknown> = { ...GATK_REFERENCE_VALUES };
+  for (const [name, spec] of Object.entries(GATK_BOUNDS)) {
+    if (name in gatk_options) continue;
+    if (spec.type === "enum") {
+      gatk_options[name] = spec.allowedValues?.[0] ?? "";
+    } else if (spec.type === "bool") {
+      gatk_options[name] = false;
+    } else {
+      gatk_options[name] = spec.min ?? 0;
+    }
+  }
+  return { gatk_options };
+}

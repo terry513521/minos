@@ -182,15 +182,8 @@ def count_search_trials(
     param_names: list[str],
     param_intervals: dict[str, Any] | None,
     *,
-<<<<<<< HEAD
-    concurrency: int = 1,
-    param_split: bool = True,
-    algorithm: str = "grid",
-    adaptive_max_trials: int = 44,
-=======
     algorithm: str = "optuna",
-    adaptive_max_trials: int = 30,
->>>>>>> e87a6ff604bb77a556a2525b4658384b8cee650b
+    adaptive_max_trials: int = 44,
 ) -> int:
     """Trials to run: 1 base + adaptive search cap."""
     normalize_algorithm(algorithm)
