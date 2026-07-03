@@ -41,7 +41,7 @@ export function formatWorkerTrialProgress(
   const planned = total && total > 0 ? total : null;
   if (planned) {
     if (status === "optimizing" || status === "stopping") return `${done} / ${planned}`;
-    return `${done} / ${planned} trials`;
+    return `${done} / ${planned}`;
   }
   if (done > 0) return `${done} trial${done === 1 ? "" : "s"}`;
   return "—";
