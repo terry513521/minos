@@ -179,6 +179,16 @@ def validate_auto_tunable_config(config: AutoModeTunableConfig) -> None:
     )
 
 
+def validate_worker_algorithms(worker_algorithms: dict[str, str]) -> None:
+    for worker_name in AUTO_WORKER_NAMES:
+        algorithm = worker_algorithms.get(worker_name, AUTO_ALGORITHM)
+        if algorithm not in AUTO_ALGORITHMS:
+            raise ValueError(
+                f"Unsupported algorithm for {worker_name}: {algorithm!r} "
+                f"(use {', '.join(sorted(AUTO_ALGORITHMS))})"
+            )
+
+
 def clamp_trial_threads(value: int) -> int:
     return max(1, min(32, int(value)))
 
@@ -253,6 +263,8 @@ def auto_mode_config() -> AutoModeConfig:
         param_intervals=dict(tunable.param_intervals),
         worker_names=list(AUTO_WORKER_NAMES),
         worker_algorithms=effective_worker_algorithms(),
+        worker_trial_threads=effective_worker_trial_threads(),
+        worker_trial_memory_gb=effective_worker_trial_memory_gb(),
         assignment_strategy=AUTO_ASSIGNMENT_STRATEGY,
         limit_seconds=AUTO_LIMIT_SECONDS,
         adaptive_max_trials=AUTO_ADAPTIVE_MAX_TRIALS,
@@ -327,6 +339,8 @@ class AutoModeStore:
             params=list(config.params),
             param_intervals=dict(config.param_intervals),
             worker_algorithms=dict(config.worker_algorithms),
+            worker_trial_threads=dict(config.worker_trial_threads),
+            worker_trial_memory_gb=dict(config.worker_trial_memory_gb),
         )
         return self.status()
 
@@ -354,6 +368,8 @@ async def update_auto_mode_tunable_config(
     params: list[str],
     param_intervals: dict[str, ParamIntervalSpec],
     worker_algorithms: dict[str, str] | None = None,
+    worker_trial_threads: dict[str, int] | None = None,
+    worker_trial_memory_gb: dict[str, int] | None = None,
 ) -> AutoModeStatus:
     if auto_mode_store.session and auto_mode_store.session.running:
         raise ValueError("Cannot edit tunable parameters while an auto session is running")
@@ -362,10 +378,22 @@ async def update_auto_mode_tunable_config(
         if worker_algorithms is not None
         else dict(auto_mode_store.tunable.worker_algorithms)
     )
+    trial_threads = (
+        dict(worker_trial_threads)
+        if worker_trial_threads is not None
+        else dict(auto_mode_store.tunable.worker_trial_threads)
+    )
+    trial_memory_gb = (
+        dict(worker_trial_memory_gb)
+        if worker_trial_memory_gb is not None
+        else dict(auto_mode_store.tunable.worker_trial_memory_gb)
+    )
     config = AutoModeTunableConfig(
         params=list(params),
         param_intervals=dict(param_intervals),
         worker_algorithms=algorithms,
+        worker_trial_threads=trial_threads,
+        worker_trial_memory_gb=trial_memory_gb,
     )
     validate_auto_tunable_config(config)
     status = auto_mode_store.set_tunable(config)
@@ -559,11 +587,16 @@ def candidate_dispatch_window(candidate: CandidatePreview, fallback: str) -> str
         return fallback
 
 
-def with_trial_resources(base_conf: dict[str, Any]) -> dict[str, Any]:
+def with_trial_resources(
+    base_conf: dict[str, Any],
+    *,
+    trial_threads: int = AUTO_TRIAL_THREADS,
+    trial_memory_gb: int = AUTO_TRIAL_MEMORY_GB,
+) -> dict[str, Any]:
     """Attach per-trial Docker CPU/RAM for GATK benchmarks."""
     merged = dict(base_conf)
-    merged["threads"] = AUTO_TRIAL_THREADS
-    merged["memory_gb"] = AUTO_TRIAL_MEMORY_GB
+    merged["threads"] = clamp_trial_threads(trial_threads)
+    merged["memory_gb"] = clamp_trial_memory_gb(trial_memory_gb)
     return merged
 
 
@@ -574,11 +607,17 @@ def build_dispatch_request(
     base_conf: dict[str, Any],
     candidate_index: int,
     algorithm: str = AUTO_ALGORITHM,
+    trial_threads: int = AUTO_TRIAL_THREADS,
+    trial_memory_gb: int = AUTO_TRIAL_MEMORY_GB,
 ) -> WorkerDispatchRequest:
     return WorkerDispatchRequest(
         window=window,
         tool=tool,
-        base_conf=with_trial_resources(base_conf),
+        base_conf=with_trial_resources(
+            base_conf,
+            trial_threads=trial_threads,
+            trial_memory_gb=trial_memory_gb,
+        ),
         params=effective_auto_params(),
         param_intervals=effective_auto_param_intervals(),
         concurrency=AUTO_CONCURRENCY,
@@ -663,6 +702,8 @@ async def start_auto_mode(
 
     workers = await resolve_workers_by_name(db, AUTO_WORKER_NAMES)
     worker_algorithms = effective_worker_algorithms()
+    worker_trial_threads = effective_worker_trial_threads()
+    worker_trial_memory_gb = effective_worker_trial_memory_gb()
 
     assignments: list[AutoDispatchAssignment] = []
     dispatch_results: list[AutoDispatchAssignment] = []
@@ -671,6 +712,8 @@ async def start_auto_mode(
         worker_name = slot.worker_name
         candidate = slot.candidate
         algorithm = worker_algorithms[worker_name]
+        trial_threads = worker_trial_threads[worker_name]
+        trial_memory_gb = worker_trial_memory_gb[worker_name]
         worker = workers[worker_name]
         dispatch_window = candidate_dispatch_window(candidate, window)
         dispatch_body = build_dispatch_request(
@@ -679,6 +722,8 @@ async def start_auto_mode(
             base_conf=candidate.base_conf,
             candidate_index=candidate.index,
             algorithm=algorithm,
+            trial_threads=trial_threads,
+            trial_memory_gb=trial_memory_gb,
         )
         response = await dispatch_to_worker(db, worker.id, dispatch_body)
         assignment = AutoDispatchAssignment(
@@ -690,7 +735,11 @@ async def start_auto_mode(
             composite_score=composite_candidate_score(candidate),
             history_score=candidate.history_score,
             similarity=candidate.similarity,
-            base_conf=with_trial_resources(candidate.base_conf),
+            base_conf=with_trial_resources(
+                candidate.base_conf,
+                trial_threads=trial_threads,
+                trial_memory_gb=trial_memory_gb,
+            ),
             window=dispatch_window,
             params=effective_auto_params(),
             param_intervals=effective_auto_param_intervals(),

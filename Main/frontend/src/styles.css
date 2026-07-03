@@ -1620,6 +1620,46 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   width: 100%;
 }
 
+.auto-mode-worker-settings-table-wrap {
+  overflow-x: auto;
+}
+
+.auto-mode-worker-settings-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+}
+
+.auto-mode-worker-settings-table th,
+.auto-mode-worker-settings-table td {
+  padding: 0.55rem 0.65rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.auto-mode-worker-settings-table th {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.auto-mode-worker-settings-name {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.auto-mode-worker-resource-input {
+  width: 100%;
+  min-width: 5.5rem;
+  padding: 0.42rem 0.55rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+
 .auto-mode-worker-algorithm-summary {
   display: flex;
   flex-wrap: wrap;

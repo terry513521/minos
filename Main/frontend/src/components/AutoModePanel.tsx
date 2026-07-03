@@ -12,6 +12,8 @@ import {
   formatParamInterval,
   paramIntervalsFromAutoConfig,
   workerAlgorithmsFromAutoConfig,
+  workerTrialMemoryGbFromAutoConfig,
+  workerTrialThreadsFromAutoConfig,
 } from "../utils/autoModeSync";
 import { ConfTooltip } from "./ConfTooltip";
 import { LimitCountdownBadge } from "./LimitCountdownBadge";
@@ -70,6 +72,8 @@ export function AutoModePanel({ embedded = false }: AutoModePanelProps) {
   const config = status.config;
   const paramIntervals = paramIntervalsFromAutoConfig(config);
   const workerAlgorithms = workerAlgorithmsFromAutoConfig(config);
+  const workerTrialThreads = workerTrialThreadsFromAutoConfig(config);
+  const workerTrialMemoryGb = workerTrialMemoryGbFromAutoConfig(config);
   const selectionByIndex = selectionSlotsByIndex(status.selected_candidates);
   const foundCount = status.found_candidates.length || status.candidates_found;
   const canRestartSession =
@@ -191,11 +195,12 @@ export function AutoModePanel({ embedded = false }: AutoModePanelProps) {
       </div>
 
       <div className="auto-mode-section">
-        <span className="auto-mode-section-title">Worker algorithms</span>
+        <span className="auto-mode-section-title">Worker settings</span>
         <div className="auto-mode-worker-algorithm-summary">
           {config.worker_names.map((workerName) => (
             <span key={workerName} className="chip chip-muted">
-              {workerName}: {workerAlgorithms[workerName]}
+              {workerName}: {workerAlgorithms[workerName]} · {workerTrialThreads[workerName]} CPU ·{" "}
+              {workerTrialMemoryGb[workerName]} GB
             </span>
           ))}
         </div>

@@ -140,6 +140,10 @@ def test_auto_dispatch_uses_configured_algorithm():
     assert merged["threads"] == 4
     assert merged["memory_gb"] == 6
 
+    custom = with_trial_resources({"gatk_options": {}}, trial_threads=8, trial_memory_gb=12)
+    assert custom["threads"] == 8
+    assert custom["memory_gb"] == 12
+
 
 def test_update_auto_tunable_config_persists():
     from app.schemas import ParamIntervalSpec
@@ -163,12 +167,14 @@ def test_update_auto_tunable_config_persists():
                     "min_base_quality_score": ParamIntervalSpec(min=8.0, max=18.0, step=2.0),
                 },
                 worker_algorithms={"VM": "gp", "Big": "random", "Igno": "sobol"},
+                worker_trial_threads={"VM": 6, "Big": 4, "Igno": 8},
+                worker_trial_memory_gb={"VM": 8, "Big": 6, "Igno": 12},
             )
             assert status.config.params == ["min_base_quality_score"]
             assert status.config.param_intervals["min_base_quality_score"].min == 8.0
             assert status.config.worker_algorithms["VM"] == "gp"
-            assert status.config.worker_algorithms["Big"] == "random"
-            assert status.config.worker_algorithms["Igno"] == "sobol"
+            assert status.config.worker_trial_threads["VM"] == 6
+            assert status.config.worker_trial_memory_gb["Igno"] == 12
 
     import asyncio
 

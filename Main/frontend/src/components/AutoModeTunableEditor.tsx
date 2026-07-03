@@ -7,10 +7,11 @@ import {
   defaultParamInterval,
   ParamInterval,
 } from "../utils/paramBounds";
-import { paramIntervalsFromAutoConfig, workerAlgorithmsFromAutoConfig } from "../utils/autoModeSync";
+import { paramIntervalsFromAutoConfig, workerAlgorithmsFromAutoConfig, workerTrialMemoryGbFromAutoConfig, workerTrialThreadsFromAutoConfig } from "../utils/autoModeSync";
 import { syncManualParamDefaultsFromAutoConfig } from "../utils/manualParamDefaults";
-import { ALGORITHM_OPTIONS, AlgorithmOption } from "../types/workerAssignment";
+import { ALGORITHM_OPTIONS, AlgorithmOption, clampTrialMemoryGb, clampTrialThreads } from "../types/workerAssignment";
 import { ConfParamPicker } from "./ConfParamPicker";
+import { DeferredNumberInput } from "./DeferredNumberInput";
 import { AUTO_MODE_CHANGED_EVENT } from "./AutoModePanel";
 
 interface AutoModeTunableEditorProps {
@@ -45,6 +46,12 @@ export function AutoModeTunableEditor({
   const [workerAlgorithms, setWorkerAlgorithms] = useState<Record<string, AlgorithmOption>>(() =>
     workerAlgorithmsFromAutoConfig(config),
   );
+  const [workerTrialThreads, setWorkerTrialThreads] = useState<Record<string, number>>(() =>
+    workerTrialThreadsFromAutoConfig(config),
+  );
+  const [workerTrialMemoryGb, setWorkerTrialMemoryGb] = useState<Record<string, number>>(() =>
+    workerTrialMemoryGbFromAutoConfig(config),
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -53,6 +60,8 @@ export function AutoModeTunableEditor({
     setSelectedParams([...config.params]);
     setParamIntervals(paramIntervalsFromAutoConfig(config));
     setWorkerAlgorithms(workerAlgorithmsFromAutoConfig(config));
+    setWorkerTrialThreads(workerTrialThreadsFromAutoConfig(config));
+    setWorkerTrialMemoryGb(workerTrialMemoryGbFromAutoConfig(config));
     setError(null);
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
@@ -104,6 +113,8 @@ export function AutoModeTunableEditor({
     setSelectedParams(params);
     setParamIntervals(intervals);
     setWorkerAlgorithms(workerAlgorithmsFromAutoConfig(config));
+    setWorkerTrialThreads(workerTrialThreadsFromAutoConfig(config));
+    setWorkerTrialMemoryGb(workerTrialMemoryGbFromAutoConfig(config));
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -124,12 +135,16 @@ export function AutoModeTunableEditor({
         params: selectedParams,
         param_intervals: dispatchIntervals,
         worker_algorithms: workerAlgorithms,
+        worker_trial_threads: workerTrialThreads,
+        worker_trial_memory_gb: workerTrialMemoryGb,
       });
       syncManualParamDefaultsFromAutoConfig({
         ...config,
         params: selectedParams,
         param_intervals: dispatchIntervals,
         worker_algorithms: workerAlgorithms,
+        worker_trial_threads: workerTrialThreads,
+        worker_trial_memory_gb: workerTrialMemoryGb,
       });
       if (variant === "enable" && onEnable) {
         await onEnable();
@@ -188,34 +203,82 @@ export function AutoModeTunableEditor({
 
         <form className="form modal-form" onSubmit={(e) => void handleSubmit(e)}>
           <div className="auto-mode-worker-algorithms">
-            <span className="auto-mode-section-title">Worker algorithms</span>
+            <span className="auto-mode-section-title">Worker settings</span>
             <p className="auto-mode-worker-algorithms-lead">
-              Each auto worker runs its own search algorithm on the candidate it is assigned.
+              Algorithm and per-trial Docker CPU/RAM for each auto worker.
             </p>
-            <div className="auto-mode-worker-algorithm-grid">
-              {config.worker_names.map((workerName) => (
-                <label key={workerName} className="auto-mode-worker-algorithm-row">
-                  <span className="auto-mode-worker-algorithm-name">{workerName}</span>
-                  <select
-                    className="input-mono auto-mode-worker-algorithm-select"
-                    value={workerAlgorithms[workerName] ?? "optuna"}
-                    onChange={(e) =>
-                      setWorkerAlgorithms({
-                        ...workerAlgorithms,
-                        [workerName]: e.target.value as AlgorithmOption,
-                      })
-                    }
-                    disabled={loading || running}
-                    aria-label={`Algorithm for ${workerName}`}
-                  >
-                    {ALGORITHM_OPTIONS.map((algorithm) => (
-                      <option key={algorithm} value={algorithm}>
-                        {algorithm}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ))}
+            <div className="auto-mode-worker-settings-table-wrap">
+              <table className="auto-mode-worker-settings-table">
+                <thead>
+                  <tr>
+                    <th>Worker</th>
+                    <th>Algorithm</th>
+                    <th>CPUs / trial</th>
+                    <th>RAM (GB) / trial</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {config.worker_names.map((workerName) => (
+                    <tr key={workerName}>
+                      <td className="auto-mode-worker-settings-name">{workerName}</td>
+                      <td>
+                        <select
+                          className="input-mono auto-mode-worker-algorithm-select"
+                          value={workerAlgorithms[workerName] ?? "optuna"}
+                          onChange={(e) =>
+                            setWorkerAlgorithms({
+                              ...workerAlgorithms,
+                              [workerName]: e.target.value as AlgorithmOption,
+                            })
+                          }
+                          disabled={loading || running}
+                          aria-label={`Algorithm for ${workerName}`}
+                        >
+                          {ALGORITHM_OPTIONS.map((algorithm) => (
+                            <option key={algorithm} value={algorithm}>
+                              {algorithm}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td>
+                        <DeferredNumberInput
+                          className="auto-mode-worker-resource-input input-mono"
+                          value={workerTrialThreads[workerName] ?? 4}
+                          min={1}
+                          max={32}
+                          step={1}
+                          onCommit={(value) =>
+                            setWorkerTrialThreads({
+                              ...workerTrialThreads,
+                              [workerName]: clampTrialThreads(value ?? 4),
+                            })
+                          }
+                          disabled={loading || running}
+                          aria-label={`CPUs per trial for ${workerName}`}
+                        />
+                      </td>
+                      <td>
+                        <DeferredNumberInput
+                          className="auto-mode-worker-resource-input input-mono"
+                          value={workerTrialMemoryGb[workerName] ?? 6}
+                          min={4}
+                          max={128}
+                          step={1}
+                          onCommit={(value) =>
+                            setWorkerTrialMemoryGb({
+                              ...workerTrialMemoryGb,
+                              [workerName]: clampTrialMemoryGb(value ?? 6),
+                            })
+                          }
+                          disabled={loading || running}
+                          aria-label={`RAM per trial for ${workerName}`}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
 
