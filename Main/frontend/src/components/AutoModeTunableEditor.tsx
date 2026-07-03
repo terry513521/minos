@@ -2,10 +2,10 @@ import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "re
 import { api, AutoModeConfig, WorkerRecord } from "../api/client";
 import { DEFAULT_FINE_TUNE_PARAMS } from "../utils/candidateAssign";
 import {
-  buildAutoModeTunableSettingsFile,
-  downloadAutoModeTunableConf,
-  downloadAutoModeTunableSettings,
+  buildAutoModeIntervalsFile,
+  downloadAutoModeIntervalsFile,
   parseAutoModeTunableImport,
+  AutoModeIntervalsImport,
 } from "../utils/autoModeTunableFile";
 import { parseToolOptionValue, setToolOption } from "../utils/confEdit";
 import {
@@ -202,52 +202,58 @@ export function AutoModeTunableEditor({
     setBaseConf((prev) => setToolOption(prev, tool, param, parseToolOptionValue(tool, param, raw)));
   }
 
-  function applyImportedSettings(file: ReturnType<typeof buildAutoModeTunableSettingsFile>) {
-    setBaseConf(structuredClone(file.base_conf));
-    setSelectedParams([...file.params]);
-    setParamIntervals({ ...file.param_intervals });
-    setWorkerAlgorithms({ ...file.worker_algorithms });
-    setWorkerTrialThreads(
-      Object.fromEntries(
-        workerNames.map((name) => [
-          name,
-          clampTrialThreads(file.worker_trial_threads[name] ?? workerTrialThreads[name] ?? 4),
-        ]),
-      ),
-    );
-    setWorkerTrialMemoryGb(
-      Object.fromEntries(
-        workerNames.map((name) => [
-          name,
-          clampTrialMemoryGb(file.worker_trial_memory_gb[name] ?? workerTrialMemoryGb[name] ?? 6),
-        ]),
-      ),
-    );
-    setWorkerConcurrency(
-      Object.fromEntries(
-        workerNames.map((name) => [
-          name,
-          clampConcurrency(file.worker_concurrency[name] ?? workerConcurrency[name] ?? 1),
-        ]),
-      ),
-    );
+  function applyImportedIntervals(data: AutoModeIntervalsImport) {
+    setSelectedParams([...data.params]);
+    setParamIntervals({ ...data.paramIntervals });
+    if (data.baseConf) {
+      setBaseConf(structuredClone(data.baseConf));
+    }
+    if (data.workerAlgorithms) {
+      setWorkerAlgorithms({ ...data.workerAlgorithms });
+    }
+    if (data.workerTrialThreads) {
+      setWorkerTrialThreads(
+        Object.fromEntries(
+          workerNames.map((name) => [
+            name,
+            clampTrialThreads(data.workerTrialThreads?.[name] ?? workerTrialThreads[name] ?? 4),
+          ]),
+        ),
+      );
+    }
+    if (data.workerTrialMemoryGb) {
+      setWorkerTrialMemoryGb(
+        Object.fromEntries(
+          workerNames.map((name) => [
+            name,
+            clampTrialMemoryGb(data.workerTrialMemoryGb?.[name] ?? workerTrialMemoryGb[name] ?? 6),
+          ]),
+        ),
+      );
+    }
+    if (data.workerConcurrency) {
+      setWorkerConcurrency(
+        Object.fromEntries(
+          workerNames.map((name) => [
+            name,
+            clampConcurrency(data.workerConcurrency?.[name] ?? workerConcurrency[name] ?? 1),
+          ]),
+        ),
+      );
+    }
   }
 
-  function handleExportConf() {
-    downloadAutoModeTunableConf(baseConf, `${tool}-auto-mode`);
-  }
-
-  function handleExportSettings() {
-    downloadAutoModeTunableSettings(
-      buildAutoModeTunableSettingsFile({
+  function handleExport() {
+    if (selectedParams.length === 0) {
+      setError("Select at least one parameter before exporting intervals.");
+      return;
+    }
+    setError(null);
+    downloadAutoModeIntervalsFile(
+      buildAutoModeIntervalsFile({
         tool,
         params: selectedParams,
         paramIntervals,
-        workerAlgorithms,
-        workerTrialThreads,
-        workerTrialMemoryGb,
-        workerConcurrency,
-        baseConf,
       }),
     );
   }
@@ -266,10 +272,13 @@ export function AutoModeTunableEditor({
         return;
       }
 
-      if (parsed.result.kind === "settings") {
-        applyImportedSettings(parsed.result.file);
+      if (parsed.result.kind === "intervals") {
+        applyImportedIntervals(parsed.result.data);
       } else {
         setBaseConf(parsed.result.baseConf);
+        setError(
+          "Imported base conf values only — .conf files do not include tune intervals. Export/import JSON for min, max, and step.",
+        );
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to read import file");
@@ -415,8 +424,8 @@ export function AutoModeTunableEditor({
 
         <div className="auto-mode-tunable-io">
           <p className="auto-mode-tunable-io-lead">
-            Import or export the full <code>{tool}</code> conf (all parameters). JSON settings files
-            also restore tune params, intervals, and worker resources.
+            Import or export tune <strong>intervals</strong> (min, max, step) for selected parameters.
+            JSON restores which params are tuned and their search ranges.
           </p>
           <div className="auto-mode-tunable-io-actions">
             <button
@@ -430,23 +439,15 @@ export function AutoModeTunableEditor({
             <button
               type="button"
               className="button ghost"
-              disabled={hydrating || loading}
-              onClick={handleExportConf}
+              disabled={hydrating || loading || selectedParams.length === 0}
+              onClick={handleExport}
             >
-              Export conf
-            </button>
-            <button
-              type="button"
-              className="button ghost"
-              disabled={hydrating || loading}
-              onClick={handleExportSettings}
-            >
-              Export settings
+              Export
             </button>
             <input
               ref={importFileRef}
               type="file"
-              accept=".conf,.json,application/json,text/plain"
+              accept=".json,application/json"
               className="sr-only"
               aria-hidden
               onChange={(e) => void handleImportFile(e)}
