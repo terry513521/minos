@@ -1965,16 +1965,23 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   box-shadow: var(--shadow);
 }
 .modal-backdrop:has(.modal-panel-auto-tunable) {
-  overflow: hidden;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  overflow-y: auto;
+  padding-top: max(var(--pad-2), 2vh);
+  padding-bottom: max(var(--pad-2), 2vh);
 }
 .modal-panel.modal-panel-auto-tunable {
   width: 100%;
-  max-width: min(120rem, calc(100vw - 4.5rem));
-  max-height: min(96vh, 80rem);
+  max-width: min(72rem, calc(100vw - 2rem));
+  height: min(92vh, 52rem);
+  max-height: 92vh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
+  margin: auto 0;
 }
 .modal-panel.modal-panel-auto-tunable .modal-lead,
 .modal-panel.modal-panel-auto-tunable .modal-head,
@@ -1989,29 +1996,18 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   overflow: hidden;
   max-width: 100%;
 }
-.auto-mode-tunable-fieldset {
-  border: 0;
-  margin: 0;
-  padding: 0;
-  min-width: 0;
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
 .modal-panel.modal-panel-auto-tunable .auto-mode-tunable-scroll {
   flex: 1;
   min-height: 0;
   max-width: 100%;
   overflow-x: hidden;
   overflow-y: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  overscroll-behavior: contain;
+  padding-right: 0.15rem;
 }
-.modal-panel.modal-panel-auto-tunable .auto-mode-tunable-scroll::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-  display: none;
+.modal-panel.modal-panel-auto-tunable .auto-mode-tunable-scroll--loading {
+  opacity: 0.72;
+  pointer-events: none;
 }
 .modal-panel.modal-panel-auto-tunable .auto-mode-worker-algorithms {
   margin-bottom: 1rem;
@@ -2033,7 +2029,7 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
 .modal-panel.modal-panel-auto-tunable .worker-conf-picker-list {
   max-width: 100%;
   max-height: none;
-  min-height: 12rem;
+  min-height: 0;
   overflow: visible;
 }
 .modal-panel.modal-panel-auto-tunable .worker-conf-picker-main {

@@ -59,6 +59,8 @@ export function AutoModeTunableEditor({
   const [hydrating, setHydrating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [registeredWorkers, setRegisteredWorkers] = useState<WorkerRecord[]>([]);
+  const configRef = useRef(config);
+  configRef.current = config;
 
   const workerNames = useMemo(() => {
     if (registeredWorkers.length > 0) {
@@ -117,14 +119,14 @@ export function AutoModeTunableEditor({
       return;
     }
 
-    let cancelled = false;
+    let active = true;
     setHydrating(true);
     setError(null);
 
     void (async () => {
       try {
         const [workers, status] = await Promise.all([api.listWorkers(), api.getAutoMode()]);
-        if (cancelled) return;
+        if (!active) return;
 
         setRegisteredWorkers(workers);
         const names =
@@ -133,17 +135,18 @@ export function AutoModeTunableEditor({
             : [...status.config.worker_names];
         applyConfigToState(status.config, names);
       } catch {
-        if (cancelled) return;
-        const names = [...config.worker_names];
+        if (!active) return;
+        const fallbackConfig = configRef.current;
+        const names = [...fallbackConfig.worker_names];
         setRegisteredWorkers([]);
-        applyConfigToState(config, names);
+        applyConfigToState(fallbackConfig, names);
       } finally {
-        if (!cancelled) setHydrating(false);
+        if (active) setHydrating(false);
       }
     })();
 
     return () => {
-      cancelled = true;
+      active = false;
     };
   }, [open]);
 
@@ -321,8 +324,10 @@ export function AutoModeTunableEditor({
         {hydrating && <div className="alert">Loading saved auto mode parameters…</div>}
 
         <form className="form modal-form modal-form-auto-tunable" onSubmit={(e) => void handleSubmit(e)}>
-          <fieldset className="auto-mode-tunable-fieldset" disabled={hydrating || loading || running}>
-          <div className="auto-mode-tunable-scroll">
+          <div
+            className={`auto-mode-tunable-scroll${hydrating ? " auto-mode-tunable-scroll--loading" : ""}`}
+            aria-busy={hydrating}
+          >
             <div className="auto-mode-worker-algorithms">
             <span className="auto-mode-section-title">Worker settings</span>
             <p className="auto-mode-worker-algorithms-lead">
@@ -353,7 +358,7 @@ export function AutoModeTunableEditor({
                               [workerName]: e.target.value as AlgorithmOption,
                             })
                           }
-                          disabled={loading || running}
+                          disabled={hydrating || loading}
                           aria-label={`Algorithm for ${workerName}`}
                         >
                           {ALGORITHM_OPTIONS.map((algorithm) => (
@@ -373,7 +378,7 @@ export function AutoModeTunableEditor({
                               [workerName]: clampConcurrency(Number(e.target.value)),
                             })
                           }
-                          disabled={loading || running}
+                          disabled={hydrating || loading}
                           aria-label={`Concurrency for ${workerName}`}
                         >
                           {CONCURRENCY_OPTIONS.map((value) => (
@@ -396,7 +401,7 @@ export function AutoModeTunableEditor({
                               [workerName]: clampTrialThreads(value ?? 4),
                             })
                           }
-                          disabled={loading || running}
+                          disabled={hydrating || loading}
                           aria-label={`CPUs per trial for ${workerName}`}
                         />
                       </td>
@@ -413,7 +418,7 @@ export function AutoModeTunableEditor({
                               [workerName]: clampTrialMemoryGb(value ?? 6),
                             })
                           }
-                          disabled={loading || running}
+                          disabled={hydrating || loading}
                           aria-label={`RAM per trial for ${workerName}`}
                         />
                       </td>
@@ -429,11 +434,11 @@ export function AutoModeTunableEditor({
             tool={tool}
             selectedParams={selectedParams}
             paramIntervals={paramIntervals}
+            readOnly={hydrating || loading}
             onToggle={toggleParam}
             onIntervalChange={updateInterval}
           />
           </div>
-          </fieldset>
 
           <div className="modal-actions modal-actions-auto-tunable">
             <button
