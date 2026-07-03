@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { api } from "../api/client";
 import { AddWorkerModal, WORKERS_CHANGED_EVENT, WORKERS_CHECK_ALL_HEALTH_EVENT, WORKERS_CHECK_ALL_HEALTH_RESULT_EVENT, WORKERS_CLEAR_ALL_EVENT, WORKERS_START_ALL_EVENT, WORKERS_START_ALL_RESULT_EVENT, WORKERS_STOP_ALL_EVENT, WorkersCheckAllHealthResultDetail, WorkersStartAllResultDetail } from "./AddWorkerModal";
