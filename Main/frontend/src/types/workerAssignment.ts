@@ -42,7 +42,7 @@ export interface WorkerAssignment {
   trialThreads: number;
   /** GATK Docker RAM in GB per trial slot (sent as base_conf.memory_gb). */
   trialMemoryGb: number;
-  /** Total trials for random/optuna (1 base + search). Ignored for grid. */
+  /** Total trials (1 base + search). Used for all supported search algorithms. */
   trialCount: number;
   dispatching: boolean;
   dispatchError: string | null;
@@ -63,7 +63,14 @@ export function limitMinutesToSeconds(minutes: number): number {
 }
 
 export function isAdaptiveAlgorithm(algorithm: AlgorithmOption | string): boolean {
-  return algorithm === "random" || algorithm === "optuna";
+  const algo = String(algorithm).toLowerCase();
+  return (
+    algo === "optuna" ||
+    algo === "gp" ||
+    algo === "random" ||
+    algo === "sobol" ||
+    algo === "lhs"
+  );
 }
 
 export function clampTotalTrials(value: number): number {
