@@ -17,8 +17,12 @@ interface AutoModeTunableEditorProps {
   config: AutoModeConfig;
   tool: string;
   running: boolean;
+  /** `enable` = arm auto mode after save; `edit` = save parameters only */
+  variant?: "edit" | "enable";
   onClose: () => void;
-  onSaved: () => void;
+  onSaved?: () => void;
+  /** Called after config save when variant is `enable`. */
+  onEnable?: () => void | Promise<void>;
 }
 
 export function AutoModeTunableEditor({
@@ -26,8 +30,10 @@ export function AutoModeTunableEditor({
   config,
   tool,
   running,
+  variant = "edit",
   onClose,
   onSaved,
+  onEnable,
 }: AutoModeTunableEditorProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const referenceConf = buildGatkReferenceConf();
@@ -118,7 +124,11 @@ export function AutoModeTunableEditor({
         param_intervals: dispatchIntervals,
       });
       window.dispatchEvent(new Event(AUTO_MODE_CHANGED_EVENT));
-      onSaved();
+      if (variant === "enable" && onEnable) {
+        await onEnable();
+      } else {
+        onSaved?.();
+      }
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save auto mode parameters");
@@ -126,6 +136,8 @@ export function AutoModeTunableEditor({
       setLoading(false);
     }
   }
+
+  const isEnable = variant === "enable";
 
   return (
     <div className="modal-backdrop" onClick={onClose} role="presentation">
@@ -138,14 +150,26 @@ export function AutoModeTunableEditor({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="modal-head">
-          <h3 id="auto-tunable-title">Edit auto mode parameters</h3>
+          <h3 id="auto-tunable-title">
+            {isEnable ? "Enable auto mode" : "Edit auto mode parameters"}
+          </h3>
           <button type="button" className="button ghost modal-close" onClick={onClose} aria-label="Close">
             ×
           </button>
         </div>
         <p className="modal-lead">
-          Parameters and search intervals used when <code>POST /api/v1/auto/start</code> dispatches VM,
-          Big, and Igno. Changes apply to the next auto start.
+          {isEnable ? (
+            <>
+              Review tunable parameters before arming overnight orchestration for{" "}
+              <strong>VM</strong>, <strong>Big</strong>, and <strong>Igno</strong>. Workers run only
+              after <code>POST /api/v1/auto/start</code>.
+            </>
+          ) : (
+            <>
+              Parameters and search intervals used when <code>POST /api/v1/auto/start</code> dispatches
+              VM, Big, and Igno. Changes apply to the next auto start.
+            </>
+          )}
         </p>
         {running && (
           <div className="alert warn">
@@ -172,7 +196,13 @@ export function AutoModeTunableEditor({
               Cancel
             </button>
             <button type="submit" className="button primary" disabled={loading || running}>
-              {loading ? "Saving…" : "Save parameters"}
+              {loading
+                ? isEnable
+                  ? "Enabling…"
+                  : "Saving…"
+                : isEnable
+                  ? "Save & enable auto mode"
+                  : "Save parameters"}
             </button>
           </div>
         </form>

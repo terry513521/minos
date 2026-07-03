@@ -275,6 +275,7 @@ export function AutoModePanel() {
         config={config}
         tool={config.tool}
         running={status.running}
+        variant="edit"
         onClose={() => setEditingParams(false)}
         onSaved={refresh}
       />
