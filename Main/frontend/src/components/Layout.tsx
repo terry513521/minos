@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { api, AutoModeStatus } from "../api/client";
-import { AddWorkerModal, WORKERS_CHANGED_EVENT } from "./AddWorkerModal";
+import { AddWorkerModal, WORKERS_CHANGED_EVENT, WORKERS_STOP_ALL_EVENT } from "./AddWorkerModal";
 import { AUTO_MODE_CHANGED_EVENT } from "./AutoModePanel";
 import { AutoModeTunableEditor } from "./AutoModeTunableEditor";
 import { saveAutoModeState } from "../utils/autoModeStorage";
@@ -134,6 +134,7 @@ export function Layout() {
     try {
       const result = await api.stopAllWorkersOptimization();
       refreshAutoMode();
+      window.dispatchEvent(new Event(WORKERS_STOP_ALL_EVENT));
       window.dispatchEvent(new Event(WORKERS_CHANGED_EVENT));
       window.dispatchEvent(new Event(AUTO_MODE_CHANGED_EVENT));
       if (result.workers === 0) {

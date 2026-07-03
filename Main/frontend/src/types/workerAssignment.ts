@@ -208,19 +208,21 @@ export interface WorkerAssignmentSummary {
   reassignmentLocked: boolean;
 }
 
+export function isWorkerOptimizationActive(
+  optimization?: WorkerOptimizationSnapshot | null,
+): boolean {
+  return Boolean(
+    optimization?.ok &&
+      (optimization.status === "optimizing" || optimization.status === "stopping"),
+  );
+}
+
 export function isWorkerCandidateAssignmentLocked(
   assignment: WorkerAssignment | undefined,
   optimization?: WorkerOptimizationSnapshot | null,
 ): boolean {
   if (assignment?.dispatching) return true;
-  if (Boolean(assignment?.dispatchedAt)) return true;
-  if (
-    optimization?.ok &&
-    (optimization.status === "optimizing" || optimization.status === "stopping")
-  ) {
-    return true;
-  }
-  return false;
+  return isWorkerOptimizationActive(optimization);
 }
 
 /** @deprecated Use isWorkerCandidateAssignmentLocked */

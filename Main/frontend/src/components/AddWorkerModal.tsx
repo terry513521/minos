@@ -3,6 +3,7 @@ import { api } from "../api/client";
 import { deriveBaseUrlFromHealth, parseApiError } from "../utils/workerUrls";
 
 export const WORKERS_CHANGED_EVENT = "effortless:workers-changed";
+export const WORKERS_STOP_ALL_EVENT = "effortless:workers-stop-all";
 
 interface AddWorkerModalProps {
   open: boolean;

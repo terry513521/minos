@@ -43,7 +43,7 @@ import {
   ParamInterval,
 } from "../utils/paramBounds";
 import { parseToolOptionValue, setToolOption } from "../utils/confEdit";
-import { WORKERS_CHANGED_EVENT } from "./AddWorkerModal";
+import { WORKERS_CHANGED_EVENT, WORKERS_STOP_ALL_EVENT } from "./AddWorkerModal";
 import { ConfParamPicker } from "./ConfParamPicker";
 import { ConfManualEditor } from "./ConfManualEditor";
 import { ConfTooltip } from "./ConfTooltip";
@@ -720,6 +720,39 @@ export function WorkersPanel({
     return () => window.removeEventListener(WORKERS_CHANGED_EVENT, refreshAllBest);
   }, [workers, pollWorkerBest]);
 
+  useEffect(() => {
+    async function waitForAllWorkersIdle() {
+      const pollable = workers.filter((worker) => worker.base_url);
+      if (pollable.length === 0) return;
+
+      const deadline = Date.now() + 120_000;
+      while (Date.now() < deadline) {
+        let anyActive = false;
+        await Promise.all(
+          pollable.map(async (worker) => {
+            try {
+              const best = await api.fetchWorkerBest(worker.id);
+              setBestByWorker((prev) => ({ ...prev, [worker.id]: best }));
+              if (best.ok && best.status && isJobActive(best.status)) {
+                anyActive = true;
+              }
+            } catch {
+              // Keep polling until timeout.
+            }
+          }),
+        );
+        if (!anyActive) break;
+        await new Promise((resolve) => window.setTimeout(resolve, 500));
+      }
+    }
+
+    function onStopAll() {
+      void waitForAllWorkersIdle();
+    }
+    window.addEventListener(WORKERS_STOP_ALL_EVENT, onStopAll);
+    return () => window.removeEventListener(WORKERS_STOP_ALL_EVENT, onStopAll);
+  }, [workers]);
+
   async function handleDispatch(workerId: string) {
     const assignment = assignments[workerId];
     if (!assignment || assignment.selectedParams.length === 0) return;
@@ -759,6 +792,14 @@ export function WorkersPanel({
           ...prev,
           [workerId]: assignment.candidate.base_conf,
         }));
+        setBestByWorker((prev) => {
+          const current = prev[workerId];
+          if (!current || current === "loading") return prev;
+          return {
+            ...prev,
+            [workerId]: { ...current, ok: true, status: "optimizing" },
+          };
+        });
         void pollWorkerBest(workerId, true);
       }
     } catch (err) {
