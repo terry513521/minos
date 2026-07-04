@@ -4,35 +4,46 @@ import {
   WorkerRecord,
 } from "../api/client";
 import { WorkerAssignment } from "../types/workerAssignment";
-import { isRunTimeLimitReached } from "./workerJobStatus";
+import {
+  isRunTimeLimitReached,
+  isWorkerJobActiveStatus,
+  isWorkerJobRunning,
+  resolveWorkerJobLimitSeconds,
+  resolveWorkerJobStartedAt,
+} from "./workerJobStatus";
 
 export function isWorkerOptimizing(
   best: WorkerBestScoreResult | "loading" | undefined,
-  jobStartedAt?: string | null,
-  jobLimitSeconds?: number | null,
+  assignment?: WorkerAssignment,
   nowMs = Date.now(),
 ): boolean {
   if (best && best !== "loading" && best.ok) {
-    if (best.status !== "optimizing" && best.status !== "stopping") return false;
-    return !isRunTimeLimitReached(jobStartedAt, jobLimitSeconds, nowMs);
+    if (!isWorkerJobActiveStatus(best.status)) return false;
+    return isWorkerJobRunning(
+      best.status,
+      resolveWorkerJobStartedAt(assignment, undefined, best),
+      resolveWorkerJobLimitSeconds(assignment, undefined, best),
+      nowMs,
+    );
   }
   return false;
 }
 
-/** Poll GET /best only while a job is starting or actively running. */
+/** Poll GET /best while a job is starting or actively running. */
 export function shouldPollWorkerBest(
   best: WorkerBestScoreResult | "loading" | undefined,
   assignment: WorkerAssignment | undefined,
-  jobStartedAt?: string | null,
-  jobLimitSeconds?: number | null,
   nowMs = Date.now(),
 ): boolean {
-  if (isRunTimeLimitReached(jobStartedAt, jobLimitSeconds, nowMs)) return false;
   if (assignment?.dispatching) return true;
-  if (best && best !== "loading" && best.ok) {
-    return isWorkerOptimizing(best, jobStartedAt, jobLimitSeconds, nowMs);
+  if (best && best !== "loading" && best.ok && isWorkerJobActiveStatus(best.status)) {
+    return true;
   }
-  return Boolean(assignment?.dispatchedAt && !assignment.dispatchError);
+  const startedAt = resolveWorkerJobStartedAt(assignment, undefined, best && best !== "loading" ? best : null);
+  const limitSeconds = resolveWorkerJobLimitSeconds(assignment, undefined, best && best !== "loading" ? best : null);
+  if (isRunTimeLimitReached(startedAt, limitSeconds, nowMs)) return false;
+  if (assignment?.dispatchedAt && !assignment.dispatchError) return true;
+  return false;
 }
 
 /** A probe was made and the worker did not accept the connection or job. */
@@ -72,14 +83,7 @@ function workerDisplayTier(
   nowMs: number,
 ): WorkerDisplayTier {
   if (isWorkerConnectionFailed(health, best, assignment)) return 2;
-  if (
-    isWorkerOptimizing(
-      best,
-      assignment?.dispatchedAt,
-      assignment?.limitSeconds,
-      nowMs,
-    )
-  ) {
+  if (isWorkerOptimizing(best, assignment, nowMs)) {
     return 1;
   }
   return 0;
@@ -140,12 +144,7 @@ export function nextActiveWorkerOrder(
   for (const worker of workers) {
     const id = worker.id;
     const assignment = assignments[id];
-    const active = isWorkerOptimizing(
-      bestByWorker[id],
-      assignment?.dispatchedAt,
-      assignment?.limitSeconds,
-      nowMs,
-    );
+    const active = isWorkerOptimizing(bestByWorker[id], assignment, nowMs);
     const existing = current[id];
 
     if (active) {

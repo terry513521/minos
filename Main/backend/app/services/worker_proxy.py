@@ -101,6 +101,7 @@ async def fetch_worker_best(db: AsyncSession, worker_id: str) -> WorkerBestScore
                 else {},
                 trials_evaluated=int(payload.get("trials_evaluated") or 0),
                 search_space_size=int(payload.get("search_space_size") or 0),
+                started_at=payload.get("started_at"),
                 updated_at=payload.get("updated_at"),
                 message=payload.get("message"),
                 trials=trials,

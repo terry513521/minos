@@ -78,7 +78,10 @@ import {
 import { parseAutoModeTunableImport } from "../utils/autoModeTunableFile";
 import { loadAutoModeState, saveAutoModeState } from "../utils/autoModeStorage";
 import {
+  isWorkerJobActiveStatus,
   isWorkerJobRunning,
+  resolveWorkerJobLimitSeconds,
+  resolveWorkerJobStartedAt,
   resolveWorkerJobStatus,
 } from "../utils/workerJobStatus";
 import {
@@ -186,21 +189,18 @@ function bestStatusClass(status: string | null | undefined): string {
 
 function isJobActive(
   status: string | null | undefined,
-  startedAt?: string | null,
-  limitSeconds?: number | null,
-  nowMs = Date.now(),
-): boolean {
-  return isWorkerJobRunning(status, startedAt, limitSeconds, nowMs);
-}
-
-function jobStartedAt(
   assignment: WorkerAssignment | undefined,
+  best: WorkerBestScoreResult | null | undefined,
   autoModeStatus: AutoModeStatus | null,
   autoManaged: boolean,
-): string | null {
-  if (assignment?.dispatchedAt) return assignment.dispatchedAt;
-  if (autoManaged && autoModeStatus?.started_at) return autoModeStatus.started_at;
-  return null;
+  nowMs = Date.now(),
+): boolean {
+  return isWorkerJobRunning(
+    status,
+    resolveWorkerJobStartedAt(assignment, autoManaged ? autoModeStatus : null, best ?? undefined),
+    resolveWorkerJobLimitSeconds(assignment, autoManaged ? autoModeStatus : null, best ?? undefined),
+    nowMs,
+  );
 }
 
 function formatTrialScore(score: number | null | undefined): string {
@@ -349,7 +349,7 @@ export function WorkersPanel({
         best &&
         best !== "loading" &&
         best.ok &&
-        (best.status === "optimizing" || best.status === "stopping")
+        isWorkerJobActiveStatus(best.status)
       ) {
         return true;
       }
@@ -930,6 +930,7 @@ export function WorkersPanel({
             best_conf: {},
             trials_evaluated: 0,
             search_space_size: 0,
+            started_at: null,
             updated_at: null,
             message: null,
             trials: [],
@@ -977,7 +978,7 @@ export function WorkersPanel({
         try {
           const best = await api.fetchWorkerBest(workerId);
           setBestByWorker((prev) => ({ ...prev, [workerId]: best }));
-          if (best.ok && best.status && !isJobActive(best.status)) {
+          if (best.ok && best.status && !isWorkerJobActiveStatus(best.status)) {
             break;
           }
         } catch {
@@ -1026,8 +1027,6 @@ export function WorkersPanel({
           !shouldPollWorkerBest(
             best[worker.id],
             assignment,
-            assignment?.dispatchedAt,
-            assignment?.limitSeconds,
             tickNow,
           )
         ) {
@@ -1067,7 +1066,7 @@ export function WorkersPanel({
             try {
               const best = await api.fetchWorkerBest(worker.id);
               setBestByWorker((prev) => ({ ...prev, [worker.id]: best }));
-              if (best.ok && best.status && isJobActive(best.status)) {
+              if (best.ok && best.status && isWorkerJobActiveStatus(best.status)) {
                 anyActive = true;
               }
             } catch {
@@ -1115,7 +1114,7 @@ export function WorkersPanel({
           best !== "loading" &&
           best.ok &&
           best.status &&
-          isJobActive(best.status)
+          isWorkerJobActiveStatus(best.status)
         ) {
           results.skipped += 1;
           continue;
@@ -1467,8 +1466,16 @@ export function WorkersPanel({
             const compareBaseConf =
               assignment?.candidate.base_conf ?? baseConfByWorker[worker.id] ?? null;
             const bestOk = best && best !== "loading" && best.ok ? best : null;
-            const runStartedAt = jobStartedAt(assignment, autoModeStatus, autoManaged);
-            const runLimitSeconds = assignment?.limitSeconds ?? autoModeStatus?.config.limit_seconds;
+            const runStartedAt = resolveWorkerJobStartedAt(
+              assignment,
+              autoManaged ? autoModeStatus : null,
+              bestOk ?? undefined,
+            );
+            const runLimitSeconds = resolveWorkerJobLimitSeconds(
+              assignment,
+              autoManaged ? autoModeStatus : null,
+              bestOk ?? undefined,
+            );
             const displayStatus = resolveWorkerJobStatus(
               bestOk?.status ?? null,
               runStartedAt,
@@ -1476,7 +1483,15 @@ export function WorkersPanel({
               nowMs,
             );
             const isOptimizing = Boolean(
-              bestOk && isJobActive(bestOk.status, runStartedAt, runLimitSeconds, nowMs),
+              bestOk &&
+                isJobActive(
+                  bestOk.status,
+                  assignment,
+                  bestOk,
+                  autoModeStatus,
+                  autoManaged,
+                  nowMs,
+                ),
             );
             const reassignmentLocked = isWorkerAssignmentLocked(worker.id);
             const trialTotalCount = trialTotal(bestOk ?? undefined, dispatchResult);
@@ -1639,6 +1654,12 @@ export function WorkersPanel({
                             </button>
                           )}
                         </div>
+                      )}
+
+                      {bestOk.started_at && (
+                        <span className="worker-best-updated">
+                          Started {formatLocalDateTime(bestOk.started_at)}
+                        </span>
                       )}
 
                       {bestOk.updated_at && (

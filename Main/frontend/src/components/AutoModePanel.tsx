@@ -257,13 +257,13 @@ export function AutoModePanel({ embedded = false }: AutoModePanelProps) {
             <div className="auto-mode-card">
               <span className="auto-mode-card-label">Run settings</span>
               <p>Tool: {config.tool}</p>
-              <p>Time limit: {Math.round(config.limit_seconds / 60)} min</p>
+              <p>Time limit: {Math.round((status.limit_seconds ?? config.limit_seconds) / 60)} min</p>
               <p>Trials: {config.adaptive_max_trials + 1} (1 base + {config.adaptive_max_trials} search)</p>
               {status.running && status.started_at && (
                 <p className="auto-mode-limit-row">
                   <LimitCountdownBadge
                     startedAt={status.started_at}
-                    limitSeconds={config.limit_seconds}
+                    limitSeconds={status.limit_seconds ?? config.limit_seconds}
                     active={status.running}
                     className="auto-mode-limit-countdown"
                   />

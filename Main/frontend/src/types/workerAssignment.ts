@@ -14,7 +14,11 @@ import {
   workerDefaultTrialThreads,
 } from "../utils/manualParamDefaults";
 import { defaultParamInterval, ParamInterval } from "../utils/paramBounds";
-import { isWorkerJobRunning } from "../utils/workerJobStatus";
+import {
+  isWorkerJobRunning,
+  resolveWorkerJobLimitSeconds,
+  resolveWorkerJobStartedAt,
+} from "../utils/workerJobStatus";
 import { normalizeRegion } from "../utils/window";
 
 export const TOOLKIT_OPTIONS = ["gatk", "bcftools", "deepvariant"] as const;
@@ -312,9 +316,16 @@ export function assignmentLabel(worker: WorkerRecord): string {
   return worker.name || worker.id.slice(0, 8);
 }
 
+export {
+  resolveWorkerJobLimitSeconds,
+  resolveWorkerJobStartedAt,
+} from "../utils/workerJobStatus";
+
 export interface WorkerOptimizationSnapshot {
   ok: boolean;
   status: string | null;
+  started_at?: string | null;
+  limit_seconds?: number | null;
 }
 
 export interface WorkerAssignmentSummary {
@@ -335,28 +346,10 @@ export function isWorkerOptimizationActive(
   if (!optimization?.ok) return false;
   return isWorkerJobRunning(
     optimization.status,
-    resolveWorkerJobStartedAt(assignment, autoModeStatus),
-    resolveWorkerJobLimitSeconds(assignment, autoModeStatus),
+    resolveWorkerJobStartedAt(assignment, autoModeStatus, optimization),
+    resolveWorkerJobLimitSeconds(assignment, autoModeStatus, optimization),
     nowMs,
   );
-}
-
-export function resolveWorkerJobStartedAt(
-  assignment: WorkerAssignment | undefined,
-  autoModeStatus?: AutoModeStatus | null,
-): string | null {
-  if (assignment?.dispatchedAt) return assignment.dispatchedAt;
-  if (assignment?.autoManaged && autoModeStatus?.started_at) {
-    return autoModeStatus.started_at;
-  }
-  return null;
-}
-
-export function resolveWorkerJobLimitSeconds(
-  assignment: WorkerAssignment | undefined,
-  autoModeStatus?: AutoModeStatus | null,
-): number | null {
-  return assignment?.limitSeconds ?? autoModeStatus?.config?.limit_seconds ?? null;
 }
 
 export function isWorkerCandidateAssignmentLocked(

@@ -131,6 +131,7 @@ export interface WorkerBestScoreResult {
   best_conf: Record<string, unknown>;
   trials_evaluated: number;
   search_space_size: number;
+  started_at: string | null;
   updated_at: string | null;
   message: string | null;
   trials: WorkerTrialScore[];

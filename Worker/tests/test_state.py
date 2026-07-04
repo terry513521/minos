@@ -26,6 +26,7 @@ def test_record_trial_and_stopping_status():
         is_best=True,
     )
     snap = best_store.snapshot()
+    assert snap.started_at is not None
     assert len(snap.trials) == 1
     assert snap.trials[0].score == 0.81
     assert snap.trials[0].is_best is True

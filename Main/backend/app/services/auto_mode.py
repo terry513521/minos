@@ -426,6 +426,7 @@ class AutoSession:
     region: str
     tool: str
     started_at: datetime
+    limit_seconds: int = AUTO_LIMIT_SECONDS
     assignments: list[AutoDispatchAssignment] = field(default_factory=list)
     selected_candidates: list[SelectedCandidateSlot] = field(default_factory=list)
     found_candidates: list[CandidatePreview] = field(default_factory=list)
@@ -498,7 +499,7 @@ class AutoModeStore:
             candidates_found=session.candidates_found if session else 0,
             found_candidates=list(session.found_candidates) if session else [],
             time_remaining_seconds=time_remaining_seconds,
-            limit_seconds=AUTO_LIMIT_SECONDS if session else None,
+            limit_seconds=session.limit_seconds if session else None,
             selected_candidates=(
                 _selected_candidate_models(session.selected_candidates) if session else []
             ),
@@ -568,6 +569,7 @@ def _session_to_json(session: AutoSession) -> str:
         "region": session.region,
         "tool": session.tool,
         "started_at": session.started_at.isoformat(),
+        "limit_seconds": session.limit_seconds,
         "running": session.running,
         "candidates_found": session.candidates_found,
         "assignments": [assignment.model_dump() for assignment in session.assignments],
@@ -610,10 +612,16 @@ def _session_from_json(raw: str) -> AutoSession:
                 candidate=CandidatePreview.model_validate(slot["candidate"]),
             )
         )
+    limit_raw = data.get("limit_seconds")
+    try:
+        limit_seconds = clamp_limit_seconds(int(limit_raw))
+    except (TypeError, ValueError):
+        limit_seconds = AUTO_LIMIT_SECONDS
     return AutoSession(
         region=str(data["region"]),
         tool=str(data.get("tool") or AUTO_TOOL),
         started_at=started_at,
+        limit_seconds=limit_seconds,
         running=bool(data.get("running", False)),
         round_recorded=bool(data.get("round_recorded", False)),
         candidates_found=int(data.get("candidates_found") or 0),
@@ -1102,7 +1110,7 @@ async def stop_all_auto_workers(db: AsyncSession) -> list[dict[str, Any]]:
 
 def _session_time_remaining_seconds(session: AutoSession) -> int:
     elapsed = (datetime.now(timezone.utc) - session.started_at).total_seconds()
-    return max(0, int(AUTO_LIMIT_SECONDS - elapsed))
+    return max(0, int(session.limit_seconds - elapsed))
 
 
 def _end_session_if_time_limit_reached(session: AutoSession | None) -> None:
@@ -1224,6 +1232,7 @@ async def start_auto_mode(
         region=window,
         tool=tool,
         started_at=datetime.now(timezone.utc),
+        limit_seconds=max(worker_limit_seconds.values()) if worker_limit_seconds else AUTO_LIMIT_SECONDS,
         assignments=assignments,
         selected_candidates=selected_slots,
         found_candidates=list(find_result_candidates),

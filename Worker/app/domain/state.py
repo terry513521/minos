@@ -41,6 +41,7 @@ class BestSnapshot:
     search_space_size: int = 0
     status: str = "idle"
     message: str | None = None
+    started_at: datetime | None = None
     updated_at: datetime | None = None
     trials: list[TrialRecord] = field(default_factory=list)
 
@@ -72,6 +73,7 @@ class BestStateStore:
                 if adaptive_max_trials is not None and adaptive_max_trials <= 0
                 else "optimizing"
             )
+            now = datetime.now(timezone.utc)
             self._snapshot = BestSnapshot(
                 job_id=job_id,
                 window=window,
@@ -87,7 +89,8 @@ class BestStateStore:
                 status=job_status,
                 search_space_size=search_space_size,
                 message="Running fixed-conf benchmark",
-                updated_at=datetime.now(timezone.utc),
+                started_at=now,
+                updated_at=now,
                 trials=[],
             )
 
@@ -187,6 +190,7 @@ class BestStateStore:
                 search_space_size=snap.search_space_size,
                 status=snap.status,
                 message=snap.message,
+                started_at=snap.started_at,
                 updated_at=snap.updated_at,
                 trials=[TrialRecord(**trial.__dict__) for trial in snap.trials],
             )

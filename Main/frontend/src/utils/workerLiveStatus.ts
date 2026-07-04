@@ -97,8 +97,9 @@ export function buildWorkerLiveStatuses(
     const health = healthByWorker[worker.id];
     const best = bestByWorker[worker.id];
     const dispatchResult = dispatchByWorker[worker.id];
-    const runStartedAt = resolveWorkerJobStartedAt(assignment, autoModeStatus);
-    const runLimitSeconds = resolveWorkerJobLimitSeconds(assignment, autoModeStatus);
+    const bestOk = best && best !== "loading" ? best : null;
+    const runStartedAt = resolveWorkerJobStartedAt(assignment, autoModeStatus, bestOk ?? undefined);
+    const runLimitSeconds = resolveWorkerJobLimitSeconds(assignment, autoModeStatus, bestOk ?? undefined);
 
     if (!best || best === "loading") {
       return {
