@@ -9,10 +9,16 @@ import { useAutoModeEnabled } from "../hooks/useAutoModeEnabled";
 import { WorkerAssignmentSummary } from "../types/workerAssignment";
 import { WorkerLiveStatus } from "../utils/workerLiveStatus";
 import { ApplyConfImportResult } from "../utils/workerConfImport";
+import { loadCandidateFinderState } from "../utils/candidateFinderStorage";
 import { ensureWorkerTunablesHydrated } from "../utils/workerTunableStorage";
+
+const initialFinderState = loadCandidateFinderState();
 
 export function ConsolePage() {
   const [candidateContext, setCandidateContext] = useState<FindCandidatesResponse | null>(null);
+  const [finderRegion, setFinderRegion] = useState(
+    () => initialFinderState?.region ?? "chr20:10000000-15000000",
+  );
   const [workerAssignmentSummaries, setWorkerAssignmentSummaries] = useState<
     WorkerAssignmentSummary[]
   >([]);
@@ -96,10 +102,11 @@ export function ConsolePage() {
             <SectionHeader
               step={1}
               title="Find base candidates"
-              lead="Select a candidate, then click a worker to assign its base conf."
+              lead="Select a candidate, then click a worker to assign its base conf and region."
             />
             <CandidateFinderPanel
               onResultChange={setCandidateContext}
+              onRegionChange={setFinderRegion}
               workerAssignmentSummaries={workerAssignmentSummaries}
               onAssignCandidateToWorker={handleAssignCandidateToWorker}
               onApplyConfToAllWorkers={handleApplyConfToAllWorkers}
@@ -120,6 +127,7 @@ export function ConsolePage() {
           />
           <WorkersPanel
             candidateContext={candidateContext}
+            finderRegion={finderRegion}
             onWorkerAssignmentSummariesChange={handleWorkerAssignmentSummariesChange}
             onWorkerLiveStatusesChange={handleWorkerLiveStatusesChange}
             onAssignHandlerReady={handleAssignHandlerReady}

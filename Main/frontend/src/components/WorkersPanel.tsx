@@ -24,6 +24,7 @@ import {
   MAX_TRIAL_THREADS,
   clampTotalTrials,
   createAssignment,
+  assignmentWindowFromRegion,
   adaptiveMaxTrialsFromTotal,
   DEFAULT_ADAPTIVE_MAX_TRIALS,
   isAdaptiveAlgorithm,
@@ -84,7 +85,6 @@ import {
   sortWorkersForDisplay,
 } from "../utils/workerDisplayOrder";
 import { buildWorkerLiveStatuses, WorkerLiveStatus } from "../utils/workerLiveStatus";
-import { normalizeRegion } from "../utils/window";
 import { AUTO_MODE_CHANGED_EVENT } from "./AutoModePanel";
 
 /** Background poll for worker GET /best while optimization is running. */
@@ -92,6 +92,8 @@ const BEST_POLL_INTERVAL_MS = 1000;
 
 interface WorkersPanelProps {
   candidateContext?: FindCandidatesResponse | null;
+  /** Live Region input from the candidate finder panel. */
+  finderRegion?: string;
   onWorkerAssignmentSummariesChange?: (summaries: WorkerAssignmentSummary[]) => void;
   onWorkerLiveStatusesChange?: (statuses: WorkerLiveStatus[]) => void;
   /** Parent section provides header and panel chrome. */
@@ -220,6 +222,7 @@ function withoutLoadingHealth(
 
 export function WorkersPanel({
   candidateContext = null,
+  finderRegion = "",
   onWorkerAssignmentSummariesChange,
   onWorkerLiveStatusesChange,
   sectionChild = false,
@@ -379,7 +382,7 @@ export function WorkersPanel({
   }, []);
 
   useEffect(() => {
-    const targetWindow = normalizeRegion(candidateContext?.window ?? "") ?? candidateContext?.window?.trim();
+    const targetWindow = assignmentWindowFromRegion(finderRegion, candidateContext?.window);
     if (!targetWindow || !candidateContext) return;
 
     setAssignments((prev) => {
@@ -397,7 +400,7 @@ export function WorkersPanel({
       }
       return changed ? next : prev;
     });
-  }, [candidateContext]);
+  }, [candidateContext, finderRegion]);
 
   useEffect(() => {
     if (initialAutoStatus?.config?.params?.length) {
@@ -633,7 +636,7 @@ export function WorkersPanel({
 
       setAssignments((prev) => ({
         ...prev,
-        [workerId]: createAssignment(candidate, candidateContext, worker),
+        [workerId]: createAssignment(candidate, candidateContext, worker, finderRegion),
       }));
       setDispatchByWorker((prev) => {
         const next = { ...prev };
@@ -642,7 +645,7 @@ export function WorkersPanel({
       });
       return true;
     },
-    [candidateContext, workers, isWorkerAssignmentLocked],
+    [candidateContext, finderRegion, workers, isWorkerAssignmentLocked],
   );
 
   const applyConfImportToAllWorkers = useCallback(
@@ -686,7 +689,7 @@ export function WorkersPanel({
         restoreWorkerAssignment(worker.id);
         restoredDismissed.push(worker.id);
 
-        let assignment = createAssignment(candidate, candidateContext, worker);
+        let assignment = createAssignment(candidate, candidateContext, worker, finderRegion);
         if (parsed.result.kind === "tunable") {
           assignment = {
             ...assignment,
@@ -752,7 +755,7 @@ export function WorkersPanel({
         skipped,
       };
     },
-    [candidateContext, autoModeEnabled, workers, isWorkerAssignmentLocked],
+    [candidateContext, finderRegion, autoModeEnabled, workers, isWorkerAssignmentLocked],
   );
 
   useEffect(() => {
