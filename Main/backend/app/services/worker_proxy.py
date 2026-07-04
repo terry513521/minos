@@ -157,6 +157,8 @@ async def dispatch_to_worker(
             for name, spec in body.param_intervals.items()
             if name in body.params
         }
+    if body.delta_rounds is not None:
+        payload["delta_rounds"] = body.delta_rounds
 
     try:
         timeout = httpx.Timeout(connect=15.0, read=30.0, write=30.0, pool=15.0)

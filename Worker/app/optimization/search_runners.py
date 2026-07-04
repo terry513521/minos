@@ -291,12 +291,33 @@ def run_adaptive_search(
     evaluate: Callable[[dict[str, Any]], BenchmarkResult],
     record_result: Callable[[BenchmarkResult, str], None],
     run_batch: Callable[..., None],
+    anchor_conf: dict[str, Any] | None = None,
 ) -> None:
     """Dispatch to the search loop for the requested algorithm."""
     from app.optimization.adaptive_search import resolve_search_specs
 
     algo = normalize_algorithm(algorithm)
     specs = resolve_search_specs(request.tool, request.params, intervals)
+    center_conf = anchor_conf or base_conf
+
+    if algo == "delta":
+        from app.optimization.delta_search import run_delta_search
+
+        run_delta_search(
+            base_conf=base_conf,
+            anchor_conf=center_conf,
+            tool=request.tool,
+            specs=specs,
+            param_intervals=intervals,
+            concurrency=concurrency,
+            max_trials=max_trials,
+            delta_rounds=request.delta_rounds,
+            timed_out=timed_out,
+            evaluate=evaluate,
+            record_result=record_result,
+            memory=ConfMemory(base_conf),
+        )
+        return
 
     if algo == "grid":
         run_grid_search(

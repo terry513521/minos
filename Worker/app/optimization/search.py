@@ -185,6 +185,7 @@ def count_search_trials(
     algorithm: str = "optuna",
     adaptive_max_trials: int = 44,
     include_base_benchmark: bool = True,
+    delta_rounds: int | None = None,
 ) -> int:
     """Trials to run: optional base benchmark + search trials."""
     base_trials = 1 if include_base_benchmark else 0
@@ -197,6 +198,17 @@ def count_search_trials(
         if searchable == 0:
             return base_trials
         return base_trials + min(searchable, max(1, adaptive_max_trials))
+    if algo == "delta":
+        from app.optimization.delta_search import resolve_delta_rounds
+
+        rounds = resolve_delta_rounds(
+            delta_rounds,
+            max_trials=adaptive_max_trials,
+            param_count=len(param_names),
+        )
+        per_round = max(1, len(param_names) * 2)
+        search = min(adaptive_max_trials, rounds * per_round)
+        return base_trials + max(1, search)
     return base_trials + max(1, adaptive_max_trials)
 
 
@@ -261,10 +273,20 @@ def build_optimization_plan(
     benchmark_window: str | None = None,
     trial_threads: int | None = None,
     trial_memory_gb: int | None = None,
+    delta_rounds: int | None = None,
 ) -> dict[str, Any]:
     """Structured search plan for logs and GET /best message."""
     algo = normalize_algorithm(algorithm)
     full_cartesian = full_grid_size(base_conf, tool, params, param_intervals)
+    resolved_delta_rounds = None
+    if algo == "delta":
+        from app.optimization.delta_search import resolve_delta_rounds
+
+        resolved_delta_rounds = resolve_delta_rounds(
+            delta_rounds,
+            max_trials=adaptive_max_trials,
+            param_count=len(params),
+        )
     planned_trials = count_search_trials(
         base_conf,
         tool,
@@ -273,6 +295,7 @@ def build_optimization_plan(
         algorithm=algo,
         adaptive_max_trials=adaptive_max_trials,
         include_base_benchmark=include_base_benchmark,
+        delta_rounds=delta_rounds,
     )
 
     plan: dict[str, Any] = {
@@ -293,6 +316,7 @@ def build_optimization_plan(
         "gatk_persistent_container": gatk_persistent_container and tool.lower() == "gatk",
         "trial_threads": trial_threads,
         "trial_memory_gb": trial_memory_gb,
+        "delta_rounds": resolved_delta_rounds if algo == "delta" else delta_rounds,
         "axes": summarize_param_axes(base_conf, tool, params, param_intervals),
     }
 
@@ -341,12 +365,18 @@ def format_optimization_plan(plan: dict[str, Any]) -> str:
             f"search: grid {capped} of {plan['full_cartesian_grid']} configs {after}"
             f"(cap {plan['adaptive_max_trials']} search trials)"
         )
-    elif plan["mode"] in ("random", "optuna", "gp", "sobol", "lhs", "pbt", "cascade"):
+    elif plan["mode"] in ("random", "optuna", "gp", "sobol", "lhs", "pbt", "cascade", "delta"):
         after = "after base " if plan.get("include_base_benchmark", True) else ""
-        lines.append(
-            f"search: {plan['mode']} up to {plan['adaptive_max_trials']} trials {after}"
-            f"(reference space: {plan['full_cartesian_grid']} configs)"
-        )
+        if plan["mode"] == "delta":
+            lines.append(
+                f"search: delta ± per-param, up to {plan['adaptive_max_trials']} trials {after}"
+                f"({plan.get('delta_rounds', '?')} rounds, {plan['param_count']} params)"
+            )
+        else:
+            lines.append(
+                f"search: {plan['mode']} up to {plan['adaptive_max_trials']} trials {after}"
+                f"(reference space: {plan['full_cartesian_grid']} configs)"
+            )
     else:
         after = "after base" if plan.get("include_base_benchmark", True) else "only"
         lines.append(

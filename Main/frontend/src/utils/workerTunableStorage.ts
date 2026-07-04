@@ -3,10 +3,12 @@ import {
   AlgorithmOption,
   ALGORITHM_OPTIONS,
   clampConcurrency,
+  clampDeltaRounds,
   clampTotalTrials,
   clampTrialMemoryGb,
   clampTrialThreads,
   DEFAULT_ALGORITHM,
+  DEFAULT_DELTA_ROUNDS,
   DEFAULT_LIMIT_SECONDS,
   DEFAULT_AUTO_TOTAL_TRIALS,
   DEFAULT_TOTAL_TRIALS,
@@ -42,6 +44,7 @@ export interface WorkerTunableDefaults {
   trialMemoryGb: number;
   trialCount: number;
   includeBaseBenchmark: boolean;
+  deltaRounds: number;
 }
 
 interface StoredPerWorkerTunables {
@@ -107,6 +110,9 @@ function normalizeProfile(raw: unknown): WorkerTunableDefaults | null {
       parsed.includeBaseBenchmark ??
       parsed.include_base_benchmark ??
       DEFAULT_INCLUDE_BASE_BENCHMARK,
+    deltaRounds: clampDeltaRounds(
+      Number(parsed.deltaRounds ?? parsed.delta_rounds) || DEFAULT_DELTA_ROUNDS,
+    ),
   };
 }
 
@@ -157,6 +163,7 @@ function profileToPayload(profile: WorkerTunableDefaults): WorkerTunableProfileP
     trial_memory_gb: profile.trialMemoryGb,
     trial_count: profile.trialCount,
     include_base_benchmark: profile.includeBaseBenchmark,
+    delta_rounds: profile.deltaRounds,
   };
 }
 
@@ -253,6 +260,7 @@ export function profileFromAssignment(assignment: WorkerAssignment): WorkerTunab
     trialMemoryGb: assignment.trialMemoryGb,
     trialCount: assignment.trialCount,
     includeBaseBenchmark: assignment.includeBaseBenchmark,
+    deltaRounds: assignment.deltaRounds,
   };
 }
 
@@ -349,6 +357,7 @@ export function applyWorkerTunableDefaults(
   | "trialMemoryGb"
   | "trialCount"
   | "includeBaseBenchmark"
+  | "deltaRounds"
 > {
   if (!worker) {
     return {
@@ -361,6 +370,7 @@ export function applyWorkerTunableDefaults(
       trialMemoryGb: DEFAULT_TRIAL_MEMORY_GB,
       trialCount: DEFAULT_TOTAL_TRIALS,
       includeBaseBenchmark: DEFAULT_INCLUDE_BASE_BENCHMARK,
+      deltaRounds: DEFAULT_DELTA_ROUNDS,
     };
   }
 
@@ -375,6 +385,7 @@ export function applyWorkerTunableDefaults(
     trialMemoryGb: saved?.trialMemoryGb ?? DEFAULT_TRIAL_MEMORY_GB,
     trialCount: saved?.trialCount ?? DEFAULT_TOTAL_TRIALS,
     includeBaseBenchmark: saved?.includeBaseBenchmark ?? DEFAULT_INCLUDE_BASE_BENCHMARK,
+    deltaRounds: saved?.deltaRounds ?? DEFAULT_DELTA_ROUNDS,
   };
 }
 

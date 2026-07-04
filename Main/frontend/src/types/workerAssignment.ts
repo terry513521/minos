@@ -24,6 +24,7 @@ export const ALGORITHM_OPTIONS = [
   "cascade",
   "pbt",
   "grid",
+  "delta",
   "optuna",
   "gp",
   "random",
@@ -51,6 +52,7 @@ export const DEFAULT_AUTO_TOTAL_TRIALS = 50;
 export const DEFAULT_TRIAL_THREADS = 4;
 export const DEFAULT_TRIAL_MEMORY_GB = 6;
 export const DEFAULT_INCLUDE_BASE_BENCHMARK = true;
+export const DEFAULT_DELTA_ROUNDS = 5;
 export const MAX_TRIAL_THREADS = 100;
 export const MAX_CONCURRENCY = 32;
 export const CONCURRENCY_OPTIONS = Array.from(
@@ -76,6 +78,8 @@ export interface WorkerAssignment {
   trialCount: number;
   /** Score dropped base conf once before search trials when starting optimization. */
   includeBaseBenchmark: boolean;
+  /** Delta algorithm: refinement rounds (±delta per param around current best). */
+  deltaRounds: number;
   dispatching: boolean;
   dispatchError: string | null;
   /** ISO timestamp when optimization was last dispatched to this worker. */
@@ -154,6 +158,12 @@ export function buildDispatchBaseConf(
   };
 }
 
+export function clampDeltaRounds(value: number): number {
+  const parsed = Math.round(Number(value));
+  if (!Number.isFinite(parsed)) return DEFAULT_DELTA_ROUNDS;
+  return Math.min(1000, Math.max(1, parsed));
+}
+
 export function normalizeWorkerAssignment(assignment: WorkerAssignment): WorkerAssignment {
   return {
     ...assignment,
@@ -162,6 +172,7 @@ export function normalizeWorkerAssignment(assignment: WorkerAssignment): WorkerA
     trialCount: clampTotalTrials(assignment.trialCount ?? DEFAULT_TOTAL_TRIALS),
     includeBaseBenchmark:
       assignment.includeBaseBenchmark ?? DEFAULT_INCLUDE_BASE_BENCHMARK,
+    deltaRounds: clampDeltaRounds(assignment.deltaRounds ?? DEFAULT_DELTA_ROUNDS),
   };
 }
 
@@ -267,6 +278,7 @@ export function createAssignment(
       : tunableDefaults.trialMemoryGb,
     trialCount: tunableDefaults.trialCount,
     includeBaseBenchmark: tunableDefaults.includeBaseBenchmark,
+    deltaRounds: tunableDefaults.deltaRounds ?? DEFAULT_DELTA_ROUNDS,
     dispatching: false,
     dispatchError: null,
   };

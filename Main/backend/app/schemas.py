@@ -210,6 +210,7 @@ class ParamIntervalSpec(BaseModel):
     min: float | None = None
     max: float | None = None
     step: float | None = None
+    delta: float | None = None
     values: list[str] | None = None
 
 
@@ -231,6 +232,12 @@ class WorkerDispatchRequest(BaseModel):
     include_base_benchmark: bool = Field(
         default=True,
         description="Score base conf once before search trials",
+    )
+    delta_rounds: int | None = Field(
+        default=None,
+        ge=1,
+        le=1000,
+        description="Delta algorithm only: refinement rounds around current best",
     )
     candidate_index: int | None = None
 
@@ -486,6 +493,7 @@ class WorkerTunableParamInterval(BaseModel):
     min: float | None = None
     max: float | None = None
     step: float | None = None
+    delta: float | None = None
     values: list[str] | None = None
 
 
@@ -500,6 +508,7 @@ class WorkerTunableProfileBody(BaseModel):
     trial_memory_gb: int = Field(6, ge=4, le=128)
     trial_count: int = Field(5, ge=2, le=1001)
     include_base_benchmark: bool = True
+    delta_rounds: int = Field(5, ge=1, le=1000)
 
 
 class WorkerTunableDefaultsResponse(BaseModel):

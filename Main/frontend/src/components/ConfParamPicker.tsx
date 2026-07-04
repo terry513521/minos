@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { getParamBound, ParamInterval, clampParamInterval, formatBoundHint } from "../utils/paramBounds";
+import { getParamBound, ParamInterval, clampParamInterval, defaultParamDelta, defaultParamInterval, formatBoundHint } from "../utils/paramBounds";
 import { listToolOptionEntries } from "../utils/candidateAssign";
 import { DeferredNumberInput } from "./DeferredNumberInput";
 import { DeferredTextInput } from "./DeferredTextInput";
@@ -7,6 +7,7 @@ import { DeferredTextInput } from "./DeferredTextInput";
 interface ConfParamPickerProps {
   baseConf: Record<string, unknown>;
   tool: string;
+  algorithm?: string;
   selectedParams: string[];
   paramIntervals: Record<string, ParamInterval>;
   onToggle: (param: string) => void;
@@ -19,6 +20,7 @@ interface ConfParamPickerProps {
 export function ConfParamPicker({
   baseConf,
   tool,
+  algorithm,
   selectedParams,
   paramIntervals,
   onToggle,
@@ -28,6 +30,7 @@ export function ConfParamPicker({
 }: ConfParamPickerProps) {
   const [search, setSearch] = useState("");
   const [selectedOnly, setSelectedOnly] = useState(false);
+  const useDeltaMode = String(algorithm ?? "").toLowerCase() === "delta";
 
   const entries = useMemo(() => {
     const all = listToolOptionEntries(baseConf, tool);
@@ -54,7 +57,9 @@ export function ConfParamPicker({
         <span className="worker-conf-picker-hint">
           {readOnly
             ? "Read-only while optimization is running"
-            : "Check params to search · edit base values inline · min/max/step when selected"}
+            : useDeltaMode
+              ? "Check params to tune · edit base values · set ±delta when selected"
+              : "Check params to search · edit base values inline · min/max/step when selected"}
         </span>
       </div>
 
@@ -158,7 +163,33 @@ export function ConfParamPicker({
                   )}
                 </div>
 
-                {selected && isNumeric && (
+                {selected && isNumeric && useDeltaMode && (
+                  <div className="worker-param-interval">
+                    {boundHint && (
+                      <span className="worker-param-interval-hint">{boundHint}</span>
+                    )}
+                    <div className="worker-param-interval-fields">
+                      <label className="worker-param-interval-field">
+                        <span>Delta (±)</span>
+                        <DeferredNumberInput
+                          step="any"
+                          min={0}
+                          value={interval?.delta ?? defaultParamDelta(tool, param, value)}
+                          disabled={readOnly}
+                          onCommit={(delta) =>
+                            onIntervalChange(
+                              param,
+                              clampParamInterval(tool, param, { ...interval, delta }),
+                            )
+                          }
+                          aria-label={`${param} delta`}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                )}
+
+                {selected && isNumeric && !useDeltaMode && (
                   <div className="worker-param-interval">
                     {boundHint && (
                       <span className="worker-param-interval-hint">{boundHint}</span>

@@ -190,6 +190,7 @@ def _run_adaptive_search(
     settings: Settings,
     timed_out: Callable[[], bool],
     record_result: Callable[[BenchmarkResult, str], None],
+    anchor_conf: dict[str, Any] | None = None,
 ) -> None:
     evaluate = lambda conf: _evaluate_conf(request, conf, work_root, settings)
     run_adaptive_search(
@@ -203,6 +204,7 @@ def _run_adaptive_search(
         evaluate=evaluate,
         record_result=record_result,
         run_batch=_run_parallel_grid,
+        anchor_conf=anchor_conf,
     )
 
 
@@ -237,6 +239,7 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
         benchmark_window=benchmark_window,
         trial_threads=settings.trial_threads,
         trial_memory_gb=settings.trial_memory_gb,
+        delta_rounds=request.delta_rounds,
     )
     plan_text = format_optimization_plan(plan)
     logger.info("\n%s", plan_text)
@@ -387,6 +390,7 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
                 settings=settings,
                 timed_out=timed_out,
                 record_result=record_result,
+                anchor_conf=best_conf,
             )
         elif adaptive_max_trials <= 0:
             logger.info("Benchmark-only job — skipping search after base conf")

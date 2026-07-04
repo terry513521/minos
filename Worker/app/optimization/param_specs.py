@@ -12,6 +12,7 @@ class TuneSpec:
     min: float | int | None = None
     max: float | int | None = None
     step: float | int | None = None
+    delta: float | int | None = None
     values: tuple[Any, ...] | None = None
     linear: bool = False
     value_type: str | None = None
@@ -123,6 +124,7 @@ def resolve_tune_specs(
             step = override.get("step")
             if step is None:
                 step = GATK_SEARCH_STEPS.get(name, _default_step(param_def))
+            delta = override.get("delta")
             low = override.get("min", param_def["min"])
             high = override.get("max", param_def["max"])
             specs.append(
@@ -131,7 +133,8 @@ def resolve_tune_specs(
                     min=low,
                     max=high,
                     step=step,
-                    linear=any(k in override for k in ("min", "max", "step")),
+                    delta=delta,
+                    linear=any(k in override for k in ("min", "max", "step", "delta")),
                     value_type=param_type,
                 )
             )

@@ -24,6 +24,7 @@ export interface ParamInterval {
   min?: number;
   max?: number;
   step?: number;
+  delta?: number;
   values?: string[];
 }
 
@@ -223,6 +224,26 @@ export function defaultParamInterval(
   return { min: hardMin, max: hardMax, step };
 }
 
+/** Default ± perturbation for delta search (falls back to step or a narrow slice). */
+export function defaultParamDelta(
+  tool: string,
+  param: string,
+  baseValue: string,
+): number {
+  const interval = defaultParamInterval(tool, param, baseValue);
+  if (interval.step != null && interval.step > 0) {
+    return interval.step;
+  }
+  const spec = getParamBound(tool, param);
+  if (spec?.type === "int") {
+    return Math.max(1, Math.round((spec.max ?? 1) - (spec.min ?? 0)) / 10);
+  }
+  if (spec?.type === "float" && spec.min != null && spec.max != null) {
+    return Math.max(0.01, Math.round(((spec.max - spec.min) / 20) * 1000) / 1000);
+  }
+  return 1;
+}
+
 export function intervalForDispatch(interval: ParamInterval | undefined): ParamInterval | undefined {
   if (!interval) return undefined;
   const out: ParamInterval = {};
@@ -230,6 +251,9 @@ export function intervalForDispatch(interval: ParamInterval | undefined): ParamI
   if (interval.max != null && Number.isFinite(interval.max)) out.max = interval.max;
   if (interval.step != null && Number.isFinite(interval.step) && interval.step > 0) {
     out.step = interval.step;
+  }
+  if (interval.delta != null && Number.isFinite(interval.delta) && interval.delta > 0) {
+    out.delta = interval.delta;
   }
   if (interval.values?.length) {
     out.values = interval.values.map((v) => v.trim()).filter(Boolean);
@@ -242,12 +266,18 @@ export function buildDispatchParamIntervals(
   tool: string,
   selectedParams: string[],
   paramIntervals: Record<string, ParamInterval>,
+  algorithm?: string,
 ): Record<string, ParamInterval> | undefined {
   const out: Record<string, ParamInterval> = {};
+  const useDelta = String(algorithm ?? "").toLowerCase() === "delta";
   for (const param of selectedParams) {
     const clamped = clampParamInterval(tool, param, paramIntervals[param] ?? {});
     const interval = intervalForDispatch(clamped);
-    if (interval) out[param] = interval;
+    if (!interval) continue;
+    if (useDelta && interval.delta == null && clamped.delta != null) {
+      interval.delta = clamped.delta;
+    }
+    out[param] = interval;
   }
   return Object.keys(out).length > 0 ? out : undefined;
 }

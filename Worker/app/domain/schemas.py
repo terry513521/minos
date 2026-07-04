@@ -7,6 +7,7 @@ class ParamIntervalSpec(BaseModel):
     min: float | None = None
     max: float | None = None
     step: float | None = None
+    delta: float | None = None
     values: list[str] | None = None
 
 
@@ -81,6 +82,12 @@ class OptimizeRequest(BaseModel):
     include_base_benchmark: bool = Field(
         default=True,
         description="When true, score base conf once before search trials",
+    )
+    delta_rounds: int | None = Field(
+        default=None,
+        ge=1,
+        le=1000,
+        description="Delta algorithm only: refinement rounds around current best (±delta per param)",
     )
 
 

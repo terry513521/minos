@@ -141,6 +141,7 @@ export interface ParamIntervalPayload {
   min?: number;
   max?: number;
   step?: number;
+  delta?: number;
   values?: string[];
 }
 
@@ -155,6 +156,7 @@ export interface WorkerDispatchPayload {
   limit_seconds?: number;
   adaptive_max_trials?: number;
   include_base_benchmark?: boolean;
+  delta_rounds?: number;
   candidate_index?: number;
 }
 
@@ -345,6 +347,7 @@ export interface WorkerTunableParamInterval {
   min?: number;
   max?: number;
   step?: number;
+  delta?: number;
   values?: string[];
 }
 
@@ -359,6 +362,7 @@ export interface WorkerTunableProfilePayload {
   trial_memory_gb: number;
   trial_count: number;
   include_base_benchmark?: boolean;
+  delta_rounds?: number;
 }
 
 export interface WorkerTunableDefaultsRecord {

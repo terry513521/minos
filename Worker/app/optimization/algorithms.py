@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 OPTUNA_ALGORITHMS = frozenset({"optuna", "gp"})
-EXPLORATION_ALGORITHMS = frozenset({"random", "sobol", "lhs", "grid"})
+EXPLORATION_ALGORITHMS = frozenset({"random", "sobol", "lhs", "grid", "delta"})
 EVOLUTIONARY_ALGORITHMS = frozenset({"pbt", "cascade"})
 ADAPTIVE_ALGORITHMS = frozenset(
     {*OPTUNA_ALGORITHMS, *EXPLORATION_ALGORITHMS, *EVOLUTIONARY_ALGORITHMS}

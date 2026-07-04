@@ -23,6 +23,7 @@ import {
   CONCURRENCY_OPTIONS,
   MAX_TRIAL_THREADS,
   clampTotalTrials,
+  clampDeltaRounds,
   createAssignment,
   assignmentWindowFromRegion,
   mergeAssignmentWithWorkerTunables,
@@ -42,6 +43,7 @@ import {
 import {
   buildDispatchParamIntervals,
   clampParamInterval,
+  defaultParamDelta,
   defaultParamInterval,
   ParamInterval,
 } from "../utils/paramBounds";
@@ -1212,6 +1214,7 @@ export function WorkersPanel({
           assignment.tool,
           assignment.selectedParams,
           assignment.paramIntervals,
+          assignment.algorithm,
         ),
         concurrency: assignment.concurrency,
         algorithm: assignment.algorithm,
@@ -1222,6 +1225,9 @@ export function WorkersPanel({
           assignment.algorithm,
         ),
         include_base_benchmark: assignment.includeBaseBenchmark,
+        ...(assignment.algorithm === "delta"
+          ? { delta_rounds: assignment.deltaRounds }
+          : {}),
         candidate_index: assignment.candidate.index,
       });
       setDispatchByWorker((prev) => ({ ...prev, [workerId]: result }));
@@ -1283,9 +1289,15 @@ export function WorkersPanel({
     const saved = worker
       ? getWorkerTunableDefaults(worker, assignment.tool)?.paramIntervals[param]
       : undefined;
+    const useDelta = assignment.algorithm === "delta";
     const interval = saved
       ? clampParamInterval(assignment.tool, param, saved)
-      : defaultParamInterval(assignment.tool, param, baseValue);
+      : useDelta
+        ? {
+            ...defaultParamInterval(assignment.tool, param, baseValue),
+            delta: defaultParamDelta(assignment.tool, param, baseValue),
+          }
+        : defaultParamInterval(assignment.tool, param, baseValue);
 
     updateAssignment(workerId, {
       selectedParams: [...assignment.selectedParams, param],
@@ -1764,6 +1776,7 @@ export function WorkersPanel({
                     <ConfParamPicker
                       baseConf={assignment.candidate.base_conf}
                       tool={assignment.tool}
+                      algorithm={assignment.algorithm}
                       selectedParams={assignment.selectedParams}
                       paramIntervals={assignment.paramIntervals}
                       readOnly={reassignmentLocked || autoManaged}
@@ -1862,6 +1875,28 @@ export function WorkersPanel({
                                   ? "Total trials including base benchmark"
                                   : "Search trials without base benchmark"
                               }
+                            />
+                          </div>
+                        </label>
+                      )}
+
+                      {assignment.algorithm === "delta" && (
+                        <label className="worker-assignment-field">
+                          <span className="worker-assignment-label">Delta rounds (n)</span>
+                          <div className="worker-duration-input">
+                            <input
+                              type="number"
+                              min={1}
+                              max={1000}
+                              step={1}
+                              disabled={autoManaged}
+                              value={assignment.deltaRounds}
+                              onChange={(e) =>
+                                updateAssignment(worker.id, {
+                                  deltaRounds: clampDeltaRounds(Number(e.target.value)),
+                                })
+                              }
+                              aria-label="Delta refinement rounds around current best"
                             />
                           </div>
                         </label>

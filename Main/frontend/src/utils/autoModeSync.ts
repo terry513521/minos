@@ -305,13 +305,17 @@ export function manualAssignmentsFromEndedAuto(
   return {};
 }
 
-export function formatParamInterval(spec: ParamInterval): string {
+export function formatParamInterval(spec: ParamInterval, algorithm?: string): string {
   if (spec.values?.length) {
     return spec.values.join(", ");
+  }
+  if (String(algorithm ?? "").toLowerCase() === "delta" && spec.delta != null) {
+    return `±${spec.delta}`;
   }
   const parts: string[] = [];
   if (spec.min != null) parts.push(`min ${spec.min}`);
   if (spec.max != null) parts.push(`max ${spec.max}`);
   if (spec.step != null) parts.push(`step ${spec.step}`);
+  if (spec.delta != null) parts.push(`delta ${spec.delta}`);
   return parts.join(" · ");
 }
