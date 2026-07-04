@@ -25,7 +25,10 @@ interface CandidateFinderPanelProps {
   onRegionChange?: (region: string) => void;
   workerAssignmentSummaries?: WorkerAssignmentSummary[];
   onAssignCandidateToWorker?: (workerId: string, candidateIndex: number) => boolean;
-  onApplyConfToAllWorkers?: (text: string, candidateIndex: number) => ApplyConfImportResult;
+  onApplyConfToAllWorkers?: (
+    text: string,
+    candidateIndex: number,
+  ) => ApplyConfImportResult | Promise<ApplyConfImportResult>;
   embedded?: boolean;
 }
 
@@ -351,7 +354,7 @@ function CandidateWorkerAssignPanel({
   workerSlots: WorkerAssignmentSummary[];
   assignMessage: string | null;
   onAssign: (workerId: string, workerName: string) => void;
-  onApplyConfFile?: (text: string) => ApplyConfImportResult;
+  onApplyConfFile?: (text: string) => ApplyConfImportResult | Promise<ApplyConfImportResult>;
 }) {
   const region = candidate.source_window?.trim();
   const importFileRef = useRef<HTMLInputElement>(null);
@@ -372,7 +375,7 @@ function CandidateWorkerAssignPanel({
     if (!onApplyConfFile) return;
     setConfImportMessage(null);
     setConfImportError(null);
-    const result = onApplyConfFile(text);
+    const result = await onApplyConfFile(text);
     if (result.ok) {
       setConfImportMessage(result.message);
     } else {

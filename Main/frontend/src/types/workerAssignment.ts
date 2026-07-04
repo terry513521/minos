@@ -45,7 +45,10 @@ export const DEFAULT_TRIAL_THREADS = 4;
 export const DEFAULT_TRIAL_MEMORY_GB = 6;
 export const MAX_TRIAL_THREADS = 100;
 export const MAX_CONCURRENCY = 32;
-export const CONCURRENCY_OPTIONS = [1, 2, 3, 4, 6, 8] as const;
+export const CONCURRENCY_OPTIONS = Array.from(
+  { length: MAX_CONCURRENCY },
+  (_, index) => index + 1,
+);
 
 export interface WorkerAssignment {
   candidate: CandidatePreview;
@@ -163,6 +166,36 @@ export function assignmentWindowFromRegion(
   return fromFind ?? "";
 }
 
+export function mergeAssignmentWithWorkerTunables(
+  worker: { id: string; name?: string | null },
+  assignment: WorkerAssignment,
+): WorkerAssignment {
+  if (assignment.autoManaged) return assignment;
+
+  const tool = assignment.tool;
+  const keys = listToolOptionKeys(assignment.candidate.base_conf, tool);
+  const fromSaved = selectedParamsForWorker(worker, tool, keys);
+  const selectedParams =
+    fromSaved.length > 0
+      ? fromSaved
+      : assignment.selectedParams.length > 0
+        ? assignment.selectedParams
+        : defaultSelectedParams(tool, keys);
+
+  const tunables = applyWorkerTunableDefaults(
+    worker,
+    tool,
+    assignment.candidate.base_conf,
+    selectedParams,
+  );
+
+  return normalizeWorkerAssignment({
+    ...assignment,
+    ...tunables,
+    selectedParams,
+  });
+}
+
 export function createAssignment(
   candidate: CandidatePreview,
   context: FindCandidatesResponse,
@@ -191,19 +224,19 @@ export function createAssignment(
     window: assignmentWindowFromRegion(regionInput, context.window),
     tool: resolvedTool,
     algorithm: workerName
-      ? tunableDefaults.algorithm || workerDefaultAlgorithm(workerName)
+      ? (tunableDefaults.algorithm ?? workerDefaultAlgorithm(workerName))
       : tunableDefaults.algorithm,
     selectedParams: tunableDefaults.selectedParams,
     paramIntervals: tunableDefaults.paramIntervals,
     concurrency: workerName
-      ? tunableDefaults.concurrency || workerDefaultConcurrency(workerName)
+      ? (tunableDefaults.concurrency ?? workerDefaultConcurrency(workerName))
       : tunableDefaults.concurrency,
     limitSeconds: tunableDefaults.limitSeconds,
     trialThreads: workerName
-      ? tunableDefaults.trialThreads || workerDefaultTrialThreads(workerName)
+      ? (tunableDefaults.trialThreads ?? workerDefaultTrialThreads(workerName))
       : tunableDefaults.trialThreads,
     trialMemoryGb: workerName
-      ? tunableDefaults.trialMemoryGb || workerDefaultTrialMemoryGb(workerName)
+      ? (tunableDefaults.trialMemoryGb ?? workerDefaultTrialMemoryGb(workerName))
       : tunableDefaults.trialMemoryGb,
     trialCount: tunableDefaults.trialCount,
     dispatching: false,

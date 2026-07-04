@@ -28,7 +28,7 @@ export function ConsolePage() {
     ((workerId: string, candidateIndex: number) => boolean) | null
   >(null);
   const applyConfImportRef = useRef<
-    ((text: string, candidateIndex: number) => ApplyConfImportResult) | null
+    ((text: string, candidateIndex: number) => Promise<ApplyConfImportResult>) | null
   >(null);
 
   const handleWorkerAssignmentSummariesChange = useCallback(
@@ -50,7 +50,7 @@ export function ConsolePage() {
   );
 
   const handleApplyConfHandlerReady = useCallback(
-    (handler: (text: string, candidateIndex: number) => ApplyConfImportResult) => {
+    (handler: (text: string, candidateIndex: number) => Promise<ApplyConfImportResult>) => {
       applyConfImportRef.current = handler;
     },
     [],
@@ -62,9 +62,9 @@ export function ConsolePage() {
     [],
   );
 
-  const handleApplyConfToAllWorkers = useCallback((text: string, candidateIndex: number) => {
+  const handleApplyConfToAllWorkers = useCallback(async (text: string, candidateIndex: number) => {
     return (
-      applyConfImportRef.current?.(text, candidateIndex) ?? {
+      (await applyConfImportRef.current?.(text, candidateIndex)) ?? {
         ok: false,
         message: "Workers panel is not ready yet.",
         applied: 0,

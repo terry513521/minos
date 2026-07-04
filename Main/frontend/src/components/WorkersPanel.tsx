@@ -25,6 +25,7 @@ import {
   clampTotalTrials,
   createAssignment,
   assignmentWindowFromRegion,
+  mergeAssignmentWithWorkerTunables,
   adaptiveMaxTrialsFromTotal,
   DEFAULT_ADAPTIVE_MAX_TRIALS,
   isAdaptiveAlgorithm,
@@ -102,7 +103,7 @@ interface WorkersPanelProps {
     handler: (workerId: string, candidateIndex: number) => boolean,
   ) => void;
   onApplyConfHandlerReady?: (
-    handler: (text: string, candidateIndex: number) => ApplyConfImportResult,
+    handler: (text: string, candidateIndex: number) => Promise<ApplyConfImportResult>,
   ) => void;
 }
 
@@ -382,6 +383,30 @@ export function WorkersPanel({
   }, []);
 
   useEffect(() => {
+    if (workers.length === 0) return;
+    let cancelled = false;
+    void ensureWorkerTunablesHydrated().then(() => {
+      if (cancelled) return;
+      setAssignments((prev) => {
+        let changed = false;
+        const next: Record<string, WorkerAssignment> = { ...prev };
+        for (const worker of workers) {
+          const assignment = prev[worker.id];
+          if (!assignment || assignment.autoManaged) continue;
+          if (!getWorkerTunableDefaults(worker, assignment.tool)) continue;
+          const merged = mergeAssignmentWithWorkerTunables(worker, assignment);
+          next[worker.id] = merged;
+          changed = true;
+        }
+        return changed ? next : prev;
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [workers]);
+
+  useEffect(() => {
     const targetWindow = assignmentWindowFromRegion(finderRegion, candidateContext?.window);
     if (!targetWindow || !candidateContext) return;
 
@@ -626,30 +651,38 @@ export function WorkersPanel({
 
       const worker = workers.find((item) => item.id === workerId);
 
-      restoreWorkerAssignment(workerId);
-      setDismissedWorkers((prev) => {
-        if (!prev.has(workerId)) return prev;
-        const next = new Set(prev);
-        next.delete(workerId);
-        return next;
+      void ensureWorkerTunablesHydrated().then(() => {
+        restoreWorkerAssignment(workerId);
+        setDismissedWorkers((prev) => {
+          if (!prev.has(workerId)) return prev;
+          const next = new Set(prev);
+          next.delete(workerId);
+          return next;
+        });
+
+        const assignment = createAssignment(candidate, candidateContext, worker, finderRegion);
+        setAssignments((prev) => ({
+          ...prev,
+          [workerId]: assignment,
+        }));
+        if (worker) {
+          saveWorkerTunableDefaults(worker, assignment);
+        }
+        setDispatchByWorker((prev) => {
+          const next = { ...prev };
+          delete next[workerId];
+          return next;
+        });
       });
 
-      setAssignments((prev) => ({
-        ...prev,
-        [workerId]: createAssignment(candidate, candidateContext, worker, finderRegion),
-      }));
-      setDispatchByWorker((prev) => {
-        const next = { ...prev };
-        delete next[workerId];
-        return next;
-      });
       return true;
     },
     [candidateContext, finderRegion, workers, isWorkerAssignmentLocked],
   );
 
   const applyConfImportToAllWorkers = useCallback(
-    (text: string, candidateIndex: number): ApplyConfImportResult => {
+    async (text: string, candidateIndex: number): Promise<ApplyConfImportResult> => {
+      await ensureWorkerTunablesHydrated();
       if (!candidateContext) {
         return { ok: false, message: "Find candidates before importing a conf file.", applied: 0, skipped: 0 };
       }
@@ -1690,15 +1723,17 @@ export function WorkersPanel({
                         <select
                           value={assignment.tool}
                           disabled={autoManaged}
-                          onChange={(e) =>
-                            updateAssignment(worker.id, {
-                              ...assignmentParamsForTool(
-                                assignment,
-                                e.target.value as ToolkitOption,
-                                worker,
-                              ),
-                            })
-                          }
+                          onChange={(e) => {
+                            const tool = e.target.value as ToolkitOption;
+                            updateAssignment(
+                              worker.id,
+                              mergeAssignmentWithWorkerTunables(worker, {
+                                ...assignment,
+                                ...assignmentParamsForTool(assignment, tool, worker),
+                                tool,
+                              }),
+                            );
+                          }}
                         >
                           {TOOLKIT_OPTIONS.map((tool) => (
                             <option key={tool} value={tool}>
