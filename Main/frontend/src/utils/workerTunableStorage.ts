@@ -12,6 +12,7 @@ import {
   DEFAULT_TOTAL_TRIALS,
   DEFAULT_TRIAL_MEMORY_GB,
   DEFAULT_TRIAL_THREADS,
+  DEFAULT_INCLUDE_BASE_BENCHMARK,
   ToolkitOption,
   TOOLKIT_OPTIONS,
   WorkerAssignment,
@@ -40,6 +41,7 @@ export interface WorkerTunableDefaults {
   trialThreads: number;
   trialMemoryGb: number;
   trialCount: number;
+  includeBaseBenchmark: boolean;
 }
 
 interface StoredPerWorkerTunables {
@@ -101,6 +103,10 @@ function normalizeProfile(raw: unknown): WorkerTunableDefaults | null {
     trialCount: clampTotalTrials(
       Number(parsed.trialCount ?? parsed.trial_count) || DEFAULT_TOTAL_TRIALS,
     ),
+    includeBaseBenchmark:
+      parsed.includeBaseBenchmark ??
+      parsed.include_base_benchmark ??
+      DEFAULT_INCLUDE_BASE_BENCHMARK,
   };
 }
 
@@ -150,6 +156,7 @@ function profileToPayload(profile: WorkerTunableDefaults): WorkerTunableProfileP
     trial_threads: profile.trialThreads,
     trial_memory_gb: profile.trialMemoryGb,
     trial_count: profile.trialCount,
+    include_base_benchmark: profile.includeBaseBenchmark,
   };
 }
 
@@ -245,6 +252,7 @@ export function profileFromAssignment(assignment: WorkerAssignment): WorkerTunab
     trialThreads: assignment.trialThreads,
     trialMemoryGb: assignment.trialMemoryGb,
     trialCount: assignment.trialCount,
+    includeBaseBenchmark: assignment.includeBaseBenchmark,
   };
 }
 
@@ -340,6 +348,7 @@ export function applyWorkerTunableDefaults(
   | "trialThreads"
   | "trialMemoryGb"
   | "trialCount"
+  | "includeBaseBenchmark"
 > {
   if (!worker) {
     return {
@@ -351,6 +360,7 @@ export function applyWorkerTunableDefaults(
       trialThreads: DEFAULT_TRIAL_THREADS,
       trialMemoryGb: DEFAULT_TRIAL_MEMORY_GB,
       trialCount: DEFAULT_TOTAL_TRIALS,
+      includeBaseBenchmark: DEFAULT_INCLUDE_BASE_BENCHMARK,
     };
   }
 
@@ -364,6 +374,7 @@ export function applyWorkerTunableDefaults(
     trialThreads: saved?.trialThreads ?? DEFAULT_TRIAL_THREADS,
     trialMemoryGb: saved?.trialMemoryGb ?? DEFAULT_TRIAL_MEMORY_GB,
     trialCount: saved?.trialCount ?? DEFAULT_TOTAL_TRIALS,
+    includeBaseBenchmark: saved?.includeBaseBenchmark ?? DEFAULT_INCLUDE_BASE_BENCHMARK,
   };
 }
 
@@ -424,6 +435,7 @@ export async function syncPerWorkerTunablesFromAutoConfig(config: AutoModeConfig
       trialCount: clampTotalTrials(
         workerSettingForName(trialCounts, workerName) ?? DEFAULT_AUTO_TOTAL_TRIALS,
       ),
+      includeBaseBenchmark: DEFAULT_INCLUDE_BASE_BENCHMARK,
     };
 
     const worker = workerByName.get(workerName.toLowerCase());

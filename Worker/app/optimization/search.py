@@ -184,18 +184,20 @@ def count_search_trials(
     *,
     algorithm: str = "optuna",
     adaptive_max_trials: int = 44,
+    include_base_benchmark: bool = True,
 ) -> int:
-    """Trials to run: 1 base + search trials (algorithm-specific cap)."""
+    """Trials to run: optional base benchmark + search trials."""
+    base_trials = 1 if include_base_benchmark else 0
     if adaptive_max_trials <= 0:
-        return 1
+        return base_trials
     algo = normalize_algorithm(algorithm)
     if algo == "grid":
         grid_size = full_grid_size(base_conf, tool, param_names, param_intervals)
-        searchable = max(0, grid_size - 1)
+        searchable = max(0, grid_size - (1 if include_base_benchmark else 0))
         if searchable == 0:
-            return 1
-        return 1 + min(searchable, max(1, adaptive_max_trials))
-    return 1 + max(1, adaptive_max_trials)
+            return base_trials
+        return base_trials + min(searchable, max(1, adaptive_max_trials))
+    return base_trials + max(1, adaptive_max_trials)
 
 
 def summarize_param_axes(
@@ -253,6 +255,7 @@ def build_optimization_plan(
     limit_seconds: int,
     algorithm: str,
     adaptive_max_trials: int = 44,
+    include_base_benchmark: bool = True,
     vcf_cache_enabled: bool = False,
     gatk_persistent_container: bool = False,
     benchmark_window: str | None = None,
@@ -269,6 +272,7 @@ def build_optimization_plan(
         param_intervals,
         algorithm=algo,
         adaptive_max_trials=adaptive_max_trials,
+        include_base_benchmark=include_base_benchmark,
     )
 
     plan: dict[str, Any] = {
@@ -284,6 +288,7 @@ def build_optimization_plan(
         "full_cartesian_grid": full_cartesian,
         "planned_trials": planned_trials,
         "adaptive_max_trials": adaptive_max_trials,
+        "include_base_benchmark": include_base_benchmark,
         "vcf_cache_enabled": vcf_cache_enabled,
         "gatk_persistent_container": gatk_persistent_container and tool.lower() == "gatk",
         "trial_threads": trial_threads,
@@ -314,7 +319,11 @@ def format_optimization_plan(plan: dict[str, Any]) -> str:
     lines.extend([
         f"params ({plan['param_count']}): {', '.join(plan['params']) or '(none)'}",
         f"full Cartesian grid: {plan['full_cartesian_grid']} configs",
-        f"planned trials: {plan['planned_trials']} (includes 1 base benchmark)",
+        (
+            f"planned trials: {plan['planned_trials']} (includes 1 base benchmark)"
+            if plan.get("include_base_benchmark", True)
+            else f"planned trials: {plan['planned_trials']} (search only, no base benchmark)"
+        ),
     ])
 
     for axis in plan.get("axes", []):
@@ -325,20 +334,23 @@ def format_optimization_plan(plan: dict[str, Any]) -> str:
         )
 
     if plan["mode"] == "grid":
-        searchable = max(0, int(plan["full_cartesian_grid"]) - 1)
+        searchable = max(0, int(plan["full_cartesian_grid"]) - (1 if plan.get("include_base_benchmark", True) else 0))
         capped = min(searchable, int(plan["adaptive_max_trials"]))
+        after = "after base " if plan.get("include_base_benchmark", True) else ""
         lines.append(
-            f"search: grid {capped} of {plan['full_cartesian_grid']} configs after base "
+            f"search: grid {capped} of {plan['full_cartesian_grid']} configs {after}"
             f"(cap {plan['adaptive_max_trials']} search trials)"
         )
     elif plan["mode"] in ("random", "optuna", "gp", "sobol", "lhs", "pbt", "cascade"):
+        after = "after base " if plan.get("include_base_benchmark", True) else ""
         lines.append(
-            f"search: {plan['mode']} up to {plan['adaptive_max_trials']} trials after base "
+            f"search: {plan['mode']} up to {plan['adaptive_max_trials']} trials {after}"
             f"(reference space: {plan['full_cartesian_grid']} configs)"
         )
     else:
+        after = "after base" if plan.get("include_base_benchmark", True) else "only"
         lines.append(
-            f"search: {plan['mode']} up to {plan['adaptive_max_trials']} trials after base"
+            f"search: {plan['mode']} up to {plan['adaptive_max_trials']} trials {after}"
         )
 
     extras: list[str] = []

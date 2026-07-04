@@ -26,8 +26,7 @@ import {
   createAssignment,
   assignmentWindowFromRegion,
   mergeAssignmentWithWorkerTunables,
-  adaptiveMaxTrialsFromTotal,
-  DEFAULT_ADAPTIVE_MAX_TRIALS,
+  adaptiveMaxTrialsForDispatch,
   isAdaptiveAlgorithm,
   limitMinutesToSeconds,
   normalizeWorkerAssignment,
@@ -1217,9 +1216,12 @@ export function WorkersPanel({
         concurrency: assignment.concurrency,
         algorithm: assignment.algorithm,
         limit_seconds: assignment.limitSeconds,
-        adaptive_max_trials: isAdaptiveAlgorithm(assignment.algorithm)
-          ? adaptiveMaxTrialsFromTotal(assignment.trialCount)
-          : DEFAULT_ADAPTIVE_MAX_TRIALS,
+        adaptive_max_trials: adaptiveMaxTrialsForDispatch(
+          assignment.trialCount,
+          assignment.includeBaseBenchmark,
+          assignment.algorithm,
+        ),
+        include_base_benchmark: assignment.includeBaseBenchmark,
         candidate_index: assignment.candidate.index,
       });
       setDispatchByWorker((prev) => ({ ...prev, [workerId]: result }));
@@ -1839,7 +1841,9 @@ export function WorkersPanel({
 
                       {isAdaptiveAlgorithm(assignment.algorithm) && (
                         <label className="worker-assignment-field">
-                          <span className="worker-assignment-label">Trials</span>
+                          <span className="worker-assignment-label">
+                            {assignment.includeBaseBenchmark ? "Trials (1 base + search)" : "Search trials"}
+                          </span>
                           <div className="worker-duration-input">
                             <input
                               type="number"
@@ -1853,9 +1857,28 @@ export function WorkersPanel({
                                   trialCount: clampTotalTrials(Number(e.target.value)),
                                 })
                               }
-                              aria-label="Total trials including base benchmark"
+                              aria-label={
+                                assignment.includeBaseBenchmark
+                                  ? "Total trials including base benchmark"
+                                  : "Search trials without base benchmark"
+                              }
                             />
                           </div>
+                        </label>
+                      )}
+
+                      {!autoManaged && (
+                        <label className="worker-assignment-field worker-assignment-field--checkbox">
+                          <input
+                            type="checkbox"
+                            checked={assignment.includeBaseBenchmark}
+                            onChange={(e) =>
+                              updateAssignment(worker.id, {
+                                includeBaseBenchmark: e.target.checked,
+                              })
+                            }
+                          />
+                          <span className="worker-assignment-label">Include base conf benchmark</span>
                         </label>
                       )}
 

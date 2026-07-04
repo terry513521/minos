@@ -147,6 +147,7 @@ async def dispatch_to_worker(
         "algorithm": body.algorithm,
         "limit": str(body.limit_seconds),
         "adaptive_max_trials": body.adaptive_max_trials,
+        "include_base_benchmark": body.include_base_benchmark,
         "base_conf": body.base_conf,
         "params": body.params,
     }

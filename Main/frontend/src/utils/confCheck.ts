@@ -98,6 +98,7 @@ export function buildConfCheckDispatchPayload(
       algorithm: CONF_CHECK_ALGORITHM,
       limit_seconds: DEFAULT_LIMIT_SECONDS,
       adaptive_max_trials: CONF_CHECK_ADAPTIVE_MAX_TRIALS,
+      include_base_benchmark: true,
     },
   };
 }

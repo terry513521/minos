@@ -50,6 +50,7 @@ export const DEFAULT_AUTO_ADAPTIVE_MAX_TRIALS = 49;
 export const DEFAULT_AUTO_TOTAL_TRIALS = 50;
 export const DEFAULT_TRIAL_THREADS = 4;
 export const DEFAULT_TRIAL_MEMORY_GB = 6;
+export const DEFAULT_INCLUDE_BASE_BENCHMARK = true;
 export const MAX_TRIAL_THREADS = 100;
 export const MAX_CONCURRENCY = 32;
 export const CONCURRENCY_OPTIONS = Array.from(
@@ -73,6 +74,8 @@ export interface WorkerAssignment {
   trialMemoryGb: number;
   /** Total trials (1 base + search). Used for all supported search algorithms. */
   trialCount: number;
+  /** Score dropped base conf once before search trials when starting optimization. */
+  includeBaseBenchmark: boolean;
   dispatching: boolean;
   dispatchError: string | null;
   /** ISO timestamp when optimization was last dispatched to this worker. */
@@ -104,6 +107,21 @@ export function clampTotalTrials(value: number): number {
 
 export function adaptiveMaxTrialsFromTotal(totalTrials: number): number {
   return Math.max(1, clampTotalTrials(totalTrials) - 1);
+}
+
+export function adaptiveMaxTrialsForDispatch(
+  trialCount: number,
+  includeBaseBenchmark: boolean,
+  algorithm: AlgorithmOption | string,
+): number {
+  if (!isAdaptiveAlgorithm(algorithm)) {
+    return DEFAULT_ADAPTIVE_MAX_TRIALS;
+  }
+  const total = clampTotalTrials(trialCount);
+  if (includeBaseBenchmark) {
+    return Math.max(1, total - 1);
+  }
+  return Math.max(1, total);
 }
 
 export function clampTrialThreads(value: number): number {
@@ -142,6 +160,8 @@ export function normalizeWorkerAssignment(assignment: WorkerAssignment): WorkerA
     trialThreads: clampTrialThreads(assignment.trialThreads ?? DEFAULT_TRIAL_THREADS),
     trialMemoryGb: clampTrialMemoryGb(assignment.trialMemoryGb ?? DEFAULT_TRIAL_MEMORY_GB),
     trialCount: clampTotalTrials(assignment.trialCount ?? DEFAULT_TOTAL_TRIALS),
+    includeBaseBenchmark:
+      assignment.includeBaseBenchmark ?? DEFAULT_INCLUDE_BASE_BENCHMARK,
   };
 }
 
@@ -246,6 +266,7 @@ export function createAssignment(
       ? (tunableDefaults.trialMemoryGb ?? workerDefaultTrialMemoryGb(workerName))
       : tunableDefaults.trialMemoryGb,
     trialCount: tunableDefaults.trialCount,
+    includeBaseBenchmark: tunableDefaults.includeBaseBenchmark,
     dispatching: false,
     dispatchError: null,
   };

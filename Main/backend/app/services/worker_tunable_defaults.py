@@ -53,6 +53,7 @@ def normalize_profile_body(raw: WorkerTunableProfileBody | dict) -> WorkerTunabl
         trial_threads=max(1, min(100, int(payload.trial_threads))),
         trial_memory_gb=max(4, min(128, int(payload.trial_memory_gb))),
         trial_count=max(2, min(1001, int(payload.trial_count))),
+        include_base_benchmark=bool(payload.include_base_benchmark),
     )
 
 

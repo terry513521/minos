@@ -50,14 +50,21 @@ def validate_optimize_request(request: OptimizeRequest, settings: Settings | Non
     )
     validate_benchmark_assets(benchmark_window, settings)
     intervals = _intervals_payload(request)
-    return count_search_trials(
+    include_base = request.include_base_benchmark
+    search_space_size = count_search_trials(
         request.base_conf,
         request.tool,
         request.params,
         intervals,
         algorithm=algorithm,
         adaptive_max_trials=adaptive_max_trials,
+        include_base_benchmark=include_base,
     )
+    if search_space_size <= 0:
+        raise ValueError(
+            "No trials planned: enable base conf benchmark or set search trials > 0"
+        )
+    return search_space_size
 
 
 def _intervals_payload(request: OptimizeRequest) -> dict[str, Any] | None:
@@ -212,6 +219,7 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
     deadline = time.time() + limit_seconds
     concurrency = _parse_concurrency(request.concurrency)
     intervals = _intervals_payload(request)
+    include_base = request.include_base_benchmark
 
     plan = build_optimization_plan(
         window=request.window,
@@ -223,6 +231,7 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
         limit_seconds=limit_seconds,
         algorithm=algorithm,
         adaptive_max_trials=adaptive_max_trials,
+        include_base_benchmark=include_base,
         vcf_cache_enabled=True,
         gatk_persistent_container=False,
         benchmark_window=benchmark_window,
@@ -347,12 +356,14 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
                 errors.append(result.error)
                 logger.warning("Trial error: %s", result.error)
 
-        if not is_stop_requested():
+        if not is_stop_requested() and include_base:
             logger.info("Trial 1/%s (base conf)", search_space_size)
             base_result = _evaluate_conf(
                 job_request, job_request.base_conf, work_root, settings
             )
             record_result(base_result, "base conf")
+        elif not is_stop_requested() and not include_base:
+            logger.info("Skipping base conf benchmark — search trials only")
         else:
             logger.info("Stop requested before base trial — skipping optimization")
 

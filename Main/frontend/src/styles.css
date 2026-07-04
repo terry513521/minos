@@ -3155,6 +3155,19 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   background: var(--surface-solid);
   color: var(--text);
 }
+.worker-assignment-field--checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.45rem;
+  grid-column: 1 / -1;
+}
+.worker-assignment-field--checkbox input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+}
+.worker-assignment-field--checkbox .worker-assignment-label {
+  margin: 0;
+}
 .worker-duration-input {
   display: flex;
   align-items: center;

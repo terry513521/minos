@@ -154,6 +154,7 @@ export interface WorkerDispatchPayload {
   algorithm?: string;
   limit_seconds?: number;
   adaptive_max_trials?: number;
+  include_base_benchmark?: boolean;
   candidate_index?: number;
 }
 
@@ -357,6 +358,7 @@ export interface WorkerTunableProfilePayload {
   trial_threads: number;
   trial_memory_gb: number;
   trial_count: number;
+  include_base_benchmark?: boolean;
 }
 
 export interface WorkerTunableDefaultsRecord {

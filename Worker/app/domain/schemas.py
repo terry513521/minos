@@ -78,6 +78,10 @@ class OptimizeRequest(BaseModel):
         le=1000,
         description="Override worker default: adaptive trials after base benchmark (0 = base only)",
     )
+    include_base_benchmark: bool = Field(
+        default=True,
+        description="When true, score base conf once before search trials",
+    )
 
 
 class OptimizeResponse(BaseModel):

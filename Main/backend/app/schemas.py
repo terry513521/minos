@@ -228,6 +228,10 @@ class WorkerDispatchRequest(BaseModel):
         le=1000,
         description="Adaptive search trials after base benchmark (0 = base conf only; total = 1 + this value)",
     )
+    include_base_benchmark: bool = Field(
+        default=True,
+        description="Score base conf once before search trials",
+    )
     candidate_index: int | None = None
 
 
@@ -495,6 +499,7 @@ class WorkerTunableProfileBody(BaseModel):
     trial_threads: int = Field(4, ge=1, le=100)
     trial_memory_gb: int = Field(6, ge=4, le=128)
     trial_count: int = Field(5, ge=2, le=1001)
+    include_base_benchmark: bool = True
 
 
 class WorkerTunableDefaultsResponse(BaseModel):
