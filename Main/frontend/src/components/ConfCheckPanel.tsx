@@ -2,7 +2,9 @@ import { DragEvent, useCallback, useEffect, useRef, useState } from "react";
 import { api, WorkerRecord } from "../api/client";
 import { buildConfCheckDispatchPayload, parseConfCheckFile, ParsedConfCheckFile } from "../utils/confCheck";
 import { loadConfCheckWorkerId, saveConfCheckWorkerId } from "../utils/confCheckStorage";
-import { normalizeRegion } from "../utils/window";
+import { CONF_CHECK_TRIAL_MEMORY_GB, CONF_CHECK_TRIAL_THREADS } from "../types/workerAssignment";
+import { effectiveBenchmarkWindow, formatBenchmarkWindowLabel } from "../utils/workerTaskSummary";
+import { analyzeBenchmarkWindow, formatWindowSpan } from "../utils/window";
 import { ConfTooltip } from "./ConfTooltip";
 import { WORKERS_CHANGED_EVENT } from "./AddWorkerModal";
 
@@ -30,10 +32,16 @@ export function ConfCheckPanel({ finderRegion }: ConfCheckPanelProps) {
   const [score, setScore] = useState<number | null>(null);
   const [rawScore, setRawScore] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [benchmarkWindow, setBenchmarkWindow] = useState<string | null>(null);
+  const [dispatchedWindow, setDispatchedWindow] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const region = normalizeRegion(finderRegion) ?? finderRegion.trim();
+  const windowAnalysis = analyzeBenchmarkWindow(finderRegion);
+  const region = windowAnalysis.window ?? "";
+  const regionSpan = formatWindowSpan(region);
   const checkWorker = workers.find((worker) => worker.id === checkWorkerId) ?? null;
+  const benchmarkSpan = formatWindowSpan(benchmarkWindow);
+  const dispatchedSpan = formatWindowSpan(dispatchedWindow);
 
   const refreshWorkers = useCallback(() => {
     api
@@ -83,6 +91,8 @@ export function ConfCheckPanel({ finderRegion }: ConfCheckPanelProps) {
     setMessage(null);
     setScore(null);
     setRawScore(null);
+    setBenchmarkWindow(null);
+    setDispatchedWindow(null);
     setPhase("idle");
 
     const parsed = parseConfCheckFile(text);
@@ -129,6 +139,9 @@ export function ConfCheckPanel({ finderRegion }: ConfCheckPanelProps) {
       return;
     }
 
+    setDispatchedWindow(best.window ?? null);
+    setBenchmarkWindow(effectiveBenchmarkWindow(best));
+
     const baseTrial = best.trials.find((trial) => trial.label === "base conf" && trial.success);
     const finished =
       best.status === "ready" ||
@@ -140,7 +153,8 @@ export function ConfCheckPanel({ finderRegion }: ConfCheckPanelProps) {
       setScore(baseTrial.score);
       setRawScore(baseTrial.raw_score);
       setPhase("done");
-      setMessage(`Base conf score on ${region}`);
+      const scoredLabel = formatBenchmarkWindowLabel(best);
+      setMessage(scoredLabel ? `Base conf score on ${scoredLabel}` : "Base conf score ready");
       stopPolling();
       return;
     }
@@ -154,7 +168,12 @@ export function ConfCheckPanel({ finderRegion }: ConfCheckPanelProps) {
 
     if (best.status === "optimizing" || best.status === "stopping") {
       setPhase("running");
-      setMessage(best.message ?? "Running base conf benchmark…");
+      const liveLabel = formatBenchmarkWindowLabel(best);
+      setMessage(
+        liveLabel
+          ? `Benchmarking on worker window ${liveLabel}`
+          : best.message ?? "Running base conf benchmark…",
+      );
     }
   }
 
@@ -163,7 +182,13 @@ export function ConfCheckPanel({ finderRegion }: ConfCheckPanelProps) {
     setMessage(null);
     setScore(null);
     setRawScore(null);
+    setBenchmarkWindow(null);
+    setDispatchedWindow(null);
 
+    if (!windowAnalysis.valid) {
+      setError(windowAnalysis.error ?? "Invalid region for benchmark.");
+      return;
+    }
     if (!region) {
       setError("Set a Region in Find candidates before running a conf check.");
       return;
@@ -181,17 +206,18 @@ export function ConfCheckPanel({ finderRegion }: ConfCheckPanelProps) {
       return;
     }
 
-    const payload = buildConfCheckDispatchPayload(finderRegion, parsedConf);
-    if (!payload) {
-      setError("Invalid region for benchmark.");
+    const built = buildConfCheckDispatchPayload(finderRegion, parsedConf);
+    if (!built.ok) {
+      setError(built.error);
       return;
     }
 
+    setDispatchedWindow(built.payload.window);
     setPhase("dispatching");
     stopPolling();
 
     try {
-      const dispatch = await api.dispatchToWorker(checkWorkerId, payload);
+      const dispatch = await api.dispatchToWorker(checkWorkerId, built.payload);
       if (!dispatch.ok) {
         setPhase("error");
         setError(dispatch.error ?? "Dispatch failed");
@@ -215,7 +241,7 @@ export function ConfCheckPanel({ finderRegion }: ConfCheckPanelProps) {
     phase === "dispatching" ||
     phase === "running" ||
     !parsedConf ||
-    !region ||
+    !windowAnalysis.valid ||
     !checkWorkerId;
 
   return (
@@ -225,7 +251,8 @@ export function ConfCheckPanel({ finderRegion }: ConfCheckPanelProps) {
           <h3 className="conf-check-title">Conf check</h3>
           <p className="conf-check-lead">
             Use one worker to score a dropped conf on the current Region — base benchmark only, no
-            search trials.
+            search trials. Uses {CONF_CHECK_TRIAL_THREADS} CPU / {CONF_CHECK_TRIAL_MEMORY_GB} GB per
+            trial.
           </p>
         </div>
         {phase === "done" && score != null && (
@@ -259,11 +286,44 @@ export function ConfCheckPanel({ finderRegion }: ConfCheckPanelProps) {
           </select>
         </label>
 
-        <label className="conf-check-field">
-          <span className="conf-check-field-label">Region</span>
+        <label className="conf-check-field conf-check-field--region">
+          <span className="conf-check-field-label">Assigned region</span>
           <code className="conf-check-region">{region || "—"}</code>
+          {regionSpan && (
+            <span className="conf-check-region-size">{regionSpan} dispatched</span>
+          )}
         </label>
+
+        {(phase === "running" || phase === "done") && benchmarkWindow && (
+          <label className="conf-check-field conf-check-field--region">
+            <span className="conf-check-field-label">Worker benchmark window</span>
+            <code className="conf-check-region conf-check-region--live">{benchmarkWindow}</code>
+            {benchmarkSpan && (
+              <span className="conf-check-region-size conf-check-region-size--ok">
+                {benchmarkSpan} scored
+              </span>
+            )}
+          </label>
+        )}
       </div>
+
+      {windowAnalysis.warning && phase === "idle" && (
+        <p className="conf-check-window-warning" role="status">
+          {windowAnalysis.warning}
+        </p>
+      )}
+      {windowAnalysis.error && (
+        <p className="conf-check-error" role="alert">
+          {windowAnalysis.error}
+        </p>
+      )}
+
+      {phase === "done" && dispatchedWindow && benchmarkWindow && dispatchedWindow !== benchmarkWindow && (
+        <p className="conf-check-window-note" role="status">
+          Assigned <code>{dispatchedWindow}</code> ({dispatchedSpan ?? "—"}) · worker scored{" "}
+          <code>{benchmarkWindow}</code> ({benchmarkSpan ?? "—"})
+        </p>
+      )}
 
       <div
         className={`conf-check-dropzone${dropActive ? " conf-check-dropzone--active" : ""}${parsedConf ? " conf-check-dropzone--loaded" : ""}`}

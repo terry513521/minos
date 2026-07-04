@@ -225,9 +225,7 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
         adaptive_max_trials=adaptive_max_trials,
         vcf_cache_enabled=True,
         gatk_persistent_container=False,
-        benchmark_window=benchmark_window
-        if source_window and benchmark_window != request.window
-        else None,
+        benchmark_window=benchmark_window,
         trial_threads=settings.trial_threads,
         trial_memory_gb=settings.trial_memory_gb,
     )
@@ -244,9 +242,7 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
         params=list(job_request.params),
         trial_threads=threads,
         trial_memory_gb=memory_gb,
-        benchmark_window=benchmark_window
-        if source_window and benchmark_window != request.window
-        else None,
+        benchmark_window=benchmark_window,
     )
     logger.info(
         "\n%s",

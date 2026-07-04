@@ -73,6 +73,11 @@ def test_main_payload_accepts_adaptive_max_trials():
     assert req.adaptive_max_trials == 50
 
 
+def test_main_payload_accepts_adaptive_max_trials_zero_for_conf_check():
+    req = OptimizeRequest.model_validate(_main_style_payload(adaptive_max_trials=0))
+    assert req.adaptive_max_trials == 0
+
+
 @patch("app.api.routes.submit_optimize_job")
 @patch("app.api.routes.validate_optimize_request", return_value=4)
 def test_optimize_accepts_main_dispatch_shape(mock_validate, mock_submit, client):

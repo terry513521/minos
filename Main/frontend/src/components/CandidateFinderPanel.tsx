@@ -8,7 +8,7 @@ import {
   loadCandidateFinderState,
   saveCandidateFinderState,
 } from "../utils/candidateFinderStorage";
-import { normalizeRegion, chromosomeFromWindow } from "../utils/window";
+import { normalizeRegion, chromosomeFromWindow, analyzeBenchmarkWindow, formatWindowSpan } from "../utils/window";
 import { AUTO_MODE_CHANGED_EVENT } from "./AutoModePanel";
 import { loadAutoModeState } from "../utils/autoModeStorage";
 import { ConfTooltip } from "./ConfTooltip";
@@ -175,6 +175,9 @@ export function CandidateFinderPanel({
       ? result?.candidates.find((candidate) => candidate.index === selectedCandidateIndex) ?? null
       : null;
 
+  const regionAnalysis = analyzeBenchmarkWindow(region);
+  const regionSpanLabel = formatWindowSpan(regionAnalysis.window);
+
   const body = (
     <>
       <form className="candidate-finder-bar" onSubmit={handleFind}>
@@ -189,6 +192,14 @@ export function CandidateFinderPanel({
             spellCheck={false}
             disabled={autoModeEnabled}
           />
+          {regionSpanLabel && (
+            <span
+              className={`candidate-region-size${regionAnalysis.isMinosRoundSize ? " candidate-region-size--ok" : " candidate-region-size--warn"}`}
+            >
+              {regionSpanLabel}
+              {regionAnalysis.isMinosRoundSize ? " · 5 Mb round" : " · not 5 Mb"}
+            </span>
+          )}
         </label>
         <label className="candidate-k-field">
           <span className="candidate-k-label">Candidates</span>

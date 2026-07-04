@@ -3,17 +3,16 @@ import { listToolOptionKeys } from "./candidateAssign";
 import { buildGatkReferenceConf } from "./paramBounds";
 import { parseAutoModeTunableImport } from "./autoModeTunableFile";
 import {
-  assignmentWindowFromRegion,
   buildDispatchBaseConf,
   CONF_CHECK_ADAPTIVE_MAX_TRIALS,
+  CONF_CHECK_TRIAL_MEMORY_GB,
+  CONF_CHECK_TRIAL_THREADS,
   DEFAULT_ALGORITHM,
   DEFAULT_LIMIT_SECONDS,
-  DEFAULT_TRIAL_MEMORY_GB,
-  DEFAULT_TRIAL_THREADS,
   ToolkitOption,
   TOOLKIT_OPTIONS,
 } from "../types/workerAssignment";
-import { normalizeRegion } from "./window";
+import { analyzeBenchmarkWindow } from "./window";
 
 export interface ParsedConfCheckFile {
   tool: ToolkitOption;
@@ -63,23 +62,28 @@ export function minimalBenchmarkParam(
 export function buildConfCheckDispatchPayload(
   regionInput: string,
   parsed: ParsedConfCheckFile,
-): WorkerDispatchPayload | null {
-  const window = assignmentWindowFromRegion(regionInput, "");
-  if (!window) return null;
+): { ok: true; payload: WorkerDispatchPayload } | { ok: false; error: string } {
+  const analysis = analyzeBenchmarkWindow(regionInput);
+  if (!analysis.valid || !analysis.window) {
+    return { ok: false, error: analysis.error ?? "Invalid region for benchmark." };
+  }
 
   const param = minimalBenchmarkParam(parsed.tool, parsed.baseConf);
   return {
-    window: normalizeRegion(window) ?? window,
-    tool: parsed.tool,
-    base_conf: buildDispatchBaseConf(
-      parsed.baseConf,
-      DEFAULT_TRIAL_THREADS,
-      DEFAULT_TRIAL_MEMORY_GB,
-    ),
-    params: [param],
-    concurrency: 1,
-    algorithm: DEFAULT_ALGORITHM,
-    limit_seconds: DEFAULT_LIMIT_SECONDS,
-    adaptive_max_trials: CONF_CHECK_ADAPTIVE_MAX_TRIALS,
+    ok: true,
+    payload: {
+      window: analysis.window,
+      tool: parsed.tool,
+      base_conf: buildDispatchBaseConf(
+        parsed.baseConf,
+        CONF_CHECK_TRIAL_THREADS,
+        CONF_CHECK_TRIAL_MEMORY_GB,
+      ),
+      params: [param],
+      concurrency: 1,
+      algorithm: DEFAULT_ALGORITHM,
+      limit_seconds: DEFAULT_LIMIT_SECONDS,
+      adaptive_max_trials: CONF_CHECK_ADAPTIVE_MAX_TRIALS,
+    },
   };
 }

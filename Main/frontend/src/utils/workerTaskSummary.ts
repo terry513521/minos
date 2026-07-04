@@ -1,5 +1,24 @@
 import type { WorkerAssignment } from "../types/workerAssignment";
 import type { WorkerBestScoreResult } from "../api/client";
+import { formatWindowSpan } from "./window";
+
+/** Genomic window the worker actually scores (slice), not only the dispatched region. */
+export function effectiveBenchmarkWindow(
+  best: Pick<WorkerBestScoreResult, "benchmark_window" | "window"> | null | undefined,
+  fallback?: string | null,
+): string | null {
+  return best?.benchmark_window ?? best?.window ?? fallback ?? null;
+}
+
+export function formatBenchmarkWindowLabel(
+  best: Pick<WorkerBestScoreResult, "benchmark_window" | "window"> | null | undefined,
+  fallback?: string | null,
+): string | null {
+  const benchmark = effectiveBenchmarkWindow(best, fallback);
+  if (!benchmark) return null;
+  const span = formatWindowSpan(benchmark);
+  return span ? `${benchmark} (${span})` : benchmark;
+}
 
 export function formatWorkerTaskSummary(
   best: WorkerBestScoreResult | null | undefined,
@@ -7,13 +26,19 @@ export function formatWorkerTaskSummary(
 ): string | null {
   const tool = best?.tool ?? assignment?.tool ?? null;
   const window = best?.window ?? assignment?.window ?? null;
+  const benchmark = effectiveBenchmarkWindow(best, assignment?.window ?? null);
   const algorithm = best?.algorithm ?? assignment?.algorithm ?? null;
   if (!tool && !window && !algorithm) return null;
 
   const parts: string[] = [];
   if (tool) parts.push(tool);
   if (algorithm) parts.push(algorithm);
-  if (window) parts.push(window);
+  if (benchmark) {
+    const span = formatWindowSpan(benchmark);
+    parts.push(span ? `${benchmark} (${span})` : benchmark);
+  } else if (window) {
+    parts.push(window);
+  }
 
   const total =
     best?.search_space_size && best.search_space_size > 0
@@ -40,8 +65,8 @@ export function formatWorkerTaskSummary(
   }
 
   const slice = best?.benchmark_window;
-  if (slice && slice !== window) {
-    parts.push(`slice ${slice}`);
+  if (slice && window && slice !== window) {
+    parts.push(`assigned ${window}`);
   }
 
   return parts.join(" · ");

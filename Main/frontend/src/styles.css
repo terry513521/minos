@@ -1047,6 +1047,72 @@ code, .input-mono {
   color: #fca5a5;
 }
 
+.conf-check-region-size {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.conf-check-region-size--ok {
+  color: #6ee7b7;
+}
+.conf-check-region-size--warn {
+  color: #fcd34d;
+}
+.conf-check-window-warning {
+  margin: 0 0 0.75rem;
+  font-size: 0.82rem;
+  color: #fcd34d;
+  line-height: 1.45;
+}
+.conf-check-benchmark-window {
+  margin-bottom: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.conf-check-benchmark-window p {
+  margin: 0;
+}
+.conf-check-benchmark-window code {
+  font-size: 0.78rem;
+}
+.conf-check-field--region {
+  min-width: 14rem;
+}
+
+.candidate-region-size {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.candidate-region-size--ok {
+  color: #6ee7b7;
+}
+.candidate-region-size--warn {
+  color: #fcd34d;
+}
+
+.conf-check-region--live {
+  color: #93c5fd;
+}
+.conf-check-window-note {
+  margin: 0 0 0.75rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.worker-assignment-window--benchmark {
+  display: block;
+  margin-top: 0.2rem;
+  color: #93c5fd;
+  font-size: 0.78rem;
+}
+
 .candidate-worker-assign-message {
   margin-bottom: 0.75rem;
 }

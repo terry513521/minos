@@ -87,9 +87,11 @@ import {
 } from "../utils/workerDisplayOrder";
 import { buildWorkerLiveStatuses, WorkerLiveStatus } from "../utils/workerLiveStatus";
 import {
+  formatBenchmarkWindowLabel,
   formatWorkerTaskParams,
   formatWorkerTaskSummary,
 } from "../utils/workerTaskSummary";
+import { formatWindowSpan } from "../utils/window";
 import { AUTO_MODE_CHANGED_EVENT } from "./AutoModePanel";
 
 /** Background poll for worker GET /best while optimization is running. */
@@ -1453,6 +1455,11 @@ export function WorkersPanel({
                 : "";
             const taskSummary = formatWorkerTaskSummary(bestOk ?? undefined, assignment ?? null);
             const taskParams = formatWorkerTaskParams(bestOk ?? undefined, assignment ?? null);
+            const workerBenchmarkLabel = formatBenchmarkWindowLabel(
+              bestOk ?? undefined,
+              assignment?.window ?? null,
+            );
+            const assignedWindowSpan = formatWindowSpan(assignment?.window);
 
             return (
               <article
@@ -1699,7 +1706,13 @@ export function WorkersPanel({
                         </span>
                         <code className="worker-assignment-window">
                           {assignment.tool}: {assignment.window}
+                          {assignedWindowSpan ? ` (${assignedWindowSpan})` : ""}
                         </code>
+                        {(isOptimizing || bestOk?.benchmark_window) && workerBenchmarkLabel && (
+                          <code className="worker-assignment-window worker-assignment-window--benchmark">
+                            benchmark: {workerBenchmarkLabel}
+                          </code>
+                        )}
                       </div>
                       {!reassignmentLocked && (
                         <button
