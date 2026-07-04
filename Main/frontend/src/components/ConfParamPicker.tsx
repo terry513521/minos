@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { getParamBound, ParamInterval, clampParamInterval, defaultParamDelta, defaultParamInterval, formatBoundHint } from "../utils/paramBounds";
+import { getParamBound, ParamInterval, clampParamInterval, defaultParamDelta, formatBoundHint } from "../utils/paramBounds";
 import { listToolOptionEntries } from "../utils/candidateAssign";
 import { DeferredNumberInput } from "./DeferredNumberInput";
 import { DeferredTextInput } from "./DeferredTextInput";

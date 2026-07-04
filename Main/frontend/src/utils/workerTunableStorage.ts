@@ -447,6 +447,7 @@ export async function syncPerWorkerTunablesFromAutoConfig(config: AutoModeConfig
         workerSettingForName(trialCounts, workerName) ?? DEFAULT_AUTO_TOTAL_TRIALS,
       ),
       includeBaseBenchmark: DEFAULT_INCLUDE_BASE_BENCHMARK,
+      deltaRounds: DEFAULT_DELTA_ROUNDS,
     };
 
     const worker = workerByName.get(workerName.toLowerCase());

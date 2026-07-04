@@ -12,6 +12,7 @@ import {
   clampTrialThreads,
   clampTotalTrials,
   DEFAULT_ALGORITHM,
+  DEFAULT_DELTA_ROUNDS,
   DEFAULT_INCLUDE_BASE_BENCHMARK,
   DEFAULT_TRIAL_MEMORY_GB,
   DEFAULT_TRIAL_THREADS,
@@ -198,6 +199,7 @@ export function assignmentFromAutoDispatch(
         config.adaptive_max_trials) + 1,
     ),
     includeBaseBenchmark: DEFAULT_INCLUDE_BASE_BENCHMARK,
+    deltaRounds: DEFAULT_DELTA_ROUNDS,
     dispatching: false,
     dispatchError: autoAssignment.dispatch_error,
     dispatchedAt:
@@ -250,6 +252,7 @@ export function previewAssignmentsFromAutoConfig(
         workerSettingForName(trialMemoryByWorker, worker.name) ?? DEFAULT_TRIAL_MEMORY_GB,
       trialCount: workerSettingForName(trialCountsByWorker, worker.name) ?? trialCountFromAutoConfig(status.config),
       includeBaseBenchmark: DEFAULT_INCLUDE_BASE_BENCHMARK,
+      deltaRounds: DEFAULT_DELTA_ROUNDS,
       dispatching: false,
       dispatchError: null,
       autoManaged: true,
