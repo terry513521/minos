@@ -3,7 +3,7 @@
 import unittest
 
 from app.engine.candidate_finder import CandidateFinderEngine, HistoryEntry
-from app.selector import parse_window
+from app.selector import composite_candidate_rank_score, coordinate_similarity, parse_window
 
 
 def _entry(
@@ -50,7 +50,7 @@ class CandidateFinderEngineTests(unittest.TestCase):
         self.assertIn("a", ids)
         self.assertNotIn("b", ids)
 
-    def test_step3_selects_best_score_among_similar(self) -> None:
+    def test_step3_ranks_by_composite_score(self) -> None:
         history = [
             _entry(id="high-score-far", start=50_000_000, end=55_000_000, score=0.95),
             _entry(id="mid-close", start=10_500_000, end=14_500_000, score=0.80),
@@ -58,11 +58,30 @@ class CandidateFinderEngineTests(unittest.TestCase):
         ]
         result = self.engine.find(self.window, history, tool="gatk", n=2)
         self.assertEqual(result.type_matched, 3)
-        self.assertGreaterEqual(result.coordinate_matched, 2)
+        self.assertEqual(result.coordinate_matched, 2)
         self.assertEqual(len(result.selected), 2)
-        self.assertEqual(result.selected[0].entry.id, "mid-close")
-        self.assertEqual(result.selected[1].entry.id, "low-exact")
-        self.assertEqual(result.selected[0].rank_score, 0.80)
+        self.assertEqual(result.selected[0].entry.id, "low-exact")
+        self.assertEqual(result.selected[1].entry.id, "mid-close")
+        self.assertAlmostEqual(result.selected[0].rank_score, composite_candidate_rank_score(0.70, 1.0))
+
+    def test_offset_overlapping_window_matches_history(self) -> None:
+        window = parse_window("chr20:9000000-14000000")
+        history = [
+            _entry(id="shifted", start=10_000_000, end=15_000_000, score=0.75),
+            _entry(id="far", start=50_000_000, end=55_000_000, score=0.95),
+        ]
+        result = self.engine.find(window, history, tool="gatk", n=1)
+        self.assertEqual(result.selected[0].entry.id, "shifted")
+        self.assertGreater(result.selected[0].similarity, 0.7)
+        self.assertNotIn("far", [row.entry.id for row in result.selected])
+
+    def test_fallback_excludes_zero_similarity_rows(self) -> None:
+        history = [
+            _entry(id="far-high", start=50_000_000, end=55_000_000, score=0.99),
+        ]
+        result = self.engine.find(self.window, history, tool="gatk", n=1)
+        self.assertEqual(result.coordinate_matched, 0)
+        self.assertEqual(result.selected, ())
 
     def test_empty_history(self) -> None:
         result = self.engine.find(self.window, [], tool="gatk", n=2)

@@ -877,7 +877,7 @@ async def find_auto_candidate_pool(
 ) -> list[CandidatePreview]:
     parsed = parse_window(window)
     tool_key = tool.lower().strip()
-    history = await load_history_entries(db, tool=tool_key)
+    history = await load_history_entries(db, tool=tool_key, chromosome=parsed.chromosome)
     engine = CandidateFinderEngine()
     result = engine.find(parsed, history, tool=tool_key, n=k)
 

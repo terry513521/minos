@@ -47,8 +47,12 @@ def parse_window(window: str) -> ParsedWindow:
     return ParsedWindow(window=canonical, chromosome=chrom, start=start, end=end)
 
 
+DEFAULT_CANDIDATE_SCORE_WEIGHT = 0.4
+DEFAULT_CANDIDATE_SIMILARITY_WEIGHT = 0.6
+
+
 def coordinate_similarity(x: int, y: int, x_h: int, y_h: int) -> float:
-    """IoU + center-distance blend on the same chromosome."""
+    """IoU + center-distance blend for intervals [x, y) and [x_h, y_h) on one chromosome."""
     overlap = max(0, min(y, y_h) - max(x, x_h))
     union_len = max(y, y_h) - min(x, x_h)
     iou = overlap / union_len if union_len > 0 else 0.0
@@ -56,6 +60,14 @@ def coordinate_similarity(x: int, y: int, x_h: int, y_h: int) -> float:
     length = max(y - x, 1)
     center_dist = abs(((x_h + y_h) / 2) - ((x + y) / 2)) / length
     return 0.7 * iou + 0.3 * (1 - min(center_dist, 1.0))
+
+
+def composite_candidate_rank_score(history_score: float, similarity: float) -> float:
+    """Blend historical score with coordinate similarity for candidate ranking."""
+    return (
+        DEFAULT_CANDIDATE_SCORE_WEIGHT * history_score
+        + DEFAULT_CANDIDATE_SIMILARITY_WEIGHT * similarity
+    )
 
 
 def rank_history_rows(
@@ -69,10 +81,7 @@ def rank_history_rows(
     from app.engine.candidate_finder import CandidateFinderEngine, history_dict_to_entry
 
     engine = CandidateFinderEngine(min_similarity=min_similarity)
-    entries = [
-        history_dict_to_entry({**row, "tool": row.get("tool", tool), "chromosome": window.chromosome})
-        for row in rows
-    ]
+    entries = [history_dict_to_entry({**row, "tool": row.get("tool", tool)}) for row in rows]
     pool_n = max(len(entries), 1)
     result = engine.find(window, entries, tool=tool, n=pool_n)
 

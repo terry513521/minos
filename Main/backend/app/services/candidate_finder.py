@@ -33,14 +33,18 @@ async def load_history_entries(
     db: AsyncSession,
     *,
     tool: str,
+    chromosome: str | None = None,
     limit: int = 500,
 ) -> list[HistoryEntry]:
-    result = await db.execute(
+    stmt = (
         select(RoundHistory)
         .where(RoundHistory.tool == tool.lower())
         .order_by(RoundHistory.score.desc())
         .limit(limit)
     )
+    if chromosome:
+        stmt = stmt.where(RoundHistory.chromosome == chromosome.lower().strip())
+    result = await db.execute(stmt)
     return [
         HistoryEntry(
             id=h.id,
@@ -67,7 +71,7 @@ async def find_candidates(
     parsed = parse_window(window)
     tool_key = tool.lower().strip()
 
-    history = await load_history_entries(db, tool=tool_key)
+    history = await load_history_entries(db, tool=tool_key, chromosome=parsed.chromosome)
     engine = CandidateFinderEngine(min_similarity=min_similarity)
     result = engine.find(parsed, history, tool=tool_key, n=k_candidates)
 

@@ -31,7 +31,7 @@ async def create_run(db: AsyncSession, body: CreateRunRequest) -> OptimizationRu
     await db.flush()
 
     tool_key = body.tool.lower().strip()
-    history = await load_history_entries(db, tool=tool_key)
+    history = await load_history_entries(db, tool=tool_key, chromosome=parsed.chromosome)
     engine = CandidateFinderEngine()
     find_result = engine.find(parsed, history, tool=tool_key, n=body.k_candidates)
 

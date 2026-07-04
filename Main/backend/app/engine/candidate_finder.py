@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from app.selector import ParsedWindow, coordinate_similarity
+from app.selector import ParsedWindow, composite_candidate_rank_score, coordinate_similarity
 
 
 @dataclass(frozen=True)
@@ -24,7 +24,7 @@ class HistoryEntry:
 class ScoredHistoryEntry:
     entry: HistoryEntry
     similarity: float
-    rank_score: float  # equals entry.score after selection by best score
+    rank_score: float  # composite rank: 40% history score + 60% similarity
 
 
 @dataclass(frozen=True)
@@ -60,8 +60,8 @@ def history_dict_to_entry(row: dict[str, Any]) -> HistoryEntry:
 class CandidateFinderEngine:
     """
     1. Filter history by tool type (+ chromosome).
-    2. Keep rows with similar genomic coordinates.
-    3. Among those, select top-N by historical score (best first).
+    2. Keep rows with similar genomic coordinates (interval overlap from x to y).
+    3. Among those, select top-N by composite rank (40% score + 60% similarity).
     """
 
     DEFAULT_MIN_SIMILARITY = 0.2
@@ -95,7 +95,7 @@ class CandidateFinderEngine:
         type_matched = self.filter_type_matching(history, tool=tool_key, chromosome=window.chromosome)
         with_similarity = self.compute_coordinate_similarity(window, type_matched)
         coord_similar = self.filter_similar_coordinates(with_similarity)
-        ranked_pool = self.rank_by_best_score(coord_similar)
+        ranked_pool = self.rank_by_composite_score(coord_similar)
         selected = self.select_n_candidates(ranked_pool, n)
 
         return CandidateFindResult(
@@ -148,20 +148,28 @@ class CandidateFinderEngine:
         if similar:
             return similar
 
-        # No rows above threshold — use the most coordinate-similar as fallback.
-        ranked = sorted(rows_with_similarity, key=lambda pair: pair[1], reverse=True)
+        # No rows above threshold — keep only overlapping/nearby rows (sim > 0).
+        positive = [(entry, sim) for entry, sim in rows_with_similarity if sim > 0.0]
+        if not positive:
+            return []
+
+        ranked = sorted(positive, key=lambda pair: pair[1], reverse=True)
         return ranked[: min(self.fallback_pool, len(ranked))]
 
     @staticmethod
-    def rank_by_best_score(
+    def rank_by_composite_score(
         rows_with_similarity: list[tuple[HistoryEntry, float]],
     ) -> list[ScoredHistoryEntry]:
-        """Step 3: sort by historical score (descending)."""
+        """Step 3: sort by composite rank (score + similarity blend)."""
         pool = [
-            ScoredHistoryEntry(entry=entry, similarity=sim, rank_score=entry.score)
+            ScoredHistoryEntry(
+                entry=entry,
+                similarity=sim,
+                rank_score=composite_candidate_rank_score(entry.score, sim),
+            )
             for entry, sim in rows_with_similarity
         ]
-        pool.sort(key=lambda row: (row.entry.score, row.similarity), reverse=True)
+        pool.sort(key=lambda row: row.rank_score, reverse=True)
         return pool
 
     @staticmethod
