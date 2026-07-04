@@ -86,6 +86,10 @@ import {
   sortWorkersForDisplay,
 } from "../utils/workerDisplayOrder";
 import { buildWorkerLiveStatuses, WorkerLiveStatus } from "../utils/workerLiveStatus";
+import {
+  formatWorkerTaskParams,
+  formatWorkerTaskSummary,
+} from "../utils/workerTaskSummary";
 import { AUTO_MODE_CHANGED_EVENT } from "./AutoModePanel";
 
 /** Background poll for worker GET /best while optimization is running. */
@@ -890,6 +894,14 @@ export function WorkersPanel({
             job_id: null,
             window: null,
             tool: null,
+            algorithm: null,
+            concurrency: null,
+            limit_seconds: null,
+            adaptive_max_trials: null,
+            params: [],
+            trial_threads: null,
+            trial_memory_gb: null,
+            benchmark_window: null,
             best_score: null,
             best_conf: {},
             trials_evaluated: 0,
@@ -1439,6 +1451,8 @@ export function WorkersPanel({
                     displayStatus ?? (isOptimizing ? "optimizing" : null),
                   )
                 : "";
+            const taskSummary = formatWorkerTaskSummary(bestOk ?? undefined, assignment ?? null);
+            const taskParams = formatWorkerTaskParams(bestOk ?? undefined, assignment ?? null);
 
             return (
               <article
@@ -1466,6 +1480,18 @@ export function WorkersPanel({
                     </button>
                   </div>
                 </div>
+
+                {assignment && !bestOk && (() => {
+                  const pendingTask = formatWorkerTaskSummary(undefined, assignment);
+                  const pendingParams = formatWorkerTaskParams(undefined, assignment);
+                  if (!pendingTask && !pendingParams) return null;
+                  return (
+                    <div className="worker-task-block">
+                      {pendingTask && <code className="worker-task-summary">{pendingTask}</code>}
+                      {pendingParams && <div className="worker-task-params">{pendingParams}</div>}
+                    </div>
+                  );
+                })()}
 
                 <div className="worker-card-actions">
                   <button
@@ -1531,11 +1557,21 @@ export function WorkersPanel({
                         )}
                       </div>
 
-                      {(bestOk.tool || bestOk.window) && (
+                      {(bestOk.tool || bestOk.window || taskSummary) && (
                         <div className="worker-best-meta">
-                          {bestOk.tool && <span className="chip chip-accent">{bestOk.tool}</span>}
-                          {bestOk.window && <code className="worker-best-window">{bestOk.window}</code>}
+                          {taskSummary ? (
+                            <code className="worker-task-summary">{taskSummary}</code>
+                          ) : (
+                            <>
+                              {bestOk.tool && <span className="chip chip-accent">{bestOk.tool}</span>}
+                              {bestOk.window && <code className="worker-best-window">{bestOk.window}</code>}
+                            </>
+                          )}
                         </div>
+                      )}
+
+                      {taskParams && (
+                        <div className="worker-task-params">{taskParams}</div>
                       )}
 
                       {hasConfContent(bestOk.best_conf) && (

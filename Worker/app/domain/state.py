@@ -27,6 +27,14 @@ class BestSnapshot:
     job_id: str | None = None
     window: str | None = None
     tool: str | None = None
+    algorithm: str | None = None
+    concurrency: int | None = None
+    limit_seconds: int | None = None
+    adaptive_max_trials: int | None = None
+    params: list[str] = field(default_factory=list)
+    trial_threads: int | None = None
+    trial_memory_gb: int | None = None
+    benchmark_window: str | None = None
     best_score: float | None = None
     best_conf: dict[str, Any] = field(default_factory=dict)
     trials_evaluated: int = 0
@@ -49,12 +57,28 @@ class BestStateStore:
         tool: str,
         *,
         search_space_size: int = 0,
+        algorithm: str | None = None,
+        concurrency: int | None = None,
+        limit_seconds: int | None = None,
+        adaptive_max_trials: int | None = None,
+        params: list[str] | None = None,
+        trial_threads: int | None = None,
+        trial_memory_gb: int | None = None,
+        benchmark_window: str | None = None,
     ) -> None:
         with self._lock:
             self._snapshot = BestSnapshot(
                 job_id=job_id,
                 window=window,
                 tool=tool,
+                algorithm=algorithm,
+                concurrency=concurrency,
+                limit_seconds=limit_seconds,
+                adaptive_max_trials=adaptive_max_trials,
+                params=list(params or []),
+                trial_threads=trial_threads,
+                trial_memory_gb=trial_memory_gb,
+                benchmark_window=benchmark_window,
                 status="optimizing",
                 search_space_size=search_space_size,
                 message="Running base benchmark",
@@ -144,6 +168,14 @@ class BestStateStore:
                 job_id=snap.job_id,
                 window=snap.window,
                 tool=snap.tool,
+                algorithm=snap.algorithm,
+                concurrency=snap.concurrency,
+                limit_seconds=snap.limit_seconds,
+                adaptive_max_trials=snap.adaptive_max_trials,
+                params=list(snap.params),
+                trial_threads=snap.trial_threads,
+                trial_memory_gb=snap.trial_memory_gb,
+                benchmark_window=snap.benchmark_window,
                 best_score=snap.best_score,
                 best_conf=deepcopy(snap.best_conf),
                 trials_evaluated=snap.trials_evaluated,

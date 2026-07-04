@@ -188,6 +188,14 @@ class WorkerBestScoreResponse(BaseModel):
     job_id: str | None = None
     window: str | None = None
     tool: str | None = None
+    algorithm: str | None = None
+    concurrency: int | None = None
+    limit_seconds: int | None = None
+    adaptive_max_trials: int | None = None
+    params: list[str] = Field(default_factory=list)
+    trial_threads: int | None = None
+    trial_memory_gb: int | None = None
+    benchmark_window: str | None = None
     best_score: float | None = None
     best_conf: dict[str, Any] = Field(default_factory=dict)
     trials_evaluated: int = 0

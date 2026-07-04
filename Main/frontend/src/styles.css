@@ -2500,6 +2500,24 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   color: var(--muted);
   word-break: break-all;
 }
+.worker-task-summary {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--text);
+  word-break: break-all;
+  line-height: 1.35;
+}
+.worker-task-params {
+  font-size: 0.68rem;
+  color: var(--muted);
+  word-break: break-all;
+}
+.worker-task-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin-top: 0.35rem;
+}
 .worker-best-trials,
 .worker-best-updated,
 .worker-best-message {

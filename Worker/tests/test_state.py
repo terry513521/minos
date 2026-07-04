@@ -4,7 +4,19 @@ from app.optimization.job_control import clear_stop_request, request_stop_optimi
 
 def test_record_trial_and_stopping_status():
     clear_stop_request()
-    best_store.begin_job("job-1", "chr21:1-1000000", "gatk", search_space_size=5)
+    best_store.begin_job(
+        "job-1",
+        "chr21:1-1000000",
+        "gatk",
+        search_space_size=5,
+        algorithm="grid",
+        concurrency=4,
+        limit_seconds=1800,
+        adaptive_max_trials=4,
+        params=["min_mapping_quality_score"],
+        trial_threads=6,
+        trial_memory_gb=10,
+    )
     best_store.record_trial(
         index=1,
         label="base conf",
@@ -17,6 +29,9 @@ def test_record_trial_and_stopping_status():
     assert len(snap.trials) == 1
     assert snap.trials[0].score == 0.81
     assert snap.trials[0].is_best is True
+    assert snap.algorithm == "grid"
+    assert snap.concurrency == 4
+    assert snap.trial_threads == 6
 
     signal_stop()
     snap = best_store.snapshot()

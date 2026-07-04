@@ -119,6 +119,14 @@ export interface WorkerBestScoreResult {
   job_id: string | null;
   window: string | null;
   tool: string | null;
+  algorithm: string | null;
+  concurrency: number | null;
+  limit_seconds: number | null;
+  adaptive_max_trials: number | null;
+  params: string[];
+  trial_threads: number | null;
+  trial_memory_gb: number | null;
+  benchmark_window: string | null;
   best_score: number | null;
   best_conf: Record<string, unknown>;
   trials_evaluated: number;

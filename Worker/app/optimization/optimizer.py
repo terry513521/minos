@@ -16,6 +16,7 @@ from app.benchmark import BenchmarkResult, run_benchmark, validate_benchmark_ass
 from app.config import Settings, get_settings
 from app.optimization.job_control import is_stop_requested
 from app.domain.schemas import OptimizeRequest, OptimizeResponse
+from app.optimization.task_info import format_task_banner, format_task_line, task_fields_from_request
 from app.optimization.search import (
     build_optimization_plan,
     count_search_trials,
@@ -234,18 +235,56 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
     logger.info("\n%s", plan_text)
     search_space_size = int(plan["planned_trials"])
 
+    threads, memory_gb = _runtime_resources(job_request.base_conf, settings)
+    task = task_fields_from_request(
+        algorithm=algorithm,
+        concurrency=concurrency,
+        limit_seconds=limit_seconds,
+        adaptive_max_trials=adaptive_max_trials,
+        params=list(job_request.params),
+        trial_threads=threads,
+        trial_memory_gb=memory_gb,
+        benchmark_window=benchmark_window
+        if source_window and benchmark_window != request.window
+        else None,
+    )
+    logger.info(
+        "\n%s",
+        format_task_banner(
+            worker=worker_name,
+            job_id=request.job_id,
+            window=request.window,
+            tool=job_request.tool,
+            algorithm=algorithm,
+            planned_trials=search_space_size,
+            adaptive_max_trials=adaptive_max_trials,
+            concurrency=concurrency,
+            limit_seconds=limit_seconds,
+            params=list(job_request.params),
+            trial_threads=threads,
+            trial_memory_gb=memory_gb,
+            benchmark_window=task["benchmark_window"],
+        ),
+    )
+
     best_store.begin_job(
         request.job_id,
         request.window,
         job_request.tool,
         search_space_size=search_space_size,
+        **task,
     )
-    progress_msg = (
-        f"Planned {search_space_size} trials · {plan['mode']} · "
-        f"{plan['param_count']} params"
+    progress_msg = format_task_line(
+        tool=job_request.tool,
+        window=request.window,
+        algorithm=algorithm,
+        trials_evaluated=0,
+        search_space_size=search_space_size,
+        concurrency=concurrency,
+        status="optimizing",
     )
-    if source_window and source_window != benchmark_window:
-        progress_msg += f" · benchmark slice {benchmark_window}"
+    if task.get("benchmark_window"):
+        progress_msg += f" · slice {task['benchmark_window']}"
     best_store.set_progress(
         trials_evaluated=0,
         message=progress_msg,
@@ -265,7 +304,15 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
         def record_result(result: BenchmarkResult, label: str = "trial") -> None:
             nonlocal best_score, best_conf, trials_evaluated
             trials_evaluated += 1
-            progress = f"Trial {trials_evaluated}/{search_space_size} ({label})"
+            progress = format_task_line(
+                tool=job_request.tool,
+                window=request.window,
+                algorithm=algorithm,
+                trials_evaluated=trials_evaluated,
+                search_space_size=search_space_size,
+                concurrency=concurrency,
+            )
+            progress += f" ({label})"
             if result.cached:
                 progress += " · cache hit"
             if result.success:

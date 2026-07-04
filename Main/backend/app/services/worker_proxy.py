@@ -85,6 +85,16 @@ async def fetch_worker_best(db: AsyncSession, worker_id: str) -> WorkerBestScore
                 job_id=payload.get("job_id"),
                 window=payload.get("window"),
                 tool=payload.get("tool"),
+                algorithm=payload.get("algorithm"),
+                concurrency=payload.get("concurrency"),
+                limit_seconds=payload.get("limit_seconds"),
+                adaptive_max_trials=payload.get("adaptive_max_trials"),
+                params=list(payload.get("params") or [])
+                if isinstance(payload.get("params"), list)
+                else [],
+                trial_threads=payload.get("trial_threads"),
+                trial_memory_gb=payload.get("trial_memory_gb"),
+                benchmark_window=payload.get("benchmark_window"),
                 best_score=payload.get("best_score"),
                 best_conf=payload.get("best_conf")
                 if isinstance(payload.get("best_conf"), dict)
