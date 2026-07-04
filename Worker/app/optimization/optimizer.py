@@ -277,9 +277,9 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
         trials_evaluated=0,
         search_space_size=search_space_size,
         concurrency=concurrency,
-        status="optimizing",
+        status="benchmarking" if adaptive_max_trials <= 0 else "optimizing",
     )
-    if task.get("benchmark_window"):
+    if task.get("benchmark_window") and task["benchmark_window"] != request.window:
         progress_msg += f" · slice {task['benchmark_window']}"
     best_store.set_progress(
         trials_evaluated=0,

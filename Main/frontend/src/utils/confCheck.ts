@@ -1,13 +1,14 @@
 import { WorkerDispatchPayload } from "../api/client";
 import { listToolOptionKeys } from "./candidateAssign";
+import { getToolOptions } from "./confEdit";
 import { buildGatkReferenceConf } from "./paramBounds";
 import { parseAutoModeTunableImport } from "./autoModeTunableFile";
 import {
   buildDispatchBaseConf,
   CONF_CHECK_ADAPTIVE_MAX_TRIALS,
+  CONF_CHECK_ALGORITHM,
   CONF_CHECK_TRIAL_MEMORY_GB,
   CONF_CHECK_TRIAL_THREADS,
-  DEFAULT_ALGORITHM,
   DEFAULT_LIMIT_SECONDS,
   ToolkitOption,
   TOOLKIT_OPTIONS,
@@ -59,6 +60,18 @@ export function minimalBenchmarkParam(
   return "pcr_indel_model";
 }
 
+/** Lock the placeholder param to its current value — satisfies API, no search axis. */
+export function fixedConfParamIntervals(
+  tool: ToolkitOption,
+  baseConf: Record<string, unknown>,
+  param: string,
+): WorkerDispatchPayload["param_intervals"] {
+  const options = getToolOptions(baseConf, tool);
+  const raw = options[param];
+  const value = raw == null ? "" : String(raw);
+  return { [param]: { values: [value] } };
+}
+
 export function buildConfCheckDispatchPayload(
   regionInput: string,
   parsed: ParsedConfCheckFile,
@@ -80,8 +93,9 @@ export function buildConfCheckDispatchPayload(
         CONF_CHECK_TRIAL_MEMORY_GB,
       ),
       params: [param],
+      param_intervals: fixedConfParamIntervals(parsed.tool, parsed.baseConf, param),
       concurrency: 1,
-      algorithm: DEFAULT_ALGORITHM,
+      algorithm: CONF_CHECK_ALGORITHM,
       limit_seconds: DEFAULT_LIMIT_SECONDS,
       adaptive_max_trials: CONF_CHECK_ADAPTIVE_MAX_TRIALS,
     },

@@ -41,3 +41,20 @@ def test_record_trial_and_stopping_status():
     snap = best_store.snapshot()
     assert snap.status == "ready"
     assert len(snap.trials) == 1
+
+
+def test_begin_job_benchmark_only_uses_benchmarking_status():
+    best_store.begin_job(
+        "job-bench",
+        "chr21:1-5000000",
+        "gatk",
+        search_space_size=1,
+        algorithm="grid",
+        concurrency=1,
+        limit_seconds=1800,
+        adaptive_max_trials=0,
+        params=["pcr_indel_model"],
+    )
+    snap = best_store.snapshot()
+    assert snap.status == "benchmarking"
+    assert snap.search_space_size == 1

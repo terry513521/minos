@@ -19,7 +19,9 @@ export function resolveWorkerJobStatus(
 ): string | null {
   if (!rawStatus) return null;
   if (
-    (rawStatus === "optimizing" || rawStatus === "stopping") &&
+    (rawStatus === "optimizing" ||
+      rawStatus === "benchmarking" ||
+      rawStatus === "stopping") &&
     isRunTimeLimitReached(startedAt, limitSeconds, nowMs)
   ) {
     return WORKER_STATUS_TIME_LIMITED;
@@ -33,6 +35,8 @@ export function isWorkerJobRunning(
   limitSeconds?: number | null,
   nowMs = Date.now(),
 ): boolean {
-  if (rawStatus !== "optimizing" && rawStatus !== "stopping") return false;
+  if (rawStatus !== "optimizing" && rawStatus !== "benchmarking" && rawStatus !== "stopping") {
+    return false;
+  }
   return !isRunTimeLimitReached(startedAt, limitSeconds, nowMs);
 }

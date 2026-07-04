@@ -39,6 +39,13 @@ def test_grid_trial_count_matches_cartesian_size():
     ) == 5
 
 
+def test_count_search_trials_zero_is_benchmark_only():
+    base = {"gatk_options": {"pcr_indel_model": "NONE"}}
+    assert count_search_trials(
+        base, "gatk", ["pcr_indel_model"], None, algorithm="grid", adaptive_max_trials=0
+    ) == 1
+
+
 def test_grid_search_evaluates_all_points_when_small():
     base = {"gatk_options": {"min_mapping_quality_score": 20}}
     intervals = {"min_mapping_quality_score": {"min": 15, "max": 25, "step": 5}}

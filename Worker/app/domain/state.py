@@ -67,6 +67,11 @@ class BestStateStore:
         benchmark_window: str | None = None,
     ) -> None:
         with self._lock:
+            job_status = (
+                "benchmarking"
+                if adaptive_max_trials is not None and adaptive_max_trials <= 0
+                else "optimizing"
+            )
             self._snapshot = BestSnapshot(
                 job_id=job_id,
                 window=window,
@@ -79,9 +84,9 @@ class BestStateStore:
                 trial_threads=trial_threads,
                 trial_memory_gb=trial_memory_gb,
                 benchmark_window=benchmark_window,
-                status="optimizing",
+                status=job_status,
                 search_space_size=search_space_size,
-                message="Running base benchmark",
+                message="Running fixed-conf benchmark",
                 updated_at=datetime.now(timezone.utc),
                 trials=[],
             )
@@ -95,7 +100,7 @@ class BestStateStore:
 
     def set_stopping(self, *, message: str | None = None) -> None:
         with self._lock:
-            if self._snapshot.status == "optimizing":
+            if self._snapshot.status in ("optimizing", "benchmarking"):
                 self._snapshot.status = "stopping"
             if message:
                 self._snapshot.message = message

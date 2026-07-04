@@ -105,7 +105,7 @@ export function ConfCheckPanel({ finderRegion }: ConfCheckPanelProps) {
 
     setParsedConf(parsed.result);
     setConfFileName(fileName ?? "dropped conf");
-    setMessage("Conf loaded — click Start check to benchmark on the check worker.");
+    setMessage("Conf loaded — click Start benchmark to score this conf on the check worker.");
   }
 
   async function handleConfFile(file: File | null | undefined) {
@@ -154,7 +154,7 @@ export function ConfCheckPanel({ finderRegion }: ConfCheckPanelProps) {
       setRawScore(baseTrial.raw_score);
       setPhase("done");
       const scoredLabel = formatBenchmarkWindowLabel(best);
-      setMessage(scoredLabel ? `Base conf score on ${scoredLabel}` : "Base conf score ready");
+      setMessage(scoredLabel ? `Fixed-conf score on ${scoredLabel}` : "Benchmark score ready");
       stopPolling();
       return;
     }
@@ -166,13 +166,17 @@ export function ConfCheckPanel({ finderRegion }: ConfCheckPanelProps) {
       return;
     }
 
-    if (best.status === "optimizing" || best.status === "stopping") {
+    if (
+      best.status === "benchmarking" ||
+      best.status === "optimizing" ||
+      best.status === "stopping"
+    ) {
       setPhase("running");
       const liveLabel = formatBenchmarkWindowLabel(best);
       setMessage(
         liveLabel
-          ? `Benchmarking on worker window ${liveLabel}`
-          : best.message ?? "Running base conf benchmark…",
+          ? `Benchmarking fixed conf on ${liveLabel}`
+          : best.message ?? "Running fixed-conf benchmark…",
       );
     }
   }
@@ -225,7 +229,7 @@ export function ConfCheckPanel({ finderRegion }: ConfCheckPanelProps) {
       }
 
       setPhase("running");
-      setMessage("Benchmark started — waiting for base conf score…");
+      setMessage("Benchmark started — waiting for score…");
       await pollUntilScore(checkWorkerId);
       pollRef.current = window.setInterval(() => {
         void pollUntilScore(checkWorkerId);
@@ -245,14 +249,13 @@ export function ConfCheckPanel({ finderRegion }: ConfCheckPanelProps) {
     !checkWorkerId;
 
   return (
-    <section className="conf-check-panel" aria-label="Conf parameter check">
+    <section className="conf-check-panel" aria-label="Conf benchmark">
       <div className="conf-check-head">
         <div>
-          <h3 className="conf-check-title">Conf check</h3>
+          <h3 className="conf-check-title">Conf benchmark</h3>
           <p className="conf-check-lead">
-            Use one worker to score a dropped conf on the current Region — base benchmark only, no
-            search trials. Uses {CONF_CHECK_TRIAL_THREADS} CPU / {CONF_CHECK_TRIAL_MEMORY_GB} GB per
-            trial.
+            Score a fixed conf on the current Region — one benchmark run, no parameter search or
+            optimization. Uses {CONF_CHECK_TRIAL_THREADS} CPU / {CONF_CHECK_TRIAL_MEMORY_GB} GB.
           </p>
         </div>
         {phase === "done" && score != null && (
@@ -378,8 +381,8 @@ export function ConfCheckPanel({ finderRegion }: ConfCheckPanelProps) {
           {phase === "dispatching"
             ? "Starting…"
             : phase === "running"
-              ? "Checking…"
-              : "Start check"}
+              ? "Benchmarking…"
+              : "Start benchmark"}
         </button>
       </div>
 

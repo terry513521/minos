@@ -39,6 +39,8 @@ export const DEFAULT_LIMIT_MINUTES = 30;
 export const DEFAULT_ADAPTIVE_MAX_TRIALS = 4;
 /** Benchmark-only conf check: one base trial, no search. */
 export const CONF_CHECK_ADAPTIVE_MAX_TRIALS = 0;
+/** Placeholder algorithm for benchmark-only dispatch (search is skipped). */
+export const CONF_CHECK_ALGORITHM: AlgorithmOption = "grid";
 /** Conf check defaults: lighter than manual worker assignments. */
 export const CONF_CHECK_TRIAL_THREADS = 4;
 export const CONF_CHECK_TRIAL_MEMORY_GB = 8;
