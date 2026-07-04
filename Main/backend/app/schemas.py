@@ -224,9 +224,9 @@ class WorkerDispatchRequest(BaseModel):
     limit_seconds: int = Field(default=1800, ge=60, le=86400)
     adaptive_max_trials: int = Field(
         default=4,
-        ge=1,
+        ge=0,
         le=1000,
-        description="Adaptive search trials after base benchmark (total trials = 1 + this value)",
+        description="Adaptive search trials after base benchmark (0 = base conf only; total = 1 + this value)",
     )
     candidate_index: int | None = None
 

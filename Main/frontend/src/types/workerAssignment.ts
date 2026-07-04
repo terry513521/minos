@@ -37,6 +37,8 @@ export const DEFAULT_ALGORITHM: AlgorithmOption = "cascade";
 export const DEFAULT_LIMIT_SECONDS = 1800;
 export const DEFAULT_LIMIT_MINUTES = 30;
 export const DEFAULT_ADAPTIVE_MAX_TRIALS = 4;
+/** Benchmark-only conf check: one base trial, no search. */
+export const CONF_CHECK_ADAPTIVE_MAX_TRIALS = 0;
 export const DEFAULT_TOTAL_TRIALS = 5;
 /** Auto-mode default: 1 base benchmark + 49 adaptive search trials. */
 export const DEFAULT_AUTO_ADAPTIVE_MAX_TRIALS = 49;

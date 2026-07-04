@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 def resolve_adaptive_max_trials(request: OptimizeRequest, settings: Settings) -> int:
     if request.adaptive_max_trials is not None:
-        return max(1, int(request.adaptive_max_trials))
+        return max(0, int(request.adaptive_max_trials))
     return settings.adaptive_max_trials
 
 
@@ -363,7 +363,7 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
         def timed_out() -> bool:
             return time.time() >= deadline or is_stop_requested()
 
-        if not timed_out():
+        if adaptive_max_trials > 0 and not timed_out():
             logger.info(
                 "Starting %s search: up to %s trials after base",
                 algorithm,
@@ -381,6 +381,8 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
                 timed_out=timed_out,
                 record_result=record_result,
             )
+        elif adaptive_max_trials <= 0:
+            logger.info("Benchmark-only job — skipping search after base conf")
 
         if best_score is None:
             message = errors[0] if errors else "No successful benchmark trials"

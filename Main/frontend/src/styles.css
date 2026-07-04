@@ -933,6 +933,120 @@ code, .input-mono {
   color: var(--muted);
   line-height: 1.45;
 }
+
+.conf-check-panel {
+  margin-top: 1.25rem;
+  padding-top: 1.1rem;
+  border-top: 1px solid var(--border);
+}
+.conf-check-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.85rem;
+}
+.conf-check-title {
+  margin: 0 0 0.25rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+.conf-check-lead {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+  line-height: 1.45;
+  max-width: 36rem;
+}
+.conf-check-score-badge {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.1rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(52, 211, 153, 0.35);
+  background: rgba(52, 211, 153, 0.08);
+}
+.conf-check-score-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.conf-check-score-value {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #6ee7b7;
+}
+.conf-check-score-raw {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.conf-check-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem 1.25rem;
+  margin-bottom: 0.85rem;
+}
+.conf-check-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 10rem;
+}
+.conf-check-field-label {
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.conf-check-region {
+  font-size: 0.85rem;
+}
+.conf-check-dropzone {
+  margin-bottom: 0.75rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--border-strong);
+  background: rgba(255, 255, 255, 0.02);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.conf-check-dropzone:hover,
+.conf-check-dropzone--active,
+.conf-check-dropzone--loaded {
+  border-color: rgba(96, 165, 250, 0.65);
+  background: rgba(96, 165, 250, 0.06);
+}
+.conf-check-dropzone-title {
+  display: block;
+  font-size: 0.88rem;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+.conf-check-dropzone-hint {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.conf-check-conf-preview {
+  margin-bottom: 0.75rem;
+}
+.conf-check-actions {
+  margin-bottom: 0.5rem;
+}
+.conf-check-message {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.conf-check-error {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #fca5a5;
+}
+
 .candidate-worker-assign-message {
   margin-bottom: 0.75rem;
 }

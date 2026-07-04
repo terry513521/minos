@@ -186,6 +186,8 @@ def count_search_trials(
     adaptive_max_trials: int = 44,
 ) -> int:
     """Trials to run: 1 base + search trials (algorithm-specific cap)."""
+    if adaptive_max_trials <= 0:
+        return 1
     algo = normalize_algorithm(algorithm)
     if algo == "grid":
         grid_size = full_grid_size(base_conf, tool, param_names, param_intervals)

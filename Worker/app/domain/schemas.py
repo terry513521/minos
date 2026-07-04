@@ -74,9 +74,9 @@ class OptimizeRequest(BaseModel):
     )
     adaptive_max_trials: int | None = Field(
         default=None,
-        ge=1,
+        ge=0,
         le=1000,
-        description="Override worker default: adaptive trials after base benchmark",
+        description="Override worker default: adaptive trials after base benchmark (0 = base only)",
     )
 
 
