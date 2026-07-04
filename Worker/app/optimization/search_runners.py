@@ -227,6 +227,58 @@ def _run_optuna_loop(
             study.tell(trial, state=optuna.trial.TrialState.FAIL)
 
 
+def run_grid_search(
+    *,
+    base_conf: dict[str, Any],
+    tool: str,
+    param_names: list[str],
+    param_intervals: dict[str, Any] | None,
+    concurrency: int,
+    max_trials: int,
+    timed_out: Callable[[], bool],
+    evaluate: Callable[[dict[str, Any]], BenchmarkResult],
+    record_result: Callable[[BenchmarkResult, str], None],
+    run_batch: Callable[..., None],
+) -> None:
+    """Exhaustive Cartesian grid over discrete param axes (batched, capped)."""
+    from app.optimization.search import build_search_space
+
+    memory = ConfMemory(base_conf)
+    candidates = build_search_space(base_conf, tool, param_names, param_intervals)
+    grid_confs = [conf for conf in candidates if memory.remember(conf)]
+    if not grid_confs:
+        logger.info("Grid search has no configs beyond base conf")
+        return
+
+    grid_confs = grid_confs[:max_trials]
+    extra_done = 0
+    idx = 0
+
+    while not timed_out() and extra_done < max_trials and idx < len(grid_confs):
+        batch: list[dict[str, Any]] = []
+        while (
+            len(batch) < concurrency
+            and idx < len(grid_confs)
+            and extra_done + len(batch) < max_trials
+        ):
+            batch.append(grid_confs[idx])
+            idx += 1
+        if not batch:
+            break
+        before = extra_done
+        run_batch(
+            candidate_variants=batch,
+            concurrency=min(concurrency, len(batch)),
+            timed_out=timed_out,
+            evaluate=evaluate,
+            record_result=record_result,
+            label="grid",
+        )
+        extra_done += len(batch)
+        if extra_done == before:
+            break
+
+
 def run_adaptive_search(
     *,
     request: OptimizeRequest,
@@ -245,6 +297,21 @@ def run_adaptive_search(
 
     algo = normalize_algorithm(algorithm)
     specs = resolve_search_specs(request.tool, request.params, intervals)
+
+    if algo == "grid":
+        run_grid_search(
+            base_conf=base_conf,
+            tool=request.tool,
+            param_names=list(request.params),
+            param_intervals=intervals,
+            concurrency=concurrency,
+            max_trials=max_trials,
+            timed_out=timed_out,
+            evaluate=evaluate,
+            record_result=record_result,
+            run_batch=run_batch,
+        )
+        return
 
     if algo == "random":
         run_random_search(

@@ -23,6 +23,7 @@ export type ToolkitOption = (typeof TOOLKIT_OPTIONS)[number];
 export const ALGORITHM_OPTIONS = [
   "cascade",
   "pbt",
+  "grid",
   "optuna",
   "gp",
   "random",

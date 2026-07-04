@@ -13,9 +13,8 @@ from app.optimization.search import build_optimization_plan, count_search_trials
 def test_normalize_algorithm():
     assert normalize_algorithm("cascade") == "cascade"
     assert normalize_algorithm("pbt") == "pbt"
+    assert normalize_algorithm("grid") == "grid"
     assert normalize_algorithm("GP") == "gp"
-    with pytest.raises(ValueError):
-        normalize_algorithm("grid")
     with pytest.raises(ValueError):
         normalize_algorithm("bayesian")
 
@@ -37,7 +36,11 @@ def test_adaptive_trial_counts():
     assert count_search_trials(
         base, "gatk", list(intervals), intervals, algorithm="optuna", adaptive_max_trials=44
     ) == 45
+    assert count_search_trials(
+        base, "gatk", list(intervals), intervals, algorithm="grid", adaptive_max_trials=44
+    ) == 9
     assert is_adaptive_algorithm("random")
+    assert is_adaptive_algorithm("grid")
 
 
 def test_optimization_plan_optuna():

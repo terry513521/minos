@@ -185,8 +185,14 @@ def count_search_trials(
     algorithm: str = "optuna",
     adaptive_max_trials: int = 44,
 ) -> int:
-    """Trials to run: 1 base + adaptive search cap."""
-    normalize_algorithm(algorithm)
+    """Trials to run: 1 base + search trials (algorithm-specific cap)."""
+    algo = normalize_algorithm(algorithm)
+    if algo == "grid":
+        grid_size = full_grid_size(base_conf, tool, param_names, param_intervals)
+        searchable = max(0, grid_size - 1)
+        if searchable == 0:
+            return 1
+        return 1 + min(searchable, max(1, adaptive_max_trials))
     return 1 + max(1, adaptive_max_trials)
 
 
@@ -316,7 +322,14 @@ def format_optimization_plan(plan: dict[str, Any]) -> str:
             f"  - {axis['param']}: {axis['value_count']} values [{preview}{suffix}]"
         )
 
-    if plan["mode"] in ("random", "optuna", "gp", "sobol", "lhs"):
+    if plan["mode"] == "grid":
+        searchable = max(0, int(plan["full_cartesian_grid"]) - 1)
+        capped = min(searchable, int(plan["adaptive_max_trials"]))
+        lines.append(
+            f"search: grid {capped} of {plan['full_cartesian_grid']} configs after base "
+            f"(cap {plan['adaptive_max_trials']} search trials)"
+        )
+    elif plan["mode"] in ("random", "optuna", "gp", "sobol", "lhs", "pbt", "cascade"):
         lines.append(
             f"search: {plan['mode']} up to {plan['adaptive_max_trials']} trials after base "
             f"(reference space: {plan['full_cartesian_grid']} configs)"

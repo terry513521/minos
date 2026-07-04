@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 OPTUNA_ALGORITHMS = frozenset({"optuna", "gp"})
-EXPLORATION_ALGORITHMS = frozenset({"random", "sobol", "lhs"})
+EXPLORATION_ALGORITHMS = frozenset({"random", "sobol", "lhs", "grid"})
 EVOLUTIONARY_ALGORITHMS = frozenset({"pbt", "cascade"})
 ADAPTIVE_ALGORITHMS = frozenset(
     {*OPTUNA_ALGORITHMS, *EXPLORATION_ALGORITHMS, *EVOLUTIONARY_ALGORITHMS}
@@ -32,3 +32,7 @@ def is_optuna_algorithm(algorithm: str) -> bool:
 def is_parallel_algorithm(algorithm: str) -> bool:
     """Algorithms that evaluate multiple trials concurrently."""
     return algorithm in EXPLORATION_ALGORITHMS or algorithm in EVOLUTIONARY_ALGORITHMS
+
+
+def is_grid_algorithm(algorithm: str) -> bool:
+    return algorithm == "grid"
