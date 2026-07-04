@@ -274,7 +274,13 @@ export function WorkersPanel({
   >(() => persisted?.healthByWorker ?? {});
   const [bestByWorker, setBestByWorker] = useState<
     Record<string, WorkerBestScoreResult | "loading">
-  >(() => persisted?.bestByWorker ?? {});
+  >(() => {
+    const stored = persisted?.bestByWorker ?? {};
+    if (initialDismissed.size === 0) return stored;
+    return Object.fromEntries(
+      Object.entries(stored).filter(([workerId]) => !initialDismissed.has(workerId)),
+    );
+  });
   const [dispatchByWorker, setDispatchByWorker] = useState<
     Record<string, WorkerDispatchResult | null>
   >(() => persisted?.dispatchByWorker ?? {});
@@ -626,6 +632,11 @@ export function WorkersPanel({
       delete next[workerId];
       return next;
     });
+    setBestByWorker((prev) => {
+      const next = { ...prev };
+      delete next[workerId];
+      return next;
+    });
     clearWorkerPanelEntry(workerId);
   }
 
@@ -864,6 +875,16 @@ export function WorkersPanel({
     }
     try {
       const result = await api.fetchWorkerBest(workerId);
+      const dismissed = dismissedWorkersRef.current;
+      const hasAssignment = Boolean(effectiveAssignmentsRef.current[workerId]);
+      if (dismissed.has(workerId) && !hasAssignment) {
+        setBestByWorker((prev) => {
+          const next = { ...prev };
+          delete next[workerId];
+          return next;
+        });
+        return;
+      }
       setBestByWorker((prev) => ({ ...prev, [workerId]: result }));
       if (
         result.ok &&
@@ -1460,6 +1481,7 @@ export function WorkersPanel({
               assignment?.window ?? null,
             );
             const assignedWindowSpan = formatWindowSpan(assignment?.window);
+            const showWorkerBest = Boolean(assignment) || isOptimizing;
 
             return (
               <article
@@ -1512,6 +1534,8 @@ export function WorkersPanel({
                 </div>
 
                 <div className="worker-best-block">
+                  {showWorkerBest ? (
+                  <>
                   <div className="worker-best-head">
                     <span className="worker-assignment-label">Current best</span>
                     <div className="worker-best-actions">
@@ -1665,6 +1689,8 @@ export function WorkersPanel({
                       update.
                     </div>
                   )}
+                  </>
+                  ) : null}
                 </div>
 
                 {health && health !== "loading" && (
