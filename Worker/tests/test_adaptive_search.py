@@ -11,7 +11,8 @@ from app.optimization.search import build_optimization_plan, count_search_trials
 
 
 def test_normalize_algorithm():
-    assert normalize_algorithm("optuna") == "optuna"
+    assert normalize_algorithm("cascade") == "cascade"
+    assert normalize_algorithm("pbt") == "pbt"
     assert normalize_algorithm("GP") == "gp"
     with pytest.raises(ValueError):
         normalize_algorithm("grid")

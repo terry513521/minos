@@ -14,6 +14,7 @@ from app.optimization.adaptive_search import (
     suggest_optuna_params,
     suggest_random_params,
 )
+from app.optimization.evolutionary_search import run_cascade_search, run_pbt_search
 from app.optimization.algorithms import is_optuna_algorithm, normalize_algorithm
 from app.optimization.param_specs import TuneSpec
 from app.optimization.quasi_random import build_quasi_sample_confs, seed_from_job_id
@@ -298,6 +299,37 @@ def run_adaptive_search(
             timed_out=timed_out,
             evaluate=evaluate,
             record_result=record_result,
+        )
+        return
+
+    if algo == "pbt":
+        run_pbt_search(
+            job_id=request.job_id,
+            base_conf=base_conf,
+            tool=request.tool,
+            specs=specs,
+            concurrency=concurrency,
+            max_trials=max_trials,
+            timed_out=timed_out,
+            evaluate=evaluate,
+            record_result=record_result,
+            memory=ConfMemory(base_conf),
+        )
+        return
+
+    if algo == "cascade":
+        run_cascade_search(
+            job_id=request.job_id,
+            base_conf=base_conf,
+            tool=request.tool,
+            specs=specs,
+            concurrency=concurrency,
+            max_trials=max_trials,
+            timed_out=timed_out,
+            evaluate=evaluate,
+            record_result=record_result,
+            run_batch=run_batch,
+            memory=ConfMemory(base_conf),
         )
         return
 

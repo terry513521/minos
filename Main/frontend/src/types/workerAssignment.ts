@@ -19,11 +19,19 @@ import { isWorkerJobRunning } from "../utils/workerJobStatus";
 export const TOOLKIT_OPTIONS = ["gatk", "bcftools", "deepvariant"] as const;
 export type ToolkitOption = (typeof TOOLKIT_OPTIONS)[number];
 
-export const ALGORITHM_OPTIONS = ["optuna", "gp", "random", "sobol", "lhs"] as const;
+export const ALGORITHM_OPTIONS = [
+  "cascade",
+  "pbt",
+  "optuna",
+  "gp",
+  "random",
+  "sobol",
+  "lhs",
+] as const;
 export type AlgorithmOption = (typeof ALGORITHM_OPTIONS)[number];
 
 export const DEFAULT_TOOLKIT: ToolkitOption = "gatk";
-export const DEFAULT_ALGORITHM: AlgorithmOption = "optuna";
+export const DEFAULT_ALGORITHM: AlgorithmOption = "cascade";
 export const DEFAULT_LIMIT_SECONDS = 1800;
 export const DEFAULT_LIMIT_MINUTES = 30;
 export const DEFAULT_ADAPTIVE_MAX_TRIALS = 4;
@@ -73,13 +81,7 @@ export function limitMinutesToSeconds(minutes: number): number {
 
 export function isAdaptiveAlgorithm(algorithm: AlgorithmOption | string): boolean {
   const algo = String(algorithm).toLowerCase();
-  return (
-    algo === "optuna" ||
-    algo === "gp" ||
-    algo === "random" ||
-    algo === "sobol" ||
-    algo === "lhs"
-  );
+  return ALGORITHM_OPTIONS.includes(algo as AlgorithmOption);
 }
 
 export function clampTotalTrials(value: number): number {

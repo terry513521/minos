@@ -25,6 +25,7 @@ import {
   clampTrialThreads,
   clampTotalTrials,
   CONCURRENCY_OPTIONS,
+  DEFAULT_ALGORITHM,
   DEFAULT_AUTO_TOTAL_TRIALS,
   DEFAULT_LIMIT_MINUTES,
   limitMinutesToSeconds,
@@ -106,7 +107,7 @@ export function AutoModeTunableEditor({
       Object.fromEntries(
         names.map((name) => [
           name,
-          workerSettingForName(workerAlgorithmsFromAutoConfig(nextConfig), name) ?? "optuna",
+          workerSettingForName(workerAlgorithmsFromAutoConfig(nextConfig), name) ?? DEFAULT_ALGORITHM,
         ]),
       ) as Record<string, AlgorithmOption>,
     );
@@ -253,7 +254,7 @@ export function AutoModeTunableEditor({
         Object.fromEntries(
           workerNames.map((name) => [
             name,
-            data.workerAlgorithms?.[name] ?? workerAlgorithms[name] ?? "optuna",
+            data.workerAlgorithms?.[name] ?? workerAlgorithms[name] ?? DEFAULT_ALGORITHM,
           ]),
         ) as Record<string, AlgorithmOption>,
       );
@@ -394,7 +395,7 @@ export function AutoModeTunableEditor({
           },
         ]),
       ),
-      worker_algorithms: Object.fromEntries(workerNames.map((name) => [name, "optuna"])),
+      worker_algorithms: Object.fromEntries(workerNames.map((name) => [name, DEFAULT_ALGORITHM])),
       worker_trial_threads: Object.fromEntries(workerNames.map((name) => [name, 4])),
       worker_trial_memory_gb: Object.fromEntries(workerNames.map((name) => [name, 6])),
       worker_concurrency: Object.fromEntries(workerNames.map((name) => [name, 1])),
@@ -581,7 +582,7 @@ export function AutoModeTunableEditor({
                       <td>
                         <select
                           className="input-mono auto-mode-worker-algorithm-select"
-                          value={workerAlgorithms[workerName] ?? "optuna"}
+                          value={workerAlgorithms[workerName] ?? DEFAULT_ALGORITHM}
                           onChange={(e) =>
                             setWorkerAlgorithms({
                               ...workerAlgorithms,

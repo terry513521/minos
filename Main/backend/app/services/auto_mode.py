@@ -45,8 +45,10 @@ SELECTION_REASONS: tuple[SelectionReason, ...] = (
     "most_similar",
     "best_composite",
 )
-AUTO_ALGORITHM = "optuna"
-AUTO_ALGORITHMS: frozenset[str] = frozenset({"optuna", "gp", "random", "sobol", "lhs"})
+AUTO_ALGORITHM = "cascade"
+AUTO_ALGORITHMS: frozenset[str] = frozenset(
+    {"cascade", "pbt", "optuna", "gp", "random", "sobol", "lhs"}
+)
 AUTO_FIND_K = 6
 AUTO_SELECT_K = 3
 AUTO_LIMIT_SECONDS = 50 * 60
