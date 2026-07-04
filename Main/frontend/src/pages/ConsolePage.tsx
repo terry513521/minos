@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FindCandidatesResponse } from "../api/client";
 import { CandidateFinderPanel } from "../components/CandidateFinderPanel";
-import { ConfCheckPanel } from "../components/ConfCheckPanel";
 import { AutoModePanel } from "../components/AutoModePanel";
 import { SectionHeader } from "../components/SectionHeader";
 import { WorkerStatusOverview } from "../components/WorkerStatusOverview";
@@ -113,7 +112,6 @@ export function ConsolePage() {
               onApplyConfToAllWorkers={handleApplyConfToAllWorkers}
               embedded
             />
-            <ConfCheckPanel finderRegion={finderRegion} />
           </section>
         )}
 
