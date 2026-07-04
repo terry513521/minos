@@ -22,6 +22,7 @@ const initialFinderState = loadCandidateFinderState();
 
 interface CandidateFinderPanelProps {
   onResultChange?: (result: FindCandidatesResponse | null) => void;
+  onRegionChange?: (region: string) => void;
   workerAssignmentSummaries?: WorkerAssignmentSummary[];
   onAssignCandidateToWorker?: (workerId: string, candidateIndex: number) => boolean;
   onApplyConfToAllWorkers?: (text: string, candidateIndex: number) => ApplyConfImportResult;
@@ -30,6 +31,7 @@ interface CandidateFinderPanelProps {
 
 export function CandidateFinderPanel({
   onResultChange,
+  onRegionChange,
   workerAssignmentSummaries = [],
   onAssignCandidateToWorker,
   onApplyConfToAllWorkers,
@@ -75,11 +77,21 @@ export function CandidateFinderPanel({
   }, [region, kCandidates, result]);
 
   useEffect(() => {
+    onRegionChange?.(region);
+  }, [region, onRegionChange]);
+
+  useEffect(() => {
     if (!regionInitializedRef.current) {
       regionInitializedRef.current = true;
       const restored = restoredResultRef.current;
+      const normalizedRegion = normalizeRegion(region) ?? region.trim();
       if (restored) {
-        onResultChange?.(restored);
+        const restoredWindow = normalizeRegion(restored.window) ?? restored.window?.trim();
+        if (normalizedRegion && restoredWindow && normalizedRegion !== restoredWindow) {
+          onResultChange?.(null);
+        } else {
+          onResultChange?.(restored);
+        }
       } else {
         onResultChange?.(null);
       }

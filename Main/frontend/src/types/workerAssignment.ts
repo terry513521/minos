@@ -15,6 +15,7 @@ import {
 } from "../utils/manualParamDefaults";
 import { defaultParamInterval, ParamInterval } from "../utils/paramBounds";
 import { isWorkerJobRunning } from "../utils/workerJobStatus";
+import { normalizeRegion } from "../utils/window";
 
 export const TOOLKIT_OPTIONS = ["gatk", "bcftools", "deepvariant"] as const;
 export type ToolkitOption = (typeof TOOLKIT_OPTIONS)[number];
@@ -150,20 +151,22 @@ export function buildDefaultParamIntervals(
   return intervals;
 }
 
-export function resolveAssignmentWindow(
-  candidate: CandidatePreview,
-  contextWindow: string,
+/** Region for a worker assignment: dashboard Region input, else find-result window. */
+export function assignmentWindowFromRegion(
+  regionInput: string | undefined | null,
+  findResultWindow?: string,
 ): string {
-  const query = contextWindow?.trim();
-  if (query) return query;
-  const fromCandidate = candidate.source_window?.trim();
-  return fromCandidate || contextWindow;
+  const fromInput = normalizeRegion(regionInput ?? "") ?? regionInput?.trim();
+  if (fromInput) return fromInput;
+  const fromFind = normalizeRegion(findResultWindow ?? "") ?? findResultWindow?.trim();
+  return fromFind ?? "";
 }
 
 export function createAssignment(
   candidate: CandidatePreview,
   context: FindCandidatesResponse,
   worker?: Pick<WorkerRecord, "id" | "name">,
+  regionInput?: string,
 ): WorkerAssignment {
   ensureManualDefaultsHydrated();
   const tool = (context.tool?.toLowerCase() as ToolkitOption) || DEFAULT_TOOLKIT;
@@ -184,7 +187,7 @@ export function createAssignment(
   const workerName = worker?.name?.trim() ?? "";
   return {
     candidate,
-    window: resolveAssignmentWindow(candidate, context.window),
+    window: assignmentWindowFromRegion(regionInput, context.window),
     tool: resolvedTool,
     algorithm: workerName
       ? tunableDefaults.algorithm || workerDefaultAlgorithm(workerName)
