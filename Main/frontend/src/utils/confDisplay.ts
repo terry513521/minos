@@ -118,6 +118,29 @@ export function downloadConfFile(conf: Record<string, unknown>, fileName: string
   URL.revokeObjectURL(url);
 }
 
+/** Filesystem-safe region token for conf download names. */
+export function sanitizeRegionForFileName(region: string): string {
+  const trimmed = region.trim();
+  if (!trimmed) return "unknown-region";
+  return trimmed
+    .replace(/:/g, "-")
+    .replace(/[^\w.-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+/** Best conf download base name: `{region}-{scorePercent}`. */
+export function bestConfDownloadFileName(
+  region: string | null | undefined,
+  score: number | null | undefined,
+): string {
+  const regionPart = sanitizeRegionForFileName(region ?? "unknown-region");
+  if (score == null || Number.isNaN(score)) {
+    return `${regionPart}-no-score`;
+  }
+  return `${regionPart}-${(score * 100).toFixed(2)}`;
+}
+
 export function countChangedConfRows(rows: ConfRow[]): number {
   return rows.filter((row) => row.changed).length;
 }

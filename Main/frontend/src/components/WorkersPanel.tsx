@@ -48,6 +48,7 @@ import {
   ParamInterval,
 } from "../utils/paramBounds";
 import { parseToolOptionValue, setToolOption } from "../utils/confEdit";
+import { bestConfDownloadFileName } from "../utils/confDisplay";
 import { WORKERS_CHANGED_EVENT, WORKERS_CHECK_ALL_HEALTH_EVENT, WORKERS_CHECK_ALL_HEALTH_RESULT_EVENT, WORKERS_CLEAR_ALL_EVENT, WORKERS_STOP_ALL_EVENT, WORKERS_START_ALL_EVENT, WORKERS_START_ALL_RESULT_EVENT } from "./AddWorkerModal";
 import { ConfParamPicker } from "./ConfParamPicker";
 import { ConfManualEditor } from "./ConfManualEditor";
@@ -1359,18 +1360,6 @@ export function WorkersPanel({
     });
   }
 
-  function applyBestConfToAssignment(workerId: string) {
-    const assignment = assignments[workerId];
-    const best = bestByWorker[workerId];
-    if (!assignment || !best || best === "loading" || !best.ok || !hasConfContent(best.best_conf)) {
-      return;
-    }
-    updateAssignmentBaseConf(workerId, {
-      ...assignment.candidate.base_conf,
-      ...best.best_conf,
-    });
-  }
-
   function clearWorkerState(workerId: string) {
     setAssignments((prev) => {
       const next = { ...prev };
@@ -1539,6 +1528,16 @@ export function WorkersPanel({
                   </div>
                 </div>
 
+                {assignment && (
+                  <div className="worker-base-region-row">
+                    <span className="worker-assignment-label">Base conf region</span>
+                    <code className="worker-base-region">{assignment.window}</code>
+                    {assignedWindowSpan && (
+                      <span className="worker-base-region-span">{assignedWindowSpan}</span>
+                    )}
+                  </div>
+                )}
+
                 {assignment && !bestOk && (() => {
                   const pendingTask = formatWorkerTaskSummary(undefined, assignment);
                   const pendingParams = formatWorkerTaskParams(undefined, assignment);
@@ -1641,18 +1640,13 @@ export function WorkersPanel({
                             label="Best conf"
                             layout="panel"
                             showActions
+                            viewOnly
                             baseConf={compareBaseConf}
-                            downloadFileName={`${worker.name.replace(/[^\w.-]+/g, "-")}-best-conf`}
+                            downloadFileName={bestConfDownloadFileName(
+                              assignment?.window ?? bestOk.window,
+                              bestOk.best_score,
+                            )}
                           />
-                          {assignment && (
-                            <button
-                              type="button"
-                              className="button ghost worker-best-use-conf"
-                              onClick={() => applyBestConfToAssignment(worker.id)}
-                            >
-                              Use best as base
-                            </button>
-                          )}
                         </div>
                       )}
 
@@ -1765,10 +1759,6 @@ export function WorkersPanel({
                             </span>
                           )}
                         </span>
-                        <code className="worker-assignment-window">
-                          {assignment.tool}: {assignment.window}
-                          {assignedWindowSpan ? ` (${assignedWindowSpan})` : ""}
-                        </code>
                         {(isOptimizing || bestOk?.benchmark_window) && workerBenchmarkLabel && (
                           <code className="worker-assignment-window worker-assignment-window--benchmark">
                             benchmark: {workerBenchmarkLabel}

@@ -24,6 +24,7 @@ export interface WorkerLiveStatus {
   isOptimizing: boolean;
   runStartedAt: string | null;
   runLimitSeconds: number | null;
+  baseConfRegion: string | null;
   loadError: string | null;
 }
 
@@ -100,6 +101,7 @@ export function buildWorkerLiveStatuses(
     const bestOk = best && best !== "loading" ? best : null;
     const runStartedAt = resolveWorkerJobStartedAt(assignment, autoModeStatus, bestOk ?? undefined);
     const runLimitSeconds = resolveWorkerJobLimitSeconds(assignment, autoModeStatus, bestOk ?? undefined);
+    const baseConfRegion = assignment?.window ?? bestOk?.window ?? null;
 
     if (!best || best === "loading") {
       return {
@@ -114,6 +116,7 @@ export function buildWorkerLiveStatuses(
         isOptimizing: false,
         runStartedAt,
         runLimitSeconds,
+        baseConfRegion,
         loadError: null,
       };
     }
@@ -131,6 +134,7 @@ export function buildWorkerLiveStatuses(
         isOptimizing: false,
         runStartedAt,
         runLimitSeconds,
+        baseConfRegion,
         loadError: best.error ?? "Could not load worker status",
       };
     }
@@ -165,6 +169,7 @@ export function buildWorkerLiveStatuses(
       isOptimizing,
       runStartedAt,
       runLimitSeconds,
+      baseConfRegion,
       loadError: null,
     };
   });

@@ -1,5 +1,5 @@
 import { LimitCountdownBadge } from "./LimitCountdownBadge";
-import { downloadConfFile } from "../utils/confDisplay";
+import { bestConfDownloadFileName, downloadConfFile } from "../utils/confDisplay";
 import {
   formatWorkerBestScore,
   sortWorkerLiveStatusesByScore,
@@ -80,7 +80,7 @@ export function WorkerStatusOverview({ statuses }: WorkerStatusOverviewProps) {
                   onClick={() =>
                     downloadConfFile(
                       row.bestConf,
-                      `${row.workerName.replace(/[^\w.-]+/g, "-")}-best-conf`,
+                      bestConfDownloadFileName(row.baseConfRegion, row.bestScore),
                     )
                   }
                 >

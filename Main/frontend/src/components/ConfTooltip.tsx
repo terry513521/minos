@@ -13,8 +13,10 @@ interface ConfTooltipProps {
   layout?: "popover" | "panel";
   /** When set, rows that differ from base are highlighted */
   baseConf?: Record<string, unknown> | null;
-  /** Show View + Copy + Download toolbar (intended for worker best conf) */
+  /** Show View (+ optional Copy/Download) toolbar (intended for worker best conf) */
   showActions?: boolean;
+  /** When true with showActions, only show the View toggle (no Copy/Download). */
+  viewOnly?: boolean;
   downloadFileName?: string;
 }
 
@@ -24,6 +26,7 @@ export function ConfTooltip({
   layout = "popover",
   baseConf = null,
   showActions = false,
+  viewOnly = false,
   downloadFileName = "conf",
 }: ConfTooltipProps) {
   const [open, setOpen] = useState(false);
@@ -83,20 +86,24 @@ export function ConfTooltip({
           >
             {viewLabel}
           </button>
-          <button
-            type="button"
-            className="button ghost conf-toolbar-btn"
-            onClick={() => void handleCopy()}
-          >
-            {copyState === "copied" ? "Copied" : copyState === "failed" ? "Copy failed" : "Copy"}
-          </button>
-          <button
-            type="button"
-            className="button ghost conf-toolbar-btn"
-            onClick={handleDownload}
-          >
-            Download
-          </button>
+          {!viewOnly && (
+            <>
+              <button
+                type="button"
+                className="button ghost conf-toolbar-btn"
+                onClick={() => void handleCopy()}
+              >
+                {copyState === "copied" ? "Copied" : copyState === "failed" ? "Copy failed" : "Copy"}
+              </button>
+              <button
+                type="button"
+                className="button ghost conf-toolbar-btn"
+                onClick={handleDownload}
+              >
+                Download
+              </button>
+            </>
+          )}
         </div>
       ) : (
         <button

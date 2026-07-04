@@ -2781,6 +2781,25 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   color: var(--muted);
   word-break: break-all;
 }
+.worker-base-region-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.5rem;
+  margin-top: 0.35rem;
+}
+.worker-base-region-row .worker-assignment-label {
+  margin-bottom: 0;
+}
+.worker-base-region {
+  font-size: 0.78rem;
+  color: var(--text);
+  word-break: break-all;
+}
+.worker-base-region-span {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
 .worker-assignment-title {
   font-size: 0.82rem;
   font-weight: 600;
