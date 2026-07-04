@@ -114,7 +114,7 @@ def _parse_concurrency(raw: str) -> int:
     return value
 
 
-def _runtime_resources(settings: Settings, base_conf: dict[str, Any]) -> tuple[int, int]:
+def _runtime_resources(base_conf: dict[str, Any], settings: Settings) -> tuple[int, int]:
     threads = int(base_conf.get("threads") or settings.trial_threads)
     memory_gb = int(base_conf.get("memory_gb") or settings.trial_memory_gb)
     return threads, memory_gb
