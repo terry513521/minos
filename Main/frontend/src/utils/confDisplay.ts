@@ -129,16 +129,16 @@ export function sanitizeRegionForFileName(region: string): string {
     .replace(/^-|-$/g, "");
 }
 
-/** Best conf download base name: `{region}-{scorePercent}`. */
+/** Best conf download base name: `{region}({scorePercent})`. */
 export function bestConfDownloadFileName(
   region: string | null | undefined,
   score: number | null | undefined,
 ): string {
   const regionPart = sanitizeRegionForFileName(region ?? "unknown-region");
   if (score == null || Number.isNaN(score)) {
-    return `${regionPart}-no-score`;
+    return `${regionPart}(no-score)`;
   }
-  return `${regionPart}-${(score * 100).toFixed(2)}`;
+  return `${regionPart}(${(score * 100).toFixed(2)})`;
 }
 
 export function countChangedConfRows(rows: ConfRow[]): number {
