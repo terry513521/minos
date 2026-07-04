@@ -19,7 +19,7 @@ from app.paths import WORKER_ROOT, data_root
 
 logger = logging.getLogger(__name__)
 
-_GIAB_SUPPORTED_TOOLS = frozenset({"gatk", "bcftools"})
+_GIAB_SUPPORTED_TOOLS = frozenset({"gatk", "bcftools", "deepvariant"})
 
 
 def validate_tool_supported(tool: str) -> None:
@@ -159,6 +159,7 @@ def run_benchmark(
             vcf_tag=vcf_tag,
             reuse_vcf=True,
             settings=settings,
+            runtime_conf=conf,
         )
     except Exception as exc:
         logger.exception("GIAB benchmark failed for window=%s tool=%s", window, tool_key)

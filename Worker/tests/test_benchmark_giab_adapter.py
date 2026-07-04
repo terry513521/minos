@@ -15,6 +15,21 @@ def test_tool_params_from_conf_extracts_gatk_options():
     assert "threads" not in params
 
 
+def test_tool_params_from_conf_extracts_deepvariant_options():
+    conf = {
+        "deepvariant_options": {
+            "model_type": "WGS",
+            "min_mapping_quality": 5,
+        },
+        "threads": 4,
+        "memory_gb": 16,
+    }
+    params = tool_params_from_conf(conf, "deepvariant")
+    assert params["model_type"] == "WGS"
+    assert params["min_mapping_quality"] == 5
+    assert "threads" not in params
+
+
 def test_tool_params_from_conf_flat_gatk():
     conf = {
         "pcr_indel_model": "NONE",

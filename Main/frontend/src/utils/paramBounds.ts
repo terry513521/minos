@@ -106,10 +106,10 @@ const DEEPVARIANT_BOUNDS: BoundMap = {
   vsc_min_fraction_snps: n("float", 0, 1, 0.01),
   vsc_min_count_snps: n("int", 0, 50, 1),
   vsc_min_count_indels: n("int", 0, 50, 1),
-  min_mapping_quality: n("int", 0, 60, 5),
-  min_base_quality: n("int", 0, 50, 2),
+  min_mapping_quality: n("int", 0, 60, 5, { min: 3, max: 12 }),
+  min_base_quality: n("int", 0, 50, 2, { min: 8, max: 15 }),
   max_reads_per_partition: n("int", 100, 5000, 100),
-  qual_filter: n("float", 0, 50, 1),
+  qual_filter: n("float", 0, 50, 0.5, { min: 0.5, max: 3.0 }),
   multi_allelic_qual_filter: n("float", 0, 50, 1),
   cnn_homref_call_min_gq: n("float", 0, 50, 1),
   realign_reads: { type: "bool" },
@@ -315,17 +315,66 @@ export function listGatkParamNames(): string[] {
   return Object.keys(GATK_BOUNDS);
 }
 
-export function buildGatkReferenceConf(): Record<string, unknown> {
-  const gatk_options: Record<string, unknown> = { ...GATK_REFERENCE_VALUES };
-  for (const [name, spec] of Object.entries(GATK_BOUNDS)) {
-    if (name in gatk_options) continue;
+export function listToolParamNames(tool: string): string[] {
+  return Object.keys(BOUNDS_BY_TOOL[tool.toLowerCase()] ?? GATK_BOUNDS);
+}
+
+function buildReferenceConfForBounds(
+  bounds: BoundMap,
+  referenceValues: Record<string, string | number | boolean>,
+  optionsKey: string,
+): Record<string, unknown> {
+  const options: Record<string, unknown> = { ...referenceValues };
+  for (const [name, spec] of Object.entries(bounds)) {
+    if (name in options) continue;
     if (spec.type === "enum") {
-      gatk_options[name] = spec.allowedValues?.[0] ?? "";
+      options[name] = spec.allowedValues?.[0] ?? "";
     } else if (spec.type === "bool") {
-      gatk_options[name] = false;
+      options[name] = false;
     } else {
-      gatk_options[name] = spec.min ?? 0;
+      options[name] = spec.min ?? 0;
     }
   }
-  return { gatk_options };
+  return { [optionsKey]: options };
+}
+
+const DEEPVARIANT_REFERENCE_VALUES: Record<string, string | number | boolean> = {
+  model_type: "WGS",
+  vsc_min_fraction_indels: 0.12,
+  vsc_min_fraction_snps: 0.12,
+  vsc_min_count_snps: 2,
+  vsc_min_count_indels: 2,
+  min_mapping_quality: 5,
+  min_base_quality: 10,
+  realign_reads: true,
+  normalize_reads: false,
+  keep_duplicates: false,
+  max_reads_per_partition: 1500,
+  sort_by_haplotypes: false,
+  phase_reads: false,
+  qual_filter: 1.0,
+  multi_allelic_qual_filter: 1.0,
+  cnn_homref_call_min_gq: 20.0,
+  use_multiallelic_model: false,
+};
+
+export function buildGatkReferenceConf(): Record<string, unknown> {
+  return buildReferenceConfForBounds(GATK_BOUNDS, GATK_REFERENCE_VALUES, "gatk_options");
+}
+
+export function buildDeepvariantReferenceConf(): Record<string, unknown> {
+  return buildReferenceConfForBounds(
+    DEEPVARIANT_BOUNDS,
+    DEEPVARIANT_REFERENCE_VALUES,
+    "deepvariant_options",
+  );
+}
+
+export function buildToolReferenceConf(tool: string): Record<string, unknown> {
+  const toolKey = tool.toLowerCase().trim();
+  if (toolKey === "deepvariant") return buildDeepvariantReferenceConf();
+  if (toolKey === "bcftools") {
+    return buildReferenceConfForBounds(BCFTOOLS_BOUNDS, { min_MQ: 0, min_BQ: 13 }, "bcftools_options");
+  }
+  return buildGatkReferenceConf();
 }

@@ -1,7 +1,7 @@
 import { WorkerDispatchPayload } from "../api/client";
 import { listToolOptionKeys } from "./candidateAssign";
 import { getToolOptions } from "./confEdit";
-import { buildGatkReferenceConf } from "./paramBounds";
+import { buildToolReferenceConf } from "./paramBounds";
 import { parseAutoModeTunableImport } from "./autoModeTunableFile";
 import {
   buildDispatchBaseConf,
@@ -25,7 +25,7 @@ export function parseConfCheckFile(
   text: string,
   toolHint: ToolkitOption = "gatk",
 ): { ok: true; result: ParsedConfCheckFile } | { ok: false; error: string } {
-  const reference = buildGatkReferenceConf();
+  const reference = buildToolReferenceConf(toolHint);
   const parsed = parseAutoModeTunableImport(text, toolHint, reference);
   if (!parsed.ok) {
     return { ok: false, error: parsed.error };
@@ -91,6 +91,7 @@ export function buildConfCheckDispatchPayload(
         parsed.baseConf,
         CONF_CHECK_TRIAL_THREADS,
         CONF_CHECK_TRIAL_MEMORY_GB,
+        parsed.tool,
       ),
       params: [param],
       param_intervals: fixedConfParamIntervals(parsed.tool, parsed.baseConf, param),

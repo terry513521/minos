@@ -25,6 +25,7 @@ import {
   clampTotalTrials,
   clampDeltaRounds,
   createAssignment,
+  defaultTrialMemoryGbForTool,
   assignmentWindowFromRegion,
   mergeAssignmentWithWorkerTunables,
   adaptiveMaxTrialsForDispatch,
@@ -1208,6 +1209,7 @@ export function WorkersPanel({
           assignment.candidate.base_conf,
           assignment.trialThreads,
           assignment.trialMemoryGb,
+          assignment.tool,
         ),
         params: assignment.selectedParams,
         param_intervals: buildDispatchParamIntervals(
@@ -1832,6 +1834,7 @@ export function WorkersPanel({
                                 ...assignment,
                                 ...assignmentParamsForTool(assignment, tool, worker),
                                 tool,
+                                trialMemoryGb: defaultTrialMemoryGbForTool(tool),
                               }),
                             );
                           }}

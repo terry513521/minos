@@ -26,7 +26,7 @@ from app.schemas import (
 from app.selector import parse_window
 from app.services.candidate_finder import load_history_entries, scored_pool_to_previews
 from app.engine.candidate_finder import CandidateFinderEngine
-from app.defaults import default_tool_conf, MAX_TRIAL_THREADS
+from app.defaults import default_tool_conf, MAX_TRIAL_THREADS, default_trial_memory_gb_for_tool
 from app.services.control_plane_settings import (
     AUTO_MODE_ENABLED_KEY,
     AUTO_MODE_SESSION_KEY,
@@ -57,21 +57,17 @@ AUTO_SCORE_WEIGHT = 0.4
 AUTO_SIMILARITY_WEIGHT = 0.6
 AUTO_CONCURRENCY = 1
 AUTO_TRIAL_THREADS = 4
-AUTO_TRIAL_MEMORY_GB = 6
-AUTO_TOOL = "gatk"
+AUTO_TRIAL_MEMORY_GB = 16
+AUTO_TOOL = "deepvariant"
 AUTO_PARAMS = [
-    "standard_min_confidence_threshold_for_calling",
-    "contamination_fraction_to_filter",
-    "base_quality_score_threshold",
+    "min_mapping_quality",
+    "qual_filter",
+    "min_base_quality",
 ]
 AUTO_PARAM_INTERVALS: dict[str, ParamIntervalSpec] = {
-    "standard_min_confidence_threshold_for_calling": ParamIntervalSpec(
-        min=25.0, max=35.0, step=0.2
-    ),
-    "contamination_fraction_to_filter": ParamIntervalSpec(
-        min=0.18, max=0.28, step=0.00001
-    ),
-    "base_quality_score_threshold": ParamIntervalSpec(min=25.0, max=31.0, step=1.0),
+    "min_mapping_quality": ParamIntervalSpec(min=3.0, max=10.0, step=1.0),
+    "qual_filter": ParamIntervalSpec(min=0.5, max=3.0, step=0.5),
+    "min_base_quality": ParamIntervalSpec(min=8.0, max=15.0, step=1.0),
 }
 
 
@@ -99,7 +95,7 @@ def default_worker_trial_threads(worker_names: list[str] | None = None) -> dict[
 
 def default_worker_trial_memory_gb(worker_names: list[str] | None = None) -> dict[str, int]:
     names = worker_names or []
-    return {name: AUTO_TRIAL_MEMORY_GB for name in names}
+    return {name: default_trial_memory_gb_for_tool(AUTO_TOOL, fallback=AUTO_TRIAL_MEMORY_GB) for name in names}
 
 
 def default_worker_concurrency(worker_names: list[str] | None = None) -> dict[str, int]:
@@ -986,13 +982,15 @@ def candidate_dispatch_window(candidate: CandidatePreview, fallback: str) -> str
 def with_trial_resources(
     base_conf: dict[str, Any],
     *,
+    tool: str = AUTO_TOOL,
     trial_threads: int = AUTO_TRIAL_THREADS,
     trial_memory_gb: int = AUTO_TRIAL_MEMORY_GB,
 ) -> dict[str, Any]:
-    """Attach per-trial Docker CPU/RAM for GATK benchmarks."""
+    """Attach per-trial Docker CPU/RAM for variant-caller benchmarks."""
     merged = dict(base_conf)
     merged["threads"] = clamp_trial_threads(trial_threads)
-    merged["memory_gb"] = clamp_trial_memory_gb(trial_memory_gb)
+    memory_floor = default_trial_memory_gb_for_tool(tool, fallback=trial_memory_gb)
+    merged["memory_gb"] = clamp_trial_memory_gb(max(trial_memory_gb, memory_floor))
     return merged
 
 
@@ -1004,18 +1002,24 @@ def build_dispatch_request(
     candidate_index: int,
     algorithm: str = AUTO_ALGORITHM,
     trial_threads: int = AUTO_TRIAL_THREADS,
-    trial_memory_gb: int = AUTO_TRIAL_MEMORY_GB,
+    trial_memory_gb: int | None = None,
     concurrency: int = AUTO_CONCURRENCY,
     limit_seconds: int = AUTO_LIMIT_SECONDS,
     adaptive_max_trials: int = AUTO_ADAPTIVE_MAX_TRIALS,
 ) -> WorkerDispatchRequest:
+    resolved_memory_gb = (
+        trial_memory_gb
+        if trial_memory_gb is not None
+        else default_trial_memory_gb_for_tool(tool, fallback=AUTO_TRIAL_MEMORY_GB)
+    )
     return WorkerDispatchRequest(
         window=window,
         tool=tool,
         base_conf=with_trial_resources(
             base_conf,
+            tool=tool,
             trial_threads=trial_threads,
-            trial_memory_gb=trial_memory_gb,
+            trial_memory_gb=resolved_memory_gb,
         ),
         params=effective_auto_params(),
         param_intervals=effective_auto_param_intervals(),
@@ -1211,6 +1215,7 @@ async def start_auto_mode(
             similarity=candidate.similarity,
             base_conf=with_trial_resources(
                 candidate.base_conf,
+                tool=tool,
                 trial_threads=trial_threads,
                 trial_memory_gb=trial_memory_gb,
             ),

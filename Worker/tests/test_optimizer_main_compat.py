@@ -56,10 +56,30 @@ def test_main_payload_parses_to_optimize_request():
     assert req.params[0] == "pcr_indel_model"
 
 
-def test_validate_rejects_deepvariant():
-    req = OptimizeRequest.model_validate(_main_style_payload(tool="deepvariant"))
-    with pytest.raises(ValueError, match="not supported"):
-        validate_optimize_request(req)
+def _deepvariant_payload(**overrides) -> dict:
+    payload = _main_style_payload(
+        tool="deepvariant",
+        base_conf={
+            "deepvariant_options": {
+                "model_type": "WGS",
+                "min_mapping_quality": 5,
+                "qual_filter": 1.0,
+            }
+        },
+        params=["min_mapping_quality", "qual_filter"],
+        param_intervals={
+            "min_mapping_quality": {"min": 3, "max": 10, "step": 1},
+            "qual_filter": {"min": 0.5, "max": 2.0, "step": 0.5},
+        },
+    )
+    payload.update(overrides)
+    return payload
+
+
+def test_validate_accepts_deepvariant():
+    req = OptimizeRequest.model_validate(_deepvariant_payload())
+    size = validate_optimize_request(req)
+    assert size > 0
 
 
 def test_validate_rejects_unknown_algorithm():
@@ -103,11 +123,14 @@ def test_optimize_accepts_gp_sobol_lhs(mock_validate, mock_submit, client, algor
 
 
 @patch("app.api.routes.submit_optimize_job")
-def test_optimize_rejects_deepvariant(mock_submit, client):
-    response = client.post("/optimize", json=_main_style_payload(tool="deepvariant"))
-    assert response.status_code == 400
-    assert "not supported" in response.json()["detail"].lower()
-    mock_submit.assert_not_called()
+@patch("app.api.routes.validate_optimize_request", return_value=4)
+def test_optimize_accepts_deepvariant(mock_validate, mock_submit, client):
+    response = client.post("/optimize", json=_deepvariant_payload())
+    assert response.status_code == 202
+    body = response.json()
+    assert body["status"] == "accepted"
+    assert body["tool"] == "deepvariant"
+    mock_submit.assert_called_once()
 
 
 @patch("app.api.routes.submit_optimize_job")

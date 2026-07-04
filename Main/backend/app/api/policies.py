@@ -22,7 +22,28 @@ _DEFAULT_GATK_POLICY = OptimizerPolicy(
     },
 )
 
-_POLICIES: dict[str, OptimizerPolicy] = {"gatk": _DEFAULT_GATK_POLICY}
+_DEFAULT_DEEPVARIANT_POLICY = OptimizerPolicy(
+    tool="deepvariant",
+    important_params=[
+        "model_type",
+        "min_mapping_quality",
+        "qual_filter",
+        "min_base_quality",
+    ],
+    search_method="optuna",
+    search_budget=SearchBudget(max_trials=12, timeout_seconds=3600),
+    param_bounds={
+        "model_type": {"allowed": ["WGS"]},
+        "min_mapping_quality": {"min": 3, "max": 15, "step": 1},
+        "qual_filter": {"min": 0.5, "max": 3.0, "step": 0.5},
+        "min_base_quality": {"min": 8, "max": 15, "step": 1},
+    },
+)
+
+_POLICIES: dict[str, OptimizerPolicy] = {
+    "gatk": _DEFAULT_GATK_POLICY,
+    "deepvariant": _DEFAULT_DEEPVARIANT_POLICY,
+}
 
 
 @router.get("/{tool}", response_model=OptimizerPolicy)

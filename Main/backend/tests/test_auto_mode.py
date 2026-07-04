@@ -143,6 +143,14 @@ def test_auto_dispatch_uses_configured_algorithm():
     assert body.base_conf["threads"] == 4
     assert body.base_conf["memory_gb"] == 6
 
+    dv_body = build_dispatch_request(
+        window="chr21:1-100",
+        tool="deepvariant",
+        base_conf={"deepvariant_options": {"model_type": "WGS"}},
+        candidate_index=0,
+    )
+    assert dv_body.base_conf["memory_gb"] == 16
+
     default_body = build_dispatch_request(
         window="chr21:1-100",
         tool="gatk",
@@ -151,11 +159,23 @@ def test_auto_dispatch_uses_configured_algorithm():
     )
     assert default_body.algorithm == AUTO_ALGORITHM
 
-    merged = with_trial_resources({"gatk_options": {"x": 1}, "threads": 8})
+    merged = with_trial_resources({"gatk_options": {"x": 1}, "threads": 8}, tool="gatk")
     assert merged["threads"] == 4
     assert merged["memory_gb"] == 6
 
-    custom = with_trial_resources({"gatk_options": {}}, trial_threads=8, trial_memory_gb=12)
+    dv_merged = with_trial_resources(
+        {"deepvariant_options": {"model_type": "WGS"}},
+        tool="deepvariant",
+        trial_memory_gb=6,
+    )
+    assert dv_merged["memory_gb"] == 16
+
+    custom = with_trial_resources(
+        {"gatk_options": {}},
+        tool="gatk",
+        trial_threads=8,
+        trial_memory_gb=12,
+    )
     assert custom["threads"] == 8
     assert custom["memory_gb"] == 12
 

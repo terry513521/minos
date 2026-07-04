@@ -37,7 +37,7 @@ export const ALGORITHM_OPTIONS = [
 ] as const;
 export type AlgorithmOption = (typeof ALGORITHM_OPTIONS)[number];
 
-export const DEFAULT_TOOLKIT: ToolkitOption = "gatk";
+export const DEFAULT_TOOLKIT: ToolkitOption = "deepvariant";
 export const DEFAULT_ALGORITHM: AlgorithmOption = "cascade";
 export const DEFAULT_LIMIT_SECONDS = 1800;
 export const DEFAULT_LIMIT_MINUTES = 30;
@@ -48,13 +48,22 @@ export const CONF_CHECK_ADAPTIVE_MAX_TRIALS = 0;
 export const CONF_CHECK_ALGORITHM: AlgorithmOption = "grid";
 /** Conf check defaults: lighter than manual worker assignments. */
 export const CONF_CHECK_TRIAL_THREADS = 4;
-export const CONF_CHECK_TRIAL_MEMORY_GB = 8;
+export const CONF_CHECK_TRIAL_MEMORY_GB = 16;
 export const DEFAULT_TOTAL_TRIALS = 5;
 /** Auto-mode default: 1 base benchmark + 49 adaptive search trials. */
 export const DEFAULT_AUTO_ADAPTIVE_MAX_TRIALS = 49;
 export const DEFAULT_AUTO_TOTAL_TRIALS = 50;
 export const DEFAULT_TRIAL_THREADS = 4;
-export const DEFAULT_TRIAL_MEMORY_GB = 6;
+export const DEFAULT_TRIAL_MEMORY_GB = 16;
+export const TRIAL_MEMORY_GB_BY_TOOL: Record<ToolkitOption, number> = {
+  gatk: 6,
+  bcftools: 6,
+  deepvariant: 16,
+};
+
+export function defaultTrialMemoryGbForTool(tool: ToolkitOption): number {
+  return TRIAL_MEMORY_GB_BY_TOOL[tool] ?? DEFAULT_TRIAL_MEMORY_GB;
+}
 export const DEFAULT_INCLUDE_BASE_BENCHMARK = true;
 export const DEFAULT_DELTA_ROUNDS = 5;
 export const MAX_TRIAL_THREADS = 100;
@@ -154,11 +163,15 @@ export function buildDispatchBaseConf(
   baseConf: Record<string, unknown>,
   trialThreads: number,
   trialMemoryGb: number,
+  tool?: ToolkitOption,
 ): Record<string, unknown> {
+  const memoryGb = tool
+    ? clampTrialMemoryGb(Math.max(trialMemoryGb, defaultTrialMemoryGbForTool(tool)))
+    : clampTrialMemoryGb(trialMemoryGb);
   return {
     ...baseConf,
     threads: clampTrialThreads(trialThreads),
-    memory_gb: clampTrialMemoryGb(trialMemoryGb),
+    memory_gb: memoryGb,
   };
 }
 

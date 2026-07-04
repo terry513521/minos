@@ -30,12 +30,26 @@ export const DEFAULT_FINE_TUNE_PARAMS = [
   "standard_min_confidence_threshold_for_calling",
 ] as const;
 
+export const DEFAULT_DEEPVARIANT_PARAMS = [
+  "min_mapping_quality",
+  "qual_filter",
+  "min_base_quality",
+] as const;
+
+const DEFAULT_PARAMS_BY_TOOL: Record<string, readonly string[]> = {
+  gatk: DEFAULT_FINE_TUNE_PARAMS,
+  deepvariant: DEFAULT_DEEPVARIANT_PARAMS,
+};
+
 export function defaultSelectedParams(tool: string, available: string[]): string[] {
   const fromSaved = savedDefaultSelectedParams(tool, available);
   if (fromSaved.length > 0) return fromSaved;
 
   const availableSet = new Set(available);
-  return DEFAULT_FINE_TUNE_PARAMS.filter((param) => availableSet.has(param));
+  const preferred = DEFAULT_PARAMS_BY_TOOL[tool.toLowerCase()] ?? DEFAULT_FINE_TUNE_PARAMS;
+  const matched = preferred.filter((param) => availableSet.has(param));
+  if (matched.length > 0) return matched;
+  return available.slice(0, 3);
 }
 
 export const CANDIDATE_DRAG_MIME = "application/x-effortless-candidate";

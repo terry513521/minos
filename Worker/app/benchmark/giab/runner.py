@@ -20,7 +20,9 @@ from app.config import Settings, get_settings
 from app.core.repo import ensure_repo_imports
 from app.optimization.param_specs import coerce_param_value
 
-_SUPPORTED_TOOLS = frozenset({"gatk", "bcftools"})
+_SUPPORTED_TOOLS = frozenset({"gatk", "bcftools", "deepvariant"})
+
+_DEEPVARIANT_MIN_MEMORY_GB = 16
 
 
 def _region_slug(region: str) -> str:
@@ -36,6 +38,23 @@ def _vcf_slug(instance_id: str, tool: str, region: str, vcf_tag: str) -> str:
     return slug
 
 
+def _runtime_cfg(
+    runtime_conf: Dict[str, Any] | None,
+    *,
+    settings: Settings,
+    tool: str,
+    default_timeout: int,
+) -> Dict[str, int]:
+    runtime_conf = runtime_conf or {}
+    threads = max(1, int(runtime_conf.get("threads") or settings.trial_threads))
+    memory_gb = max(1, int(runtime_conf.get("memory_gb") or settings.trial_memory_gb))
+    if tool == "deepvariant":
+        floor = int(os.getenv("GIAB_DV_MEMORY_GB", str(_DEEPVARIANT_MIN_MEMORY_GB)))
+        memory_gb = max(memory_gb, floor)
+    timeout = int(runtime_conf.get("timeout") or default_timeout)
+    return {"threads": threads, "memory_gb": memory_gb, "timeout": timeout}
+
+
 def _run_gatk(
     bam: Path,
     ref: Path,
@@ -44,6 +63,7 @@ def _run_gatk(
     gatk_params: Dict[str, Any],
     *,
     settings: Settings,
+    runtime_conf: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     ensure_repo_imports()
     from templates.gatk import variant_call
@@ -51,11 +71,15 @@ def _run_gatk(
     gatk_options = {
         key: coerce_param_value("gatk", key, value) for key, value in gatk_params.items()
     }
+    runtime = _runtime_cfg(
+        runtime_conf,
+        settings=settings,
+        tool="gatk",
+        default_timeout=int(os.getenv("GIAB_GATK_TIMEOUT", "1800")),
+    )
     cfg = {
         "gatk_options": gatk_options,
-        "threads": settings.trial_threads,
-        "timeout": int(os.getenv("GIAB_GATK_TIMEOUT", "1800")),
-        "memory_gb": settings.trial_memory_gb,
+        **runtime,
     }
     return variant_call(bam, ref, out_vcf, region, cfg)
 
@@ -68,6 +92,7 @@ def _run_bcftools(
     params: Dict[str, Any],
     *,
     settings: Settings,
+    runtime_conf: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     ensure_repo_imports()
     from templates.bcftools import variant_call
@@ -76,10 +101,46 @@ def _run_bcftools(
         key: coerce_param_value("bcftools", key, value) for key, value in params.items()
     }
     default_threads = max(1, (os.cpu_count() or 4) - 1)
+    runtime = _runtime_cfg(
+        runtime_conf,
+        settings=settings,
+        tool="bcftools",
+        default_timeout=int(os.getenv("GIAB_BCF_TIMEOUT", "1800")),
+    )
+    if not (runtime_conf or {}).get("threads"):
+        runtime["threads"] = int(os.getenv("GIAB_BCF_THREADS", str(default_threads)))
     cfg = {
         "bcftools_options": bcftools_options,
-        "threads": int(os.getenv("GIAB_BCF_THREADS", str(default_threads))),
-        "timeout": int(os.getenv("GIAB_BCF_TIMEOUT", "1800")),
+        **runtime,
+    }
+    return variant_call(bam, ref, out_vcf, region, cfg)
+
+
+def _run_deepvariant(
+    bam: Path,
+    ref: Path,
+    region: str,
+    out_vcf: Path,
+    params: Dict[str, Any],
+    *,
+    settings: Settings,
+    runtime_conf: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    ensure_repo_imports()
+    from templates.deepvariant import variant_call
+
+    deepvariant_options = {
+        key: coerce_param_value("deepvariant", key, value) for key, value in params.items()
+    }
+    runtime = _runtime_cfg(
+        runtime_conf,
+        settings=settings,
+        tool="deepvariant",
+        default_timeout=int(os.getenv("GIAB_DV_TIMEOUT", "3600")),
+    )
+    cfg = {
+        "deepvariant_options": deepvariant_options,
+        **runtime,
     }
     return variant_call(bam, ref, out_vcf, region, cfg)
 
@@ -94,6 +155,7 @@ def score_tool_on_region(
     vcf_tag: str = "",
     reuse_vcf: bool = True,
     settings: Settings | None = None,
+    runtime_conf: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """Call + hap.py score one tool config on a GIAB regional BAM."""
     settings = settings or get_settings()
@@ -126,9 +188,17 @@ def score_tool_on_region(
             "metadata": {"reused_vcf": True},
         }
     elif tool_key == "gatk":
-        call = _run_gatk(bam, ref, region, out_vcf, params, settings=settings)
+        call = _run_gatk(
+            bam, ref, region, out_vcf, params, settings=settings, runtime_conf=runtime_conf
+        )
+    elif tool_key == "deepvariant":
+        call = _run_deepvariant(
+            bam, ref, region, out_vcf, params, settings=settings, runtime_conf=runtime_conf
+        )
     else:
-        call = _run_bcftools(bam, ref, region, out_vcf, params, settings=settings)
+        call = _run_bcftools(
+            bam, ref, region, out_vcf, params, settings=settings, runtime_conf=runtime_conf
+        )
 
     if not call.get("success"):
         return {

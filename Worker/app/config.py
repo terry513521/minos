@@ -23,9 +23,9 @@ class Settings(BaseSettings):
     adaptive_max_trials: int = 44
     # Benchmark window size in Mb inside dispatched round (5 = full 5M round; 0 = entire dispatch).
     benchmark_subwindow_mb: int = 5
-    # Fixed Docker/GATK resources per concurrent trial slot.
+    # Fixed Docker resources per concurrent trial slot (DeepVariant needs >=16 GB).
     trial_threads: int = 4
-    trial_memory_gb: int = 6
+    trial_memory_gb: int = 16
 
 
 @lru_cache

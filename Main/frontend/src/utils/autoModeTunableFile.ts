@@ -1,7 +1,7 @@
 import { AlgorithmOption, adaptiveMaxTrialsFromTotal, clampTotalTrials, DEFAULT_AUTO_TOTAL_TRIALS } from "../types/workerAssignment";
 import { getToolOptions, parseToolOptionValue, setToolOptions } from "./confEdit";
 import { confToDotConf, downloadConfFile } from "./confDisplay";
-import { clampParamInterval, ParamInterval, buildGatkReferenceConf } from "./paramBounds";
+import { clampParamInterval, ParamInterval, buildToolReferenceConf } from "./paramBounds";
 
 export const AUTO_MODE_TUNABLE_FILE_KIND = "minos-auto-mode-tunable";
 export const AUTO_MODE_TUNABLE_FILE_VERSION = 1;
@@ -236,7 +236,7 @@ function parseTunablePayload(
   if (isRecord(parsed.base_conf)) {
     baseConf = structuredClone(parsed.base_conf);
   } else if (typeof parsed.conf_dot === "string" && parsed.conf_dot.trim()) {
-    baseConf = mergeDotConfIntoBase(buildGatkReferenceConf(), tool, parsed.conf_dot);
+    baseConf = mergeDotConfIntoBase(buildToolReferenceConf(tool), tool, parsed.conf_dot);
   }
 
   if (requireFull && !baseConf) {

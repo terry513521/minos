@@ -1,6 +1,6 @@
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { api, AutoModeConfig, WorkerRecord } from "../api/client";
-import { DEFAULT_FINE_TUNE_PARAMS } from "../utils/candidateAssign";
+import { DEFAULT_DEEPVARIANT_PARAMS, DEFAULT_FINE_TUNE_PARAMS } from "../utils/candidateAssign";
 import {
   buildAutoModeTunableFile,
   downloadAutoModeTunableFile,
@@ -10,7 +10,7 @@ import {
 import { parseToolOptionValue, setToolOption } from "../utils/confEdit";
 import {
   buildDispatchParamIntervals,
-  buildGatkReferenceConf,
+  buildToolReferenceConf,
   defaultParamInterval,
   ParamInterval,
 } from "../utils/paramBounds";
@@ -61,7 +61,7 @@ export function AutoModeTunableEditor({
 }: AutoModeTunableEditorProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const importFileRef = useRef<HTMLInputElement>(null);
-  const [baseConf, setBaseConf] = useState(() => buildGatkReferenceConf());
+  const [baseConf, setBaseConf] = useState(() => buildToolReferenceConf(tool));
   const [selectedParams, setSelectedParams] = useState<string[]>([...config.params]);
   const [paramIntervals, setParamIntervals] = useState<Record<string, ParamInterval>>(() =>
     paramIntervalsFromAutoConfig(config),
@@ -183,14 +183,14 @@ export function AutoModeTunableEditor({
             ? [...workers].sort((a, b) => a.name.localeCompare(b.name)).map((worker) => worker.name)
             : [...status.config.worker_names];
         applyConfigToState(status.config, names);
-        setBaseConf(buildGatkReferenceConf());
+        setBaseConf(buildToolReferenceConf(tool));
       } catch {
         if (!active) return;
         const fallbackConfig = configRef.current;
         const names = [...fallbackConfig.worker_names];
         setRegisteredWorkers([]);
         applyConfigToState(fallbackConfig, names);
-        setBaseConf(buildGatkReferenceConf());
+        setBaseConf(buildToolReferenceConf(tool));
       } finally {
         if (active) setHydrating(false);
       }
@@ -366,9 +366,12 @@ export function AutoModeTunableEditor({
   }
 
   function resetDefaults() {
-    const nextBaseConf = buildGatkReferenceConf();
+    const nextBaseConf = buildToolReferenceConf(tool);
     setBaseConf(nextBaseConf);
-    const params = [...DEFAULT_FINE_TUNE_PARAMS];
+    const params =
+      tool.toLowerCase() === "deepvariant"
+        ? [...DEFAULT_DEEPVARIANT_PARAMS]
+        : [...DEFAULT_FINE_TUNE_PARAMS];
     const intervals: Record<string, ParamInterval> = {};
     for (const param of params) {
       const options = nextBaseConf[`${tool}_options`];
