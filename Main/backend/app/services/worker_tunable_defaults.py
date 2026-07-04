@@ -15,7 +15,9 @@ from app.schemas import (
     WorkerTunableProfileBody,
 )
 
-AUTO_ALGORITHMS = frozenset({"optuna", "gp", "random", "sobol", "lhs"})
+AUTO_ALGORITHMS = frozenset(
+    {"cascade", "pbt", "grid", "delta", "optuna", "gp", "random", "sobol", "lhs"}
+)
 TOOLKIT_OPTIONS = frozenset({"gatk", "bcftools", "deepvariant"})
 
 

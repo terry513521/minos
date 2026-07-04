@@ -47,7 +47,7 @@ SELECTION_REASONS: tuple[SelectionReason, ...] = (
 )
 AUTO_ALGORITHM = "cascade"
 AUTO_ALGORITHMS: frozenset[str] = frozenset(
-    {"cascade", "pbt", "grid", "optuna", "gp", "random", "sobol", "lhs"}
+    {"cascade", "pbt", "grid", "delta", "optuna", "gp", "random", "sobol", "lhs"}
 )
 AUTO_FIND_K = 6
 AUTO_SELECT_K = 3
