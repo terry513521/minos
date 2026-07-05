@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from typing import Any
 
@@ -114,6 +115,26 @@ async def fetch_worker_best(db: AsyncSession, worker_id: str) -> WorkerBestScore
             status_code=None,
             error=str(exc),
         )
+
+
+async def fetch_workers_best(
+    db: AsyncSession,
+    worker_ids: list[str] | None = None,
+) -> list[WorkerBestScoreResponse]:
+    """Fetch GET /best from many workers in one Main request (parallel upstream)."""
+    if worker_ids:
+        out: list[WorkerBestScoreResponse] = []
+        for worker_id in worker_ids:
+            out.append(await fetch_worker_best(db, worker_id))
+        return out
+
+    result = await db.execute(select(Worker).order_by(Worker.name))
+    workers = list(result.scalars().all())
+    if not workers:
+        return []
+    return list(
+        await asyncio.gather(*(fetch_worker_best(db, worker.id) for worker in workers))
+    )
 
 
 async def dispatch_to_worker(

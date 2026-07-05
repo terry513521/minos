@@ -7,6 +7,7 @@ import {
   selectionSlotsByIndex,
 } from "../utils/candidateSelection";
 import { loadAutoModeState, saveAutoModeState } from "../utils/autoModeStorage";
+import { getAutoModeSnapshot, refreshAutoModeNow, subscribeAutoMode } from "../utils/autoModePoll";
 import { syncManualParamDefaultsFromAutoConfig } from "../utils/manualParamDefaults";
 import {
   formatParamInterval,
@@ -55,32 +56,43 @@ export function AutoModePanel({ embedded = false }: AutoModePanelProps) {
   }, []);
 
   const refresh = useCallback(() => {
-    api
-      .getAutoMode()
-      .then((next) => {
-        saveAutoModeState(next);
-        syncManualParamDefaultsFromAutoConfig(next.config);
-        setStatus(next);
-        setError(null);
-      })
-      .catch((err: Error) => setError(err.message));
-    refreshRoundHistory();
+    void refreshAutoModeNow().then((next) => {
+      if (!next) return;
+      syncManualParamDefaultsFromAutoConfig(next.config);
+      setStatus(next);
+      setError(null);
+      refreshRoundHistory();
+    });
   }, [refreshRoundHistory]);
 
   useEffect(() => {
-    refresh();
-    function onChanged() {
+    const snapshot = getAutoModeSnapshot();
+    if (snapshot) {
+      setStatus(snapshot);
+      refreshRoundHistory();
+    } else {
       refresh();
     }
+    function onChanged() {
+      const next = getAutoModeSnapshot();
+      if (!next || editingParamsRef.current) return;
+      syncManualParamDefaultsFromAutoConfig(next.config);
+      setStatus(next);
+      setError(null);
+      refreshRoundHistory();
+    }
     window.addEventListener(AUTO_MODE_CHANGED_EVENT, onChanged);
-    const intervalId = window.setInterval(() => {
-      if (!editingParamsRef.current) refresh();
-    }, 5000);
+    const unsubscribe = subscribeAutoMode((next) => {
+      if (!next || editingParamsRef.current) return;
+      syncManualParamDefaultsFromAutoConfig(next.config);
+      setStatus(next);
+      setError(null);
+    });
     return () => {
       window.removeEventListener(AUTO_MODE_CHANGED_EVENT, onChanged);
-      window.clearInterval(intervalId);
+      unsubscribe();
     };
-  }, [refresh]);
+  }, [refresh, refreshRoundHistory]);
 
   if (!status) {
     return error ? (

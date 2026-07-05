@@ -489,6 +489,18 @@ export const api = {
     request<WorkerHealthCheckResult>(`/workers/${workerId}/health-check`),
   fetchWorkerBest: (workerId: string) =>
     request<WorkerBestScoreResult>(`/workers/${workerId}/best`),
+  fetchWorkersBests: (workerIds?: string[]) => {
+    const params = new URLSearchParams();
+    if (workerIds?.length) {
+      for (const id of workerIds) {
+        params.append("worker_id", id);
+      }
+    }
+    const qs = params.toString();
+    return request<{ workers: WorkerBestScoreResult[] }>(
+      `/workers/bests${qs ? `?${qs}` : ""}`,
+    );
+  },
   dispatchToWorker: (workerId: string, body: WorkerDispatchPayload) =>
     request<WorkerDispatchResult>(`/workers/${workerId}/dispatch`, {
       method: "POST",

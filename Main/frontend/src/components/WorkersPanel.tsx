@@ -79,6 +79,7 @@ import {
 } from "../utils/workerConfImport";
 import { parseAutoModeTunableImport } from "../utils/autoModeTunableFile";
 import { loadAutoModeState, saveAutoModeState } from "../utils/autoModeStorage";
+import { getAutoModeSnapshot, subscribeAutoMode } from "../utils/autoModePoll";
 import {
   isWorkerJobActiveStatus,
   isWorkerJobRunning,
@@ -98,10 +99,9 @@ import {
   formatWorkerTaskSummary,
 } from "../utils/workerTaskSummary";
 import { formatWindowSpan } from "../utils/window";
-import { AUTO_MODE_CHANGED_EVENT } from "./AutoModePanel";
 
 /** Background poll for worker GET /best while optimization is running. */
-const BEST_POLL_INTERVAL_MS = 1000;
+const BEST_POLL_INTERVAL_MS = 2500;
 
 interface WorkersPanelProps {
   candidateContext?: FindCandidatesResponse | null;
@@ -450,49 +450,37 @@ export function WorkersPanel({
     }
   }, []);
 
-  const refreshAutoMode = useCallback(() => {
+  const applyAutoModeFromStatus = useCallback((status: AutoModeStatus | null) => {
+    if (!status) return;
     ensureManualDefaultsHydrated();
-    api
-      .getAutoMode()
-      .then((status) => {
-        saveAutoModeState(status);
-        syncManualParamDefaultsFromAutoConfig(status.config, {
-          syncPerWorkerTunables: status.enabled,
-        });
-        setAutoModeEnabled(status.enabled);
-        setAutoModeStatus(status);
-        setAutoAssignmentsByWorker(autoAssignmentsForStatus(status));
-        const manualFromAuto = manualAssignmentsFromEndedAuto(status);
-        if (Object.keys(manualFromAuto).length > 0) {
-          const dismissed = dismissedWorkersRef.current;
-          setAssignments((prev) => {
-            const next = { ...prev };
-            let changed = false;
-            for (const [workerId, assignment] of Object.entries(manualFromAuto)) {
-              if (!dismissed.has(workerId) && !prev[workerId]) {
-                next[workerId] = assignment;
-                changed = true;
-              }
-            }
-            return changed ? next : prev;
-          });
+    saveAutoModeState(status);
+    syncManualParamDefaultsFromAutoConfig(status.config, {
+      syncPerWorkerTunables: status.enabled,
+    });
+    setAutoModeEnabled(status.enabled);
+    setAutoModeStatus(status);
+    setAutoAssignmentsByWorker(autoAssignmentsForStatus(status));
+    const manualFromAuto = manualAssignmentsFromEndedAuto(status);
+    if (Object.keys(manualFromAuto).length > 0) {
+      const dismissed = dismissedWorkersRef.current;
+      setAssignments((prev) => {
+        const next = { ...prev };
+        let changed = false;
+        for (const [workerId, assignment] of Object.entries(manualFromAuto)) {
+          if (!dismissed.has(workerId) && !prev[workerId]) {
+            next[workerId] = assignment;
+            changed = true;
+          }
         }
-      })
-      .catch(() => {});
+        return changed ? next : prev;
+      });
+    }
   }, []);
 
   useEffect(() => {
-    refreshAutoMode();
-    function onAutoChanged() {
-      refreshAutoMode();
-    }
-    window.addEventListener(AUTO_MODE_CHANGED_EVENT, onAutoChanged);
-    const intervalId = window.setInterval(refreshAutoMode, 5000);
-    return () => {
-      window.removeEventListener(AUTO_MODE_CHANGED_EVENT, onAutoChanged);
-      window.clearInterval(intervalId);
-    };
-  }, [refreshAutoMode]);
+    applyAutoModeFromStatus(getAutoModeSnapshot());
+    return subscribeAutoMode(applyAutoModeFromStatus);
+  }, [applyAutoModeFromStatus]);
 
   const autoSessionStartedAtRef = useRef<string | null>(null);
 
@@ -912,42 +900,57 @@ export function WorkersPanel({
     }
   }
 
+  const applyWorkerBestResult = useCallback((workerId: string, result: WorkerBestScoreResult) => {
+    const dismissed = dismissedWorkersRef.current;
+    const hasAssignment = Boolean(effectiveAssignmentsRef.current[workerId]);
+    if (dismissed.has(workerId) && !hasAssignment) {
+      setBestByWorker((prev) => {
+        const next = { ...prev };
+        delete next[workerId];
+        return next;
+      });
+      return;
+    }
+    setBestByWorker((prev) => ({ ...prev, [workerId]: result }));
+    if (result.ok && result.status && !isWorkerJobRunning(result.status)) {
+      setAssignments((prev) => {
+        const current = prev[workerId];
+        if (!current || current.dispatching) return prev;
+        if (!current.dispatchedAt && !current.dispatchError) return prev;
+        return {
+          ...prev,
+          [workerId]: {
+            ...current,
+            dispatchedAt: null,
+            dispatchError: null,
+          },
+        };
+      });
+    }
+  }, []);
+
+  const pollWorkersBest = useCallback(
+    async (workerIds: string[]) => {
+      if (workerIds.length === 0) return;
+      try {
+        const { workers } = await api.fetchWorkersBests(workerIds);
+        for (const result of workers) {
+          applyWorkerBestResult(result.worker_id, result);
+        }
+      } catch {
+        /* keep last known bests */
+      }
+    },
+    [applyWorkerBestResult],
+  );
+
   const pollWorkerBest = useCallback(async (workerId: string, silent = false) => {
     if (!silent) {
       setBestByWorker((prev) => ({ ...prev, [workerId]: "loading" }));
     }
     try {
       const result = await api.fetchWorkerBest(workerId);
-      const dismissed = dismissedWorkersRef.current;
-      const hasAssignment = Boolean(effectiveAssignmentsRef.current[workerId]);
-      if (dismissed.has(workerId) && !hasAssignment) {
-        setBestByWorker((prev) => {
-          const next = { ...prev };
-          delete next[workerId];
-          return next;
-        });
-        return;
-      }
-      setBestByWorker((prev) => ({ ...prev, [workerId]: result }));
-      if (
-        result.ok &&
-        result.status &&
-        !isWorkerJobRunning(result.status)
-      ) {
-        setAssignments((prev) => {
-          const current = prev[workerId];
-          if (!current || current.dispatching) return prev;
-          if (!current.dispatchedAt && !current.dispatchError) return prev;
-          return {
-            ...prev,
-            [workerId]: {
-              ...current,
-              dispatchedAt: null,
-              dispatchError: null,
-            },
-          };
-        });
-      }
+      applyWorkerBestResult(workerId, result);
     } catch (err) {
       if (!silent) {
         setBestByWorker((prev) => ({
@@ -981,7 +984,7 @@ export function WorkersPanel({
         }));
       }
     }
-  }, []);
+  }, [applyWorkerBestResult]);
 
   const handleRefreshBest = useCallback(
     async (workerId: string) => {
@@ -1047,11 +1050,11 @@ export function WorkersPanel({
   useEffect(() => {
     if (workers.length === 0) return;
     const dismissed = dismissedWorkersRef.current;
-    for (const worker of workers) {
-      if (!worker.base_url || dismissed.has(worker.id)) continue;
-      void pollWorkerBest(worker.id, true);
-    }
-  }, [workers, pollWorkerBest]);
+    const initialIds = workers
+      .filter((worker) => worker.base_url && !dismissed.has(worker.id))
+      .map((worker) => worker.id);
+    void pollWorkersBest(initialIds);
+  }, [workers, pollWorkersBest]);
 
   useEffect(() => {
     if (workers.length === 0) return;
@@ -1064,6 +1067,7 @@ export function WorkersPanel({
       const assignmentsByWorker = effectiveAssignmentsRef.current;
       const dismissed = dismissedWorkersRef.current;
       const tickNow = Date.now();
+      const workerIds: string[] = [];
       for (const worker of pollable) {
         if (dismissed.has(worker.id)) {
           continue;
@@ -1078,26 +1082,27 @@ export function WorkersPanel({
         ) {
           continue;
         }
-        void pollWorkerBest(worker.id, true);
+        workerIds.push(worker.id);
       }
+      void pollWorkersBest(workerIds);
     };
 
     tick();
     const intervalId = window.setInterval(tick, BEST_POLL_INTERVAL_MS);
     return () => window.clearInterval(intervalId);
-  }, [workers, pollWorkerBest]);
+  }, [workers, pollWorkersBest]);
 
   useEffect(() => {
     function refreshAllBest() {
       const dismissed = dismissedWorkersRef.current;
-      for (const worker of workers) {
-        if (!worker.base_url || dismissed.has(worker.id)) continue;
-        void pollWorkerBest(worker.id, true);
-      }
+      const workerIds = workers
+        .filter((worker) => worker.base_url && !dismissed.has(worker.id))
+        .map((worker) => worker.id);
+      void pollWorkersBest(workerIds);
     }
     window.addEventListener(WORKERS_CHANGED_EVENT, refreshAllBest);
     return () => window.removeEventListener(WORKERS_CHANGED_EVENT, refreshAllBest);
-  }, [workers, pollWorkerBest]);
+  }, [workers, pollWorkersBest]);
 
   useEffect(() => {
     async function waitForAllWorkersIdle() {
@@ -1107,19 +1112,18 @@ export function WorkersPanel({
       const deadline = Date.now() + 120_000;
       while (Date.now() < deadline) {
         let anyActive = false;
-        await Promise.all(
-          pollable.map(async (worker) => {
-            try {
-              const best = await api.fetchWorkerBest(worker.id);
-              setBestByWorker((prev) => ({ ...prev, [worker.id]: best }));
-              if (best.ok && best.status && isWorkerJobActiveStatus(best.status)) {
-                anyActive = true;
-              }
-            } catch {
-              // Keep polling until timeout.
+        const workerIds = pollable.map((worker) => worker.id);
+        try {
+          const { workers: bests } = await api.fetchWorkersBests(workerIds);
+          for (const best of bests) {
+            applyWorkerBestResult(best.worker_id, best);
+            if (best.ok && best.status && isWorkerJobActiveStatus(best.status)) {
+              anyActive = true;
             }
-          }),
-        );
+          }
+        } catch {
+          // Keep polling until timeout.
+        }
         if (!anyActive) break;
         await new Promise((resolve) => window.setTimeout(resolve, 500));
       }

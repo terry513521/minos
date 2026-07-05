@@ -1,4 +1,4 @@
-import { DragEvent, FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { DragEvent, FormEvent, useEffect, useRef, useState } from "react";
 import { api, CandidatePreview, FindCandidatesResponse } from "../api/client";
 import { CANDIDATE_DRAG_MIME } from "../utils/candidateAssign";
 import { compositeCandidateScore } from "../utils/candidateSelection";
@@ -11,6 +11,7 @@ import {
 import { normalizeRegion, chromosomeFromWindow, analyzeBenchmarkWindow, formatWindowSpan } from "../utils/window";
 import { AUTO_MODE_CHANGED_EVENT } from "./AutoModePanel";
 import { loadAutoModeState } from "../utils/autoModeStorage";
+import { getAutoModeSnapshot, subscribeAutoMode } from "../utils/autoModePoll";
 import { ConfTooltip } from "./ConfTooltip";
 import { DeferredNumberInput } from "./DeferredNumberInput";
 import { WorkerAssignmentSummary } from "../types/workerAssignment";
@@ -59,21 +60,24 @@ export function CandidateFinderPanel({
   const [selectedCandidateIndex, setSelectedCandidateIndex] = useState<number | null>(null);
   const [assignMessage, setAssignMessage] = useState<string | null>(null);
 
-  const refreshAutoMode = useCallback(() => {
-    api
-      .getAutoMode()
-      .then((status) => setAutoModeEnabled(status.enabled))
-      .catch(() => {});
-  }, []);
-
   useEffect(() => {
-    refreshAutoMode();
+    const snapshot = getAutoModeSnapshot();
+    if (snapshot) {
+      setAutoModeEnabled(snapshot.enabled);
+    }
     function onAutoChanged() {
-      refreshAutoMode();
+      const next = getAutoModeSnapshot();
+      if (next) setAutoModeEnabled(next.enabled);
     }
     window.addEventListener(AUTO_MODE_CHANGED_EVENT, onAutoChanged);
-    return () => window.removeEventListener(AUTO_MODE_CHANGED_EVENT, onAutoChanged);
-  }, [refreshAutoMode]);
+    const unsubscribe = subscribeAutoMode((next) => {
+      if (next) setAutoModeEnabled(next.enabled);
+    });
+    return () => {
+      window.removeEventListener(AUTO_MODE_CHANGED_EVENT, onAutoChanged);
+      unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     saveCandidateFinderState({ region, kCandidates, result });

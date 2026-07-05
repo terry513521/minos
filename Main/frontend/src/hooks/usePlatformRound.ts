@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, PlatformRound } from "../api/client";
 
 const WS_URL =
@@ -6,10 +6,13 @@ const WS_URL =
   location.host +
   "/api/v1/ws";
 
-export function usePlatformRound(pollSeconds = 5) {
+const FALLBACK_POLL_SECONDS = 15;
+
+export function usePlatformRound(pollSeconds = FALLBACK_POLL_SECONDS) {
   const [round, setRound] = useState<PlatformRound | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const wsConnectedRef = useRef(false);
 
   const applyRound = useCallback((data: PlatformRound) => {
     setRound(data);
@@ -48,6 +51,7 @@ export function usePlatformRound(pollSeconds = 5) {
     });
 
     const id = window.setInterval(() => {
+      if (wsConnectedRef.current) return;
       loadCached().catch(() => {});
     }, pollSeconds * 1000);
 
@@ -63,6 +67,12 @@ export function usePlatformRound(pollSeconds = 5) {
 
     try {
       ws = new WebSocket(WS_URL);
+      ws.onopen = () => {
+        wsConnectedRef.current = true;
+      };
+      ws.onclose = () => {
+        wsConnectedRef.current = false;
+      };
       ws.onmessage = (ev) => {
         if (!alive) return;
         try {
@@ -81,6 +91,7 @@ export function usePlatformRound(pollSeconds = 5) {
 
     return () => {
       alive = false;
+      wsConnectedRef.current = false;
       ws?.close();
     };
   }, [applyRound]);

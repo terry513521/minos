@@ -1,3 +1,4 @@
+import asyncio
 import secrets
 from datetime import datetime, timezone
 
@@ -16,6 +17,7 @@ from app.schemas import (
     WorkerHealthCheckResponse,
     WorkerRegisterResponse,
     WorkerResponse,
+    WorkersBestsResponse,
     WorkerStopAllResult,
     WorkerStatus,
     WorkerStopResponse,
@@ -30,6 +32,7 @@ from app.serializers import worker_to_response
 from app.services.worker_proxy import (
     dispatch_to_worker,
     fetch_worker_best,
+    fetch_workers_best,
     get_worker,
     stop_all_workers_optimization,
     stop_worker_optimization,
@@ -276,6 +279,16 @@ async def check_worker_health(
             health=None,
             error=str(exc),
         )
+
+
+@router.get("/bests", response_model=WorkersBestsResponse)
+async def fetch_workers_best_endpoint(
+    worker_id: list[str] | None = Query(default=None, alias="worker_id"),
+    db: AsyncSession = Depends(get_db),
+) -> WorkersBestsResponse:
+    """Batch proxy for worker GET /best — one browser call instead of N."""
+    results = await fetch_workers_best(db, worker_id)
+    return WorkersBestsResponse(workers=results)
 
 
 @router.get("/{worker_id}/best", response_model=WorkerBestScoreResponse)

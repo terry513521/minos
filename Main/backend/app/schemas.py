@@ -207,6 +207,10 @@ class WorkerBestScoreResponse(BaseModel):
     error: str | None = None
 
 
+class WorkersBestsResponse(BaseModel):
+    workers: list[WorkerBestScoreResponse] = Field(default_factory=list)
+
+
 class ParamIntervalSpec(BaseModel):
     min: float | None = None
     max: float | None = None

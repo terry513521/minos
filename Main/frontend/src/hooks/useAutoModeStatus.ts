@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, AutoModeStatus } from "../api/client";
+import { AutoModeStatus } from "../api/client";
 import { AUTO_MODE_CHANGED_EVENT } from "../components/AutoModePanel";
-import { loadAutoModeState, saveAutoModeState } from "../utils/autoModeStorage";
+import { getAutoModeSnapshot, refreshAutoModeNow, subscribeAutoMode } from "../utils/autoModePoll";
+import { saveAutoModeState } from "../utils/autoModeStorage";
 import { syncManualParamDefaultsFromAutoConfig } from "../utils/manualParamDefaults";
 
 type PausePollingFn = () => boolean;
@@ -10,45 +11,39 @@ export function useAutoModeStatus(pausePolling?: PausePollingFn) {
   const pausePollingRef = useRef(pausePolling);
   pausePollingRef.current = pausePolling;
 
-  const [status, setStatus] = useState<AutoModeStatus | null>(
-    () => loadAutoModeState()?.status ?? null,
-  );
+  const [status, setStatus] = useState<AutoModeStatus | null>(() => getAutoModeSnapshot());
 
-  const refresh = useCallback(() => {
-    return api
-      .getAutoMode()
-      .then((next) => {
-        saveAutoModeState(next);
-        syncManualParamDefaultsFromAutoConfig(next.config, {
-          syncPerWorkerTunables: next.enabled,
-        });
-        setStatus(next);
-        return next;
-      })
-      .catch(() => null);
-  }, []);
+  const refresh = useCallback(() => refreshAutoModeNow(), []);
 
   useEffect(() => {
-    void refresh();
     function onChanged() {
-      void refresh();
+      setStatus(getAutoModeSnapshot());
     }
     window.addEventListener(AUTO_MODE_CHANGED_EVENT, onChanged);
-    const intervalId = window.setInterval(() => {
-      if (pausePollingRef.current?.()) return;
-      void refresh();
-    }, 5000);
+    const unsubscribe = subscribeAutoMode(setStatus, {
+      pause: () => pausePollingRef.current?.() ?? false,
+    });
     return () => {
       window.removeEventListener(AUTO_MODE_CHANGED_EVENT, onChanged);
-      window.clearInterval(intervalId);
+      unsubscribe();
     };
-  }, [refresh]);
+  }, []);
+
+  const applyStatus = useCallback((next: AutoModeStatus | null) => {
+    if (next) {
+      saveAutoModeState(next);
+      syncManualParamDefaultsFromAutoConfig(next.config, {
+        syncPerWorkerTunables: next.enabled,
+      });
+    }
+    setStatus(next);
+  }, []);
 
   return {
     status,
     enabled: status?.enabled ?? false,
     running: status?.running ?? false,
     refresh,
-    applyStatus: setStatus,
+    applyStatus,
   };
 }
