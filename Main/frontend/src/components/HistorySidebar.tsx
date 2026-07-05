@@ -50,6 +50,7 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [refetching, setRefetching] = useState(false);
   const [seeding, setSeeding] = useState(false);
   const [seedWorkerId, setSeedWorkerId] = useState("");
 
@@ -71,7 +72,7 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
   }, [chromosomeFilter]);
 
   function loadMeta() {
-    Promise.all([api.historyChromosomes(), api.historyOrigins(), api.listWorkers()])
+    return Promise.all([api.historyChromosomes(), api.historyOrigins(), api.listWorkers()])
       .then(([chroms, originRows, workerRows]) => {
         setChromosomes(chroms);
         setOrigins(originRows);
@@ -81,28 +82,43 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
   }
 
   useEffect(() => {
-    loadMeta();
+    void loadMeta();
   }, []);
 
-  function refresh() {
+  async function refresh(includeMeta = false) {
     setLoading(true);
     setError(null);
     const activeFilter = filter || undefined;
     const activeOrigin = originFilter || undefined;
-    Promise.all([
-      api.listHistory(activeFilter, 500, activeOrigin),
-      api.historyCount(activeFilter, activeOrigin),
-    ])
-      .then(([list, countRes]) => {
-        setRows(list);
-        setTotal(countRes.count);
-      })
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setLoading(false));
+    try {
+      if (includeMeta) {
+        await loadMeta();
+      }
+      const [list, countRes] = await Promise.all([
+        api.listHistory(activeFilter, 500, activeOrigin),
+        api.historyCount(activeFilter, activeOrigin),
+      ]);
+      setRows(list);
+      setTotal(countRes.count);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load history");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleRefetch() {
+    setRefetching(true);
+    setError(null);
+    try {
+      await refresh(true);
+    } finally {
+      setRefetching(false);
+    }
   }
 
   useEffect(() => {
-    refresh();
+    void refresh();
     setShowAllRecords(false);
   }, [filter, originFilter]);
 
@@ -115,8 +131,8 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
     setError(null);
     try {
       await api.importHistory(false);
-      loadMeta();
-      refresh();
+      await loadMeta();
+      await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Import failed");
     } finally {
@@ -129,8 +145,8 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
     setError(null);
     try {
       await api.syncHistoryRounds(false);
-      loadMeta();
-      refresh();
+      await loadMeta();
+      await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Sync failed");
     } finally {
@@ -157,8 +173,8 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
         dry_run: dryRun,
         source_chromosomes: ["chr20", "chr21"],
       });
-      loadMeta();
-      refresh();
+      await loadMeta();
+      await refresh();
       const workerName = seedWorker.name;
       const workerUrl =
         result.worker_dispatch_urls?.[seedWorkerId] ?? seedWorker.dispatch_base_url ?? "?";
@@ -260,6 +276,15 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
           )}
         </div>
         <div className="history-toolbar-actions">
+          <button
+            type="button"
+            className="button ghost history-refetch-btn"
+            onClick={() => void handleRefetch()}
+            disabled={refetching || loading || syncing || importing || seeding}
+            title="Reload portfolio history from the database, including chr22 seeded rows"
+          >
+            {refetching ? "Refetching…" : "Refetch"}
+          </button>
           <button
             type="button"
             className="button ghost history-sort-btn"

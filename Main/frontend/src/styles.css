@@ -1788,6 +1788,11 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   flex-shrink: 0;
   margin-left: auto;
 }
+.history-refetch-btn {
+  font-size: 0.82rem;
+  padding: 0.35rem 0.7rem;
+  flex-shrink: 0;
+}
 .history-sort-btn {
   font-size: 0.78rem;
   padding: 0.28rem 0.6rem;
