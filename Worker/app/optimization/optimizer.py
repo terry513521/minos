@@ -14,6 +14,7 @@ from app.optimization.search_runners import run_adaptive_search
 from app.optimization.algorithms import normalize_algorithm
 from app.benchmark import BenchmarkResult, run_benchmark, validate_benchmark_assets, validate_tool_supported
 from app.config import Settings, get_settings
+from app.core.work_status import WorkPhase, log_worker_status, set_work_phase
 from app.optimization.job_control import is_stop_requested
 from app.domain.schemas import OptimizeRequest, OptimizeResponse
 from app.optimization.task_info import format_task_banner, format_task_line, task_fields_from_request
@@ -305,8 +306,11 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
     try:
         from app.benchmark.giab.data import ensure_bam_for_region
 
+        set_work_phase(WorkPhase.BAM)
+        log_worker_status()
         logger.info("Preparing GIAB BAM slice for %s", benchmark_window)
         ensure_bam_for_region(benchmark_window)
+        set_work_phase(None)
         best_score: float | None = None
         best_conf = deepcopy(request.base_conf)
         trials_evaluated = 0

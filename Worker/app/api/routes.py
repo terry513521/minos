@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import re
+from contextlib import asynccontextmanager
 
 import psutil
 from fastapi import FastAPI, HTTPException
@@ -9,7 +10,9 @@ from fastapi import FastAPI, HTTPException
 from app.benchmark import benchmark_status, validate_benchmark_assets, validate_tool_supported
 from app.benchmark.jobs import run_benchmark_exclusive
 from app.config import get_settings
+from app.core.logging_config import configure_worker_logging
 from app.core.utils import format_bytes
+from app.core.work_status import start_status_reporter, stop_status_reporter
 from app.domain.schemas import (
     BenchmarkRequest,
     BenchmarkResponse,
@@ -29,10 +32,31 @@ logger = logging.getLogger(__name__)
 
 _WINDOW_RE = re.compile(r"^chr\d+:\d+-\d+$", re.IGNORECASE)
 
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    configure_worker_logging(
+        settings.log_level,
+        quiet_paths=tuple(
+            p.strip()
+            for p in settings.quiet_access_paths.split(",")
+            if p.strip()
+        ),
+    )
+    start_status_reporter(settings.status_interval_sec)
+    logger.info(
+        "[worker] ready — live status every %.0fs (WORKER_STATUS_INTERVAL_SEC=0 to disable)",
+        settings.status_interval_sec,
+    )
+    yield
+    stop_status_reporter()
+
+
 app = FastAPI(
     title="Effortless Worker",
     description="Optimizer worker API (health, optimize, best score)",
     version="0.4.0",
+    lifespan=_lifespan,
 )
 
 
@@ -144,6 +168,15 @@ async def benchmark_once(body: BenchmarkRequest) -> BenchmarkResponse:
             conf=body.conf,
             settings=settings,
         )
+    except asyncio.CancelledError:
+        logger.warning(
+            "POST /benchmark cancelled for window=%s (server shutdown or client disconnect)",
+            window,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Benchmark cancelled — server is shutting down or the client disconnected",
+        ) from None
     except (FileNotFoundError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

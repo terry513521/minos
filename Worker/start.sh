@@ -38,4 +38,11 @@ if ! "$VENV_PYTHON" -c "import uvicorn" 2>/dev/null; then
   exit 1
 fi
 
-exec "$VENV_PYTHON" -m uvicorn app.main:app --host "$HOST" --port "$PORT"
+GRACEFUL_SHUTDOWN="${WORKER_GRACEFUL_SHUTDOWN_SEC:-120}"
+
+echo "Worker status lines every \${WORKER_STATUS_INTERVAL_SEC:-20}s (GET /best polls hidden from access log)"
+
+exec "$VENV_PYTHON" -m uvicorn app.main:app \
+  --host "$HOST" \
+  --port "$PORT" \
+  --timeout-graceful-shutdown "$GRACEFUL_SHUTDOWN"

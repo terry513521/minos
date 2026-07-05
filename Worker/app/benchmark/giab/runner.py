@@ -21,6 +21,7 @@ from app.benchmark.giab.scoring import score_giab
 from app.benchmark.giab.tuning_bridge import ensure_tuning_giab
 from app.config import Settings, get_settings
 from app.core.repo import ensure_repo_imports
+from app.core.work_status import WorkPhase, log_worker_status, set_work_phase
 from app.optimization.param_specs import coerce_param_value
 
 logger = logging.getLogger(__name__)
@@ -159,6 +160,8 @@ def score_tool_on_region(
     if skip_bam_download and bam_cache_ready(bam_path):
         bam = bam_path
     else:
+        set_work_phase(WorkPhase.BAM)
+        log_worker_status()
         bam = ensure_bam_for_region(region)
 
     slug = _vcf_slug(instance_id or settings.name, tool_key, region, vcf_tag)
@@ -167,6 +170,9 @@ def score_tool_on_region(
 
     call = _try_reuse_cached_vcf(out_vcf) if reuse_vcf else None
     worker_id = instance_id or settings.name
+    if call is None:
+        set_work_phase(WorkPhase.CALL)
+        log_worker_status()
     if call is None and tool_key == "gatk":
         call = _run_gatk_tuning(
             bam, ref, region, out_vcf, params, instance_id=worker_id
@@ -179,6 +185,7 @@ def score_tool_on_region(
         call = _run_bcftools_tuning(bam, ref, region, out_vcf, params)
 
     if not call.get("success"):
+        set_work_phase(None)
         return {
             "instance": worker_id,
             "tool": tool_key,
@@ -187,7 +194,10 @@ def score_tool_on_region(
             "variant_count": call.get("variant_count"),
         }
 
+    set_work_phase(WorkPhase.SCORE)
+    log_worker_status()
     metrics = score_giab(truth_vcf, truth_bed, out_vcf, ref, region, chrom)
+    set_work_phase(None)
     if not metrics:
         return {
             "instance": worker_id,

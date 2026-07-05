@@ -565,11 +565,16 @@ class HappyScorer:
     def score_vcf(self, truth_vcf: str, query_vcf: str,
                   reference_fasta: str = None, confident_bed: str = None,
                   region: str = None, reference_sdf: str = None,
-                  mutations_vcf: str = None) -> Optional[Dict[str, float]]:
+                  mutations_vcf: str = None,
+                  threads: int = 4,
+                  skip_truth_slice: bool = False,
+                  skip_bed_subset: bool = False) -> Optional[Dict[str, float]]:
         """Run hap.py and return precision/recall/F1 metrics.
 
         Args:
             mutations_vcf: Path to mutations-only VCF. Required for accurate scoring.
+            skip_truth_slice: When True, *truth_vcf* is already region-sliced (GIAB cache).
+            skip_bed_subset: When True, *confident_bed* is already region-subset (GIAB cache).
         """
         if region is not None:
             region_check = validate_region(region)
@@ -637,7 +642,7 @@ class HappyScorer:
             if bed_path and bed_path.exists():
                 # Subset BED file to only include regions overlapping with task region
                 # This improves performance and accuracy
-                if region:
+                if region and not skip_bed_subset:
                     subset_bed_path = output_dir / f"confident_{region_slug}_{unique_suffix}.bed"
                     logger.info(f"Creating subset BED for region {region}...")
                     if subset_bed(bed_path, subset_bed_path, region):
@@ -649,7 +654,10 @@ class HappyScorer:
                         use_bed = True
                 else:
                     use_bed = True
-                    logger.info(f"Using full confident regions BED: {bed_path}")
+                    if skip_bed_subset:
+                        logger.debug("Using pre-subset confident BED: %s", bed_path.name)
+                    else:
+                        logger.info(f"Using full confident regions BED: {bed_path}")
             elif bed_path:
                 logger.warning(f"Confident BED not found: {bed_path} - scoring without region filter")
             else:
@@ -657,7 +665,7 @@ class HappyScorer:
 
             # Slice truth VCF to region for performance
             sliced_truth_vcf = None
-            if region and truth_vcf.exists():
+            if region and truth_vcf.exists() and not skip_truth_slice:
                 sliced_truth_vcf = output_dir / f"truth_{region_slug}_{unique_suffix}.vcf.gz"
                 logger.info(f"Creating sliced truth VCF for region {region}...")
                 if slice_truth_vcf(truth_vcf, sliced_truth_vcf, region):
@@ -668,6 +676,8 @@ class HappyScorer:
                         logger.error("Failed to slice truth VCF for synthetic scoring; failing closed")
                         return self._get_zero_scores()
                     logger.warning(f"Failed to slice truth VCF, using full chromosome VCF")
+            elif skip_truth_slice:
+                logger.debug("Using pre-sliced truth VCF: %s", truth_vcf.name)
 
             # With mutations_vcf, assess the full challenge region so overcalls are
             # classified as FP instead of UNK. Synthetic scoring below still uses
@@ -751,7 +761,7 @@ class HappyScorer:
                 query_mount_path,
                 "-r", f"/data/reference/{ref_path.name if ref_path else 'ref.fa'}",
                 "-o", f"/data/output/{output_prefix.name}",
-                "--threads", "4",
+                "--threads", str(max(1, int(threads))),
             ])
 
             # vcfeval engine (required — no xcmp fallback)

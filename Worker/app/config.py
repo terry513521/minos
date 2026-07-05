@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8080
     log_level: str = "info"
+    status_interval_sec: float = 20.0
+    quiet_access_paths: str = "/best,/health"
     name: str = "optimizer-1"
     data_dir: str = "datasets"
     chromosomes: str = "chr20,chr21,chr22"
