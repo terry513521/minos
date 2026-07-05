@@ -74,6 +74,7 @@ fi
 echo
 echo "== Datasets and Docker images =="
 echo "Downloads GRCh38 reference, SDF, variant-caller images, and (optionally) benchmark BAMs."
+echo "Benchmark code is bundled in vendor/ — no parent minos checkout required."
 echo
 echo "Benchmark mode (default): fixed HG002 BAM + GIAB truth; only the round region comes from the UI."
 echo "BAM lookup: datasets/bams/{chr}.bam | HG002_{chr}_{start}-{end}.bam | HG002_{chr}_minos_window.bam"

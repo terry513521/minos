@@ -1,4 +1,4 @@
-"""GIAB data layer — delegates to minos/tuning/giab/data (samtools + BAM cache)."""
+"""GIAB data layer — bundled vendor/tuning/giab/data (samtools + BAM cache)."""
 
 from __future__ import annotations
 

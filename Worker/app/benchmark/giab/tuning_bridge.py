@@ -1,50 +1,28 @@
-"""Wire Worker GIAB benchmarks to minos/tuning/giab (samtools + scoring)."""
+"""Wire Worker GIAB benchmarks to bundled vendor/tuning/giab."""
 
 from __future__ import annotations
 
-import os
+import importlib
 import sys
 from pathlib import Path
 from typing import Optional
 
 from app.config import get_settings
 from app.core.repo import ensure_repo_imports
-from app.paths import WORKER_ROOT
+from app.paths import get_vendor_root
 
-_TUNING_ROOT: Optional[Path] = None
 _CONFIGURED = False
 
 
 def get_tuning_root() -> Path:
-    """Locate the minos checkout that contains the tuning/ package."""
-    global _TUNING_ROOT
-    if _TUNING_ROOT is not None:
-        return _TUNING_ROOT
-
-    env_root = os.getenv("WORKER_TUNING_ROOT", "").strip()
-    if env_root:
-        candidate = Path(env_root).resolve()
-    else:
-        parent = WORKER_ROOT.parent
-        candidate = parent / "minos"
-        if not (candidate / "tuning" / "giab" / "data.py").exists():
-            if (parent / "tuning" / "giab" / "data.py").exists():
-                candidate = parent
-            else:
-                raise RuntimeError(
-                    "Minos tuning package not found. Set WORKER_TUNING_ROOT to the "
-                    "minos_subnet checkout that contains tuning/giab/ "
-                    f"(tried {parent / 'minos'} and {parent})."
-                )
-
-    if not (candidate / "tuning" / "giab" / "data.py").exists():
+    """Root directory containing the bundled tuning/ package."""
+    root = get_vendor_root()
+    if not (root / "tuning" / "giab" / "data.py").is_file():
         raise RuntimeError(
-            f"tuning/giab/data.py missing under {candidate}. "
-            "Set WORKER_TUNING_ROOT to a full minos_subnet tree."
+            f"Bundled tuning.giab missing under {root}. "
+            "Worker vendor bundle may be incomplete."
         )
-
-    _TUNING_ROOT = candidate
-    return _TUNING_ROOT
+    return root
 
 
 def ensure_tuning_giab() -> Path:
@@ -52,10 +30,6 @@ def ensure_tuning_giab() -> Path:
     global _CONFIGURED
 
     tuning_root = get_tuning_root()
-    tuning_str = str(tuning_root)
-    if tuning_str not in sys.path:
-        sys.path.insert(0, tuning_str)
-
     ensure_repo_imports()
 
     from app.benchmark.giab import paths as worker_paths
@@ -69,8 +43,6 @@ def ensure_tuning_giab() -> Path:
     tuning_paths.GIAB_RESULTS_DIR = giab_root / "results"
     tuning_paths.MINOS_GIAB_REGIONS = worker_paths.MINOS_GIAB_REGIONS
 
-    # Patch paths before loading data — data binds GIAB_*_DIR at import time.
-    import importlib
     import tuning.giab.data as tuning_data
 
     tuning_data = importlib.reload(tuning_data)
@@ -131,8 +103,6 @@ def ensure_tuning_giab() -> Path:
                 fcntl.flock(lock_f, fcntl.LOCK_UN)
 
     tuning_data.ensure_sdf = _patched_ensure_sdf  # type: ignore[assignment]
-
-    # Keep module-level aliases in sync (asset_path, locks, etc.).
     tuning_data.GIAB_BAM_DIR = tuning_paths.GIAB_BAM_DIR
     tuning_data.GIAB_DATA_DIR = tuning_paths.GIAB_DATA_DIR
 

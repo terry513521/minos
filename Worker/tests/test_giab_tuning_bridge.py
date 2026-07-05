@@ -1,14 +1,14 @@
-"""Tests for tuning GIAB bridge wiring."""
+"""Tests for bundled vendor GIAB bridge wiring."""
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from app.benchmark.giab.tuning_bridge import ensure_tuning_giab, get_tuning_root
+from app.paths import get_vendor_root
 
 
-def test_get_tuning_root_finds_nested_minos_checkout() -> None:
+def test_get_tuning_root_uses_bundled_vendor() -> None:
     root = get_tuning_root()
+    assert root == get_vendor_root()
     assert (root / "tuning" / "giab" / "data.py").is_file()
 
 

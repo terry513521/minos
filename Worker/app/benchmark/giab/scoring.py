@@ -1,4 +1,4 @@
-"""hap.py scoring — delegates to minos/tuning/giab/calibrate."""
+"""hap.py scoring — bundled vendor/tuning/giab/calibrate."""
 
 from __future__ import annotations
 
