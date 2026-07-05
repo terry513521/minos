@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from app.benchmark.giab.data import (
+    _bam_cache_ready,
     chrom_from_region,
     ensure_bam_for_region,
     ensure_truth_assets,
@@ -170,10 +171,9 @@ def score_tool_on_region(
     chrom = chrom_from_region(region)
     ref = reference_for_chrom(chrom)
     truth_vcf, truth_bed = ensure_truth_assets()
-    if skip_bam_download:
-        bam = regional_bam_cache_path(region)
-        if not bam.exists():
-            bam = ensure_bam_for_region(region)
+    bam_path = regional_bam_cache_path(region)
+    if skip_bam_download and _bam_cache_ready(bam_path):
+        bam = bam_path
     else:
         bam = ensure_bam_for_region(region)
 

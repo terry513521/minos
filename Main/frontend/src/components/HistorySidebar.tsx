@@ -51,6 +51,18 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
   const [importing, setImporting] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [seeding, setSeeding] = useState(false);
+  const [seedWorkerId, setSeedWorkerId] = useState("");
+
+  const seedableWorkers = useMemo(
+    () => workers.filter(workerReachable),
+    [workers],
+  );
+
+  useEffect(() => {
+    if (!seedWorkerId && seedableWorkers.length > 0) {
+      setSeedWorkerId(seedableWorkers[0].id);
+    }
+  }, [seedWorkerId, seedableWorkers]);
 
   useEffect(() => {
     if (chromosomeFilter) {
@@ -127,44 +139,34 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
   }
 
   async function handleSeedChr22(dryRun: boolean) {
-    const seedWorkers = workers.filter(workerReachable);
-    if (seedWorkers.length === 0) {
-      setError("Register a worker with health_url or base_url before seeding chr22 history.");
+    if (!seedWorkerId) {
+      setError("Select a worker before seeding chr22 history.");
+      return;
+    }
+    const seedWorker = seedableWorkers.find((w) => w.id === seedWorkerId);
+    if (!seedWorker) {
+      setError("Selected worker is not reachable. Pick a worker with health_url or base_url.");
       return;
     }
     setSeeding(true);
     setError(null);
     try {
       const result = await api.seedChr22History({
-        worker_ids: seedWorkers.map((w) => w.id),
+        worker_id: seedWorkerId,
         limit: SEED_BATCH_LIMIT,
         dry_run: dryRun,
         source_chromosomes: ["chr20", "chr21"],
       });
       loadMeta();
       refresh();
-      const waveCount = result.waves_completed ?? 0;
-      const perWave = result.workers_per_wave ?? seedWorkers.length;
-      const usedCount = result.worker_ids_used?.length ?? seedWorkers.length;
-      const skippedWorkers = result.workers_skipped ?? [];
-      const dispatchLines = (result.worker_ids_used ?? [])
-        .map((id) => {
-          const name = workers.find((w) => w.id === id)?.name ?? id.slice(0, 8);
-          const url = result.worker_dispatch_urls?.[id] ?? "?";
-          return `${name} → ${url}`;
-        })
-        .join("\n");
-      const skipLines = skippedWorkers
-        .map((s) => `${s.worker_name ?? s.worker_id}: ${s.reason}`)
-        .join("\n");
+      const workerName = seedWorker.name;
+      const workerUrl =
+        result.worker_dispatch_urls?.[seedWorkerId] ?? seedWorker.dispatch_base_url ?? "?";
       const summary = dryRun
-        ? `Dry run: ${result.items.length} task(s) in ${waveCount} wave(s) of up to ${perWave} worker(s), ${usedCount} will receive POST /benchmark (${result.skipped_existing} already seeded)`
-        : `Seeded ${result.scored} chr22 rows in ${waveCount} wave(s) (${perWave} worker(s) per wave, ${usedCount} workers used, ${result.skipped_existing} skipped, ${result.failed} failed)`;
-      const detail = [dispatchLines, skipLines ? `Skipped:\n${skipLines}` : ""]
-        .filter(Boolean)
-        .join("\n\n");
+        ? `Dry run: ${result.items.length} benchmark(s) on ${workerName} (${result.skipped_existing} already seeded)`
+        : `Seeded ${result.scored} chr22 rows on ${workerName} (${result.skipped_existing} skipped, ${result.failed} failed)`;
       setError(null);
-      window.alert(detail ? `${summary}\n\n${detail}` : summary);
+      window.alert(`${summary}\n\n${workerName} → ${workerUrl}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Seed failed");
     } finally {
@@ -281,10 +283,27 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
       </div>
 
       <div className="history-seed-actions">
+        {seedableWorkers.length > 0 && (
+          <label className="history-seed-worker">
+            <span className="sr-only">Worker for chr22 seeding</span>
+            <select
+              value={seedWorkerId}
+              onChange={(e) => setSeedWorkerId(e.target.value)}
+              disabled={seeding}
+              aria-label="Worker for chr22 seeding"
+            >
+              {seedableWorkers.map((worker) => (
+                <option key={worker.id} value={worker.id}>
+                  {worker.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <button
           type="button"
           className="button ghost"
-          disabled={seeding}
+          disabled={seeding || !seedWorkerId}
           onClick={() => handleSeedChr22(true)}
         >
           Preview chr22 seed
@@ -292,19 +311,14 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
         <button
           type="button"
           className="button"
-          disabled={seeding}
+          disabled={seeding || !seedWorkerId}
           onClick={() => handleSeedChr22(false)}
         >
-            {seeding
-              ? "Seeding…"
-              : `Seed chr22 (${SEED_BATCH_LIMIT})`}
-          </button>
-          {workers.filter(workerReachable).length > 0 && (
-            <span className="chip chip-muted history-seed-hint">
-              {workers.filter((w) => w.dispatch_base_url).length || workers.filter(workerReachable).length}{" "}
-              dispatchable · parallel wave → wait → next wave
-            </span>
-          )}
+          {seeding ? "Seeding…" : `Seed chr22 (${SEED_BATCH_LIMIT})`}
+        </button>
+        {seedWorkerId && (
+          <span className="chip chip-muted history-seed-hint">one worker · sequential</span>
+        )}
       </div>
 
       {total != null && (

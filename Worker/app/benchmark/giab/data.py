@@ -113,19 +113,95 @@ def _samtools_remote_view_cmd(
     ]
 
 
-def _ensure_ssl_cert_env() -> None:
-    """htslib/pysam need CA bundle for HTTPS GIAB URLs on the worker host."""
-    if os.environ.get("SSL_CERT_FILE") and os.environ.get("CURL_CA_BUNDLE"):
-        return
+def _bam_cache_ready(path: Path) -> bool:
+    """True when a regional BAM and its index are present and non-empty."""
+    bai = Path(f"{path}.bai")
+    try:
+        return (
+            path.is_file()
+            and path.stat().st_size > 0
+            and bai.is_file()
+            and bai.stat().st_size > 0
+        )
+    except OSError:
+        return False
+
+
+def _clear_incomplete_bam(path: Path) -> None:
+    """Remove a partial slice so the next attempt can rebuild it."""
+    for candidate in (path, Path(f"{path}.bai")):
+        try:
+            if candidate.exists():
+                candidate.unlink()
+        except OSError as exc:
+            logger.warning("Could not remove incomplete BAM cache %s (%s)", candidate, exc)
+
+
+def _host_ssl_cert_file() -> Path | None:
     for path in (
         Path("/etc/ssl/certs/ca-certificates.crt"),
         Path("/etc/pki/tls/certs/ca-bundle.crt"),
         Path("/etc/ssl/cert.pem"),
     ):
         if path.is_file():
-            os.environ.setdefault("SSL_CERT_FILE", str(path))
-            os.environ.setdefault("CURL_CA_BUNDLE", str(path))
-            return
+            return path
+    return None
+
+
+def _ensure_ssl_cert_env() -> None:
+    """htslib/pysam need CA bundle for HTTPS GIAB URLs on the worker host."""
+    cert = _host_ssl_cert_file()
+    if cert is None:
+        return
+    os.environ.setdefault("SSL_CERT_FILE", str(cert))
+    os.environ.setdefault("CURL_CA_BUNDLE", str(cert))
+
+
+def _docker_ssl_mounts() -> tuple[list[str], list[tuple[str, str, str]]]:
+    """Extra docker args + read-only mounts so HTTPS BAM fetch works inside containers."""
+    extra_args: list[str] = []
+    volumes: list[tuple[str, str, str]] = []
+    cert = _host_ssl_cert_file()
+    if cert is not None:
+        extra_args.extend(
+            [
+                "-e",
+                f"SSL_CERT_FILE=/ssl/{cert.name}",
+                "-e",
+                f"CURL_CA_BUNDLE=/ssl/{cert.name}",
+            ]
+        )
+        volumes.append((str(cert.parent), "/ssl", "ro"))
+        return extra_args, volumes
+
+    for host, container in (
+        ("/etc/ssl/certs", "/etc/ssl/certs"),
+        ("/etc/pki/tls/certs", "/etc/pki/tls/certs"),
+    ):
+        if Path(host).is_dir():
+            volumes.append((host, container, "ro"))
+    if volumes:
+        extra_args.extend(
+            [
+                "-e",
+                "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt",
+                "-e",
+                "CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt",
+            ]
+        )
+    return extra_args, volumes
+
+
+def _subprocess_env() -> dict[str, str]:
+    _ensure_ssl_cert_env()
+    return os.environ.copy()
+
+
+def _validate_bam_slice(path: Path, *, region: str) -> None:
+    if not _bam_cache_ready(path):
+        raise RuntimeError(f"BAM slice for {region} is missing or not indexed: {path}")
+    if path.stat().st_size < 1024:
+        raise RuntimeError(f"BAM slice for {region} looks empty ({path.stat().st_size} bytes)")
 
 
 def _build_docker_samtools_cmd(
@@ -138,9 +214,11 @@ def _build_docker_samtools_cmd(
     cmd = ["docker", "run", "--rm", "--entrypoint", "samtools"]
     if network_host:
         cmd.append("--network=host")
-        cmd.extend(["-v", "/etc/ssl/certs:/etc/ssl/certs:ro"])
-        cmd.extend(["-e", "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt"])
-        cmd.extend(["-e", "CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt"])
+        ssl_args, ssl_volumes = _docker_ssl_mounts()
+        cmd.extend(ssl_args)
+        for host, container, mode in ssl_volumes:
+            if (host, container, mode) not in volumes:
+                volumes = [*volumes, (host, container, mode)]
     for host, container, mode in volumes:
         cmd.extend(["-v", f"{host}:{container}:{mode}"])
     cmd.append(_SAMTOOLS_DOCKER_IMAGE)
@@ -234,7 +312,7 @@ def _run_samtools_remote_view(
             samtools=samtools,
             index_option_key=index_option_key,
         )
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, env=_subprocess_env())
         if result.returncode == 0:
             _run_checked([samtools, "index", str(dest)], label="samtools index")
             logger.info(
@@ -330,7 +408,7 @@ def containing_cached_bam(region: str) -> Optional[Path]:
         b_chrom, b_start, b_end = bounds
         if b_chrom != chrom or b_start > need_start or b_end < need_end:
             continue
-        if not Path(f"{path}.bai").exists():
+        if not _bam_cache_ready(path):
             continue
         width = b_end - b_start
         if best is None or (best_width is not None and width < best_width):
@@ -385,20 +463,25 @@ def _samtools_view_local_bam(src: Path, region: str, dest: Path) -> None:
 def ensure_bam_for_region(region: str) -> Path:
     """Cache HG002 BAM slice for the given region (exact coordinates)."""
     dest = regional_bam_cache_path(region)
-    if dest.exists() and Path(f"{dest}.bai").exists():
+    if _bam_cache_ready(dest):
         return dest
+    if dest.exists() or Path(f"{dest}.bai").exists():
+        _clear_incomplete_bam(dest)
 
     lock_path = giab_bam_dir() / f".{dest.name}.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     with open(lock_path, "w", encoding="utf-8") as lock_f:
         fcntl.flock(lock_f, fcntl.LOCK_EX)
         try:
-            if dest.exists() and Path(f"{dest}.bai").exists():
+            if _bam_cache_ready(dest):
                 return dest
+            if dest.exists() or Path(f"{dest}.bai").exists():
+                _clear_incomplete_bam(dest)
             parent = containing_cached_bam(region)
             if parent:
                 try:
                     _samtools_view_local_bam(parent, region, dest)
+                    _validate_bam_slice(dest, region=region)
                     return dest
                 except Exception as exc:
                     logger.warning(
@@ -406,6 +489,7 @@ def ensure_bam_for_region(region: str) -> Path:
                         parent.name,
                         exc,
                     )
+                    _clear_incomplete_bam(dest)
             _samtools_view_region(region, dest)
             return dest
         finally:
@@ -445,7 +529,7 @@ def _samtools_bin() -> Optional[str]:
 
 
 def _run_checked(cmd: list[str], *, label: str) -> None:
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, env=_subprocess_env())
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "").strip()
         raise RuntimeError(f"{label} failed (exit {result.returncode}): {detail[:800]}")
@@ -506,6 +590,22 @@ def _samtools_view_region(region: str, dest: Path) -> None:
     _ensure_ssl_cert_env()
     remote = ASSETS["bam_remote"]
     local_bai = ensure_remote_bam_index()
+    errors: list[str] = []
+
+    # Docker first: stable samtools version + mounted host CA certs for NCBI HTTPS.
+    try:
+        _docker_samtools_remote_view(
+            remote_bam=remote,
+            local_bai=local_bai,
+            region=region,
+            dest=dest,
+        )
+        _validate_bam_slice(dest, region=region)
+        return
+    except RuntimeError as exc:
+        errors.append(f"docker: {exc}")
+        _clear_incomplete_bam(dest)
+        logger.warning("Docker samtools remote slice failed for %s (%s)", region, exc)
 
     samtools = _samtools_bin()
     if samtools:
@@ -517,38 +617,40 @@ def _samtools_view_region(region: str, dest: Path) -> None:
                 dest=dest,
                 samtools=samtools,
             )
+            _validate_bam_slice(dest, region=region)
             return
         except RuntimeError as exc:
-            logger.warning(
-                "Host samtools remote slice failed (%s); falling back to docker",
-                exc,
-            )
+            errors.append(f"host: {exc}")
+            _clear_incomplete_bam(dest)
+            logger.warning("Host samtools remote slice failed for %s (%s)", region, exc)
 
     try:
-        _docker_samtools_remote_view(
-            remote_bam=remote,
-            local_bai=local_bai,
-            region=region,
-            dest=dest,
-        )
-    except RuntimeError as exc:
-        logger.warning(
-            "docker samtools remote slice failed (%s); falling back to pysam",
-            exc,
-        )
         _pysam_view_region(
             remote_bam=remote,
             local_bai=local_bai,
             region=region,
             dest=dest,
         )
+        _validate_bam_slice(dest, region=region)
+        return
+    except Exception as exc:
+        errors.append(f"pysam: {exc}")
+        _clear_incomplete_bam(dest)
+
+    raise RuntimeError(
+        "Failed to build HG002 BAM slice for "
+        f"{region}. Tried docker samtools, host samtools, and pysam. "
+        f"Details: {' | '.join(errors)[:1200]}"
+    )
 
 
 def ensure_regional_bam(chrom: str, region: str) -> Path:
     """Cache HG002 BAM slice for a Minos-like window."""
     dest = asset_path(f"bam_region_{chrom}")
-    if dest.exists() and Path(f"{dest}.bai").exists():
+    if _bam_cache_ready(dest):
         return dest
+    if dest.exists() or Path(f"{dest}.bai").exists():
+        _clear_incomplete_bam(dest)
     _samtools_view_region(region, dest)
     return dest
 

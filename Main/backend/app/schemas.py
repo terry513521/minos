@@ -342,11 +342,11 @@ class HistoryOriginSummary(BaseModel):
 class HistorySeedChr22Request(BaseModel):
     worker_id: str | None = Field(
         None,
-        description="Single worker (legacy). Use worker_ids to spread seeds across machines.",
+        description="Worker that runs all chr22 seed benchmarks.",
     )
     worker_ids: list[str] = Field(
         default_factory=list,
-        description="Round-robin across these workers (one benchmark per worker slot).",
+        description="Ignored when seeding — only worker_id is used (first entry if worker_id omitted).",
     )
     limit: int = Field(50, ge=1, le=100)
     dry_run: bool = False
@@ -369,6 +369,11 @@ class HistorySeedChr22Request(BaseModel):
                 ids.append(wid)
                 seen.add(wid)
         return ids
+
+    def resolved_seed_worker_id(self) -> str | None:
+        """Single worker for the whole seed batch."""
+        ids = self.resolved_worker_ids()
+        return ids[0] if ids else None
 
 
 class HistorySeedChr22WorkerSkip(BaseModel):

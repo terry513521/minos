@@ -13,10 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.history_origin import (
     HISTORY_ORIGIN_SEED,
     SEED_SOURCE_CHROMS,
-    chunk_seed_work_items,
     remap_window_to_chr22,
     seed_source_key,
-    worker_for_seed_slot,
 )
 from app.models import RoundHistory
 from app.schemas import HistorySeedChr22Item, HistorySeedChr22Request, HistorySeedChr22Response, HistorySeedChr22WorkerSkip
@@ -113,28 +111,40 @@ async def seed_chr22_history(
     body: HistorySeedChr22Request,
 ) -> HistorySeedChr22Response:
     """
-    Seed chr22 rows in waves:
-      1. POST /benchmark to each worker in the wave (parallel)
-      2. await all responses
-      3. save results, then start the next wave
+    Seed chr22 rows on one worker:
+      POST /benchmark for each portfolio row sequentially (one at a time).
     """
+    preferred_id = body.resolved_seed_worker_id()
     worker_ids, skipped_workers, dispatch_urls = await resolve_seed_workers(
         db,
-        preferred_ids=body.resolved_worker_ids() or None,
+        preferred_ids=[preferred_id] if preferred_id else None,
     )
     if not worker_ids:
         detail = "; ".join(
             f"{s.get('worker_name') or s['worker_id']}: {s['reason']}" for s in skipped_workers
         )
         raise ValueError(
-            "No reachable workers for seeding."
-            + (f" Skipped: {detail}" if detail else " Register workers with distinct health_url/base_url.")
+            "No reachable worker for seeding."
+            + (f" Skipped: {detail}" if detail else " Register a worker with health_url or base_url.")
         )
+    seed_worker_id = worker_ids[0]
+    if len(worker_ids) > 1:
+        skipped_workers.extend(
+            [
+                {
+                    "worker_id": wid,
+                    "worker_name": None,
+                    "reason": f"Only one worker used for seeding (selected {seed_worker_id})",
+                }
+                for wid in worker_ids[1:]
+            ]
+        )
+    worker_ids = [seed_worker_id]
+    dispatch_urls = {seed_worker_id: dispatch_urls[seed_worker_id]}
     if skipped_workers:
         logger.warning(
-            "chr22 seed: using %s worker(s), skipped %s: %s",
-            len(worker_ids),
-            len(skipped_workers),
+            "chr22 seed: using worker %s, skipped %s",
+            seed_worker_id,
             skipped_workers,
         )
     source_chroms = {
@@ -184,7 +194,6 @@ async def seed_chr22_history(
 
     entries: list[tuple[str, HistorySeedChr22Item | _SeedWorkItem]] = []
     batch = 0
-    assign_slot = 0
 
     for source in sources:
         if batch >= body.limit:
@@ -225,8 +234,7 @@ async def seed_chr22_history(
             )
             continue
 
-        worker_id = worker_for_seed_slot(worker_ids, assign_slot)
-        assign_slot += 1
+        worker_id = seed_worker_id
         batch += 1
 
         if body.dry_run:
@@ -262,41 +270,38 @@ async def seed_chr22_history(
 
     work_items = [entry[1] for entry in entries if entry[0] == "work"]
     bench_by_source: dict[str, Any] = {}
-    waves = chunk_seed_work_items(work_items, len(worker_ids))
     waves_completed = 0
 
     if work_items and not body.dry_run:
         worker_bases = await resolve_worker_base_urls(db, worker_ids)
-        for wave_index, wave in enumerate(waves, start=1):
-            worker_labels = ", ".join(
-                f"{item.worker_id}@{worker_bases.get(item.worker_id) or 'unreachable'}"
-                for item in wave
-            )
+        dispatch_url = worker_bases.get(seed_worker_id) or "unreachable"
+        for item_index, item in enumerate(work_items, start=1):
             logger.info(
-                "chr22 seed wave %s/%s: dispatching %s task(s) to %s",
-                wave_index,
-                len(waves),
-                len(wave),
-                worker_labels,
+                "chr22 seed %s/%s: POST /benchmark to %s@%s window=%s",
+                item_index,
+                len(work_items),
+                seed_worker_id,
+                dispatch_url,
+                item.target_window,
             )
-            wave_results = await _benchmark_seed_wave(worker_bases, wave)
-            for item, bench in wave_results:
-                result_item, scored_ok = await _persist_seed_result(
-                    db,
-                    item=item,
-                    bench=bench,
-                    existing_keys=existing_keys,
-                )
-                if scored_ok:
-                    response.scored += 1
-                else:
-                    response.failed += 1
-                bench_by_source[item.source_id] = result_item
+            wave_results = await _benchmark_seed_wave(worker_bases, [item])
+            item, bench = wave_results[0]
+            result_item, scored_ok = await _persist_seed_result(
+                db,
+                item=item,
+                bench=bench,
+                existing_keys=existing_keys,
+            )
+            if scored_ok:
+                response.scored += 1
+            else:
+                response.failed += 1
+            bench_by_source[item.source_id] = result_item
             waves_completed += 1
             logger.info(
-                "chr22 seed wave %s/%s complete (scored=%s failed=%s so far)",
-                wave_index,
-                len(waves),
+                "chr22 seed %s/%s complete (scored=%s failed=%s so far)",
+                item_index,
+                len(work_items),
                 response.scored,
                 response.failed,
             )
@@ -307,6 +312,6 @@ async def seed_chr22_history(
             continue
         response.items.append(bench_by_source[payload.source_id])
 
-    response.waves_completed = waves_completed if not body.dry_run else len(waves)
-    response.workers_per_wave = len(worker_ids)
+    response.waves_completed = waves_completed if not body.dry_run else len(work_items)
+    response.workers_per_wave = 1
     return response

@@ -1564,6 +1564,16 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   gap: 0.4rem;
   margin: 0.35rem 0 0.5rem;
 }
+.history-seed-worker select {
+  min-width: 8rem;
+  max-width: 14rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid var(--border, #333);
+  background: var(--panel, #1a1a1a);
+  color: inherit;
+  font-size: 0.85rem;
+}
 .history-seed-hint {
   font-size: 0.75rem;
 }

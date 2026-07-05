@@ -65,3 +65,4 @@ def test_docker_remote_view_uses_samtools_entrypoint():
     assert f"index=/idx/{bai_name}" in cmd
     assert "chr22:22358161-27358161" in cmd
     assert "--network=host" in cmd
+    assert any(arg.startswith("-v") and "/ssl" in arg or "/etc/ssl" in arg for arg in cmd)

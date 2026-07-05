@@ -8,7 +8,12 @@ from pathlib import Path
 from typing import Any
 
 from app.benchmark.conf import conf_equals, tool_params_from_conf
-from app.benchmark.giab.data import chrom_from_region, reference_for_chrom, regional_bam_cache_path
+from app.benchmark.giab.data import (
+    _bam_cache_ready,
+    chrom_from_region,
+    reference_for_chrom,
+    regional_bam_cache_path,
+)
 from app.benchmark.giab.paths import giab_bam_dir, giab_data_dir, giab_vcf_dir
 from app.benchmark.giab.runner import score_tool_on_region
 from app.config import Settings, get_settings
@@ -147,7 +152,8 @@ def run_benchmark(
 
     params = tool_params_from_conf(conf, tool_key)
     vcf_tag = conf_fingerprint(window=window, tool=tool_key, conf=conf)
-    skip_bam = regional_bam_cache_path(window).exists()
+    bam_cache = regional_bam_cache_path(window)
+    skip_bam = _bam_cache_ready(bam_cache)
 
     try:
         raw = score_tool_on_region(

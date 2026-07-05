@@ -1,10 +1,13 @@
 import asyncio
+import logging
 import os
+import re
 
 import psutil
 from fastapi import FastAPI, HTTPException
 
-from app.benchmark import benchmark_status, run_benchmark, validate_benchmark_assets, validate_tool_supported
+from app.benchmark import benchmark_status, validate_benchmark_assets, validate_tool_supported
+from app.benchmark.jobs import run_benchmark_exclusive
 from app.config import get_settings
 from app.core.utils import format_bytes
 from app.domain.schemas import (
@@ -22,6 +25,9 @@ from app.optimization.jobs import request_stop_optimization, submit_optimize_job
 from app.optimization.optimizer import build_accept_response, validate_optimize_request
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
+
+_WINDOW_RE = re.compile(r"^chr\d+:\d+-\d+$", re.IGNORECASE)
 
 app = FastAPI(
     title="Effortless Worker",
@@ -117,11 +123,22 @@ async def benchmark_once(body: BenchmarkRequest) -> BenchmarkResponse:
     """Score one conf on a GIAB window (used by Main chr22 history seeding)."""
     window = body.window.strip()
     tool = body.tool.lower().strip()
+    if not _WINDOW_RE.match(window):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid window {window!r}; expected chrN:start-end",
+        )
+    if worker_busy():
+        raise HTTPException(
+            status_code=409,
+            detail="Worker is running an optimization job; stop it before /benchmark",
+        )
+    logger.info("POST /benchmark window=%s tool=%s", window, tool)
     try:
         await asyncio.to_thread(validate_tool_supported, tool)
         await asyncio.to_thread(validate_benchmark_assets, window, settings)
         result = await asyncio.to_thread(
-            run_benchmark,
+            run_benchmark_exclusive,
             window=window,
             tool=tool,
             conf=body.conf,
@@ -129,6 +146,14 @@ async def benchmark_once(body: BenchmarkRequest) -> BenchmarkResponse:
         )
     except (FileNotFoundError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if not result.success:
+        logger.warning(
+            "POST /benchmark failed window=%s tool=%s error=%s",
+            window,
+            tool,
+            result.error,
+        )
 
     return BenchmarkResponse(
         success=result.success,
