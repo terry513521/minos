@@ -45,7 +45,8 @@ ASSETS = {
     ),
 }
 
-_SAMTOOLS_DOCKER_IMAGE = "staphb/samtools:1.20"
+_SAMTOOLS_DOCKER_IMAGE = "quay.io/biocontainers/samtools:1.20--h50ea8bc_0"
+_INDEX_FMT_OPTION_KEYS = ("index", "load_index")
 _USER_AGENT = "minos-worker-giab/1.0 (+https://github.com/minos-protocol/minos_subnet)"
 
 REF_S3_BASE = "https://api.theminos.ai/reference"
@@ -76,23 +77,85 @@ def ensure_remote_bam_index() -> Path:
     return dest
 
 
-def _pysam_extract_region(
+def _samtools_remote_view_cmd(
     *,
     remote_bam: str,
     local_bai: Path,
     region: str,
     dest: Path,
-) -> None:
-    """Slice a remote BAM using a locally cached .bai (pysam index_filename)."""
-    import pysam
+    samtools: str,
+    index_option_key: str,
+) -> list[str]:
+    """Build samtools view args with a locally cached .bai for a remote BAM."""
+    return [
+        samtools,
+        "view",
+        "-b",
+        "-o",
+        str(dest),
+        "--input-fmt-option",
+        f"{index_option_key}={local_bai}",
+        remote_bam,
+        region,
+    ]
 
-    chrom, start, end = parse_region_bounds(region)
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    with pysam.AlignmentFile(remote_bam, "rb", index_filename=str(local_bai)) as infile:
-        with pysam.AlignmentFile(str(dest), "wb", template=infile) as outfile:
-            for read in infile.fetch(chrom, start, end):
-                outfile.write(read)
-    pysam.index(str(dest))
+
+def _docker_samtools_remote_view_script(
+    *,
+    remote_bam: str,
+    local_bai: Path,
+    region: str,
+    dest_name: str,
+) -> str:
+    index_in_container = f"/idx/{local_bai.name}"
+    option_attempts = " ".join(
+        f'if samtools view -b -o "/out/{dest_name}" '
+        f'--input-fmt-option {key}={index_in_container} '
+        f'"{remote_bam}" {region} 2>/dev/null; then '
+        f'samtools index "/out/{dest_name}"; exit 0; fi;'
+        for key in _INDEX_FMT_OPTION_KEYS
+    )
+    return (
+        f"{option_attempts} "
+        f'samtools view -b -o "/out/{dest_name}" "{remote_bam}" {region} '
+        f'&& samtools index "/out/{dest_name}"'
+    )
+
+
+def _run_samtools_remote_view(
+    *,
+    remote_bam: str,
+    local_bai: Path,
+    region: str,
+    dest: Path,
+    samtools: str,
+) -> None:
+    last_error: str | None = None
+    for index_option_key in _INDEX_FMT_OPTION_KEYS:
+        cmd = _samtools_remote_view_cmd(
+            remote_bam=remote_bam,
+            local_bai=local_bai,
+            region=region,
+            dest=dest,
+            samtools=samtools,
+            index_option_key=index_option_key,
+        )
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            _run_checked([samtools, "index", str(dest)], label="samtools index")
+            logger.info(
+                "samtools regional extract: %s → %s (index %s via %s)",
+                region,
+                dest.name,
+                local_bai.name,
+                index_option_key,
+            )
+            return
+        last_error = (result.stderr or result.stdout or "").strip()
+
+    raise RuntimeError(
+        f"samtools remote view failed for {region}: {(last_error or 'unknown error')[:800]}"
+    )
 
 
 def _local_name(key: str) -> str:
@@ -212,7 +275,7 @@ def _samtools_view_local_bam(src: Path, region: str, dest: Path) -> None:
         "-v",
         f"{src.parent}:/data:ro",
         f"-v{dest.parent}:/out",
-        "staphb/samtools:1.20",
+        _SAMTOOLS_DOCKER_IMAGE,
         "sh",
         "-c",
         inner,
@@ -281,60 +344,49 @@ def _run_checked(cmd: list[str], *, label: str) -> None:
 
 
 def _samtools_view_region(region: str, dest: Path) -> None:
-    """Extract a genomic window from remote indexed HG002 BAM."""
+    """Extract a genomic window from remote indexed HG002 BAM via samtools."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     remote = ASSETS["bam_remote"]
     local_bai = ensure_remote_bam_index()
 
-    try:
-        _pysam_extract_region(
+    samtools = _samtools_bin()
+    if samtools:
+        _run_samtools_remote_view(
             remote_bam=remote,
             local_bai=local_bai,
             region=region,
             dest=dest,
-        )
-        logger.info(
-            "pysam regional extract: %s → %s (index %s)",
-            region,
-            dest.name,
-            local_bai.name,
+            samtools=samtools,
         )
         return
-    except ImportError as exc:
-        raise RuntimeError(
-            "pysam is required for GIAB remote BAM slicing. "
-            "Install with: pip install -r requirements.txt"
-        ) from exc
-    except Exception as exc:
-        logger.warning("pysam regional extract failed (%s); trying samtools fallback", exc)
 
-    samtools = _samtools_bin()
-    if samtools:
-        cmd = [samtools, "view", "-b", remote, region, "-o", str(dest)]
-        logger.info("samtools regional extract fallback: %s → %s", region, dest.name)
-        _run_checked(cmd, label="samtools view")
-        _run_checked([samtools, "index", str(dest)], label="samtools index")
-        return
-
-    inner = (
-        f"samtools view -b '{remote}' {region} -o /out/{dest.name} "
-        f"&& samtools index /out/{dest.name}"
+    inner = _docker_samtools_remote_view_script(
+        remote_bam=remote,
+        local_bai=local_bai,
+        region=region,
+        dest_name=dest.name,
     )
     cmd = [
         "docker",
         "run",
         "--rm",
+        "--network=host",
         "-v",
         "/etc/ssl/certs:/etc/ssl/certs:ro",
         "-e",
         "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt",
+        f"-v{local_bai.parent}:/idx:ro",
         f"-v{dest.parent}:/out",
         _SAMTOOLS_DOCKER_IMAGE,
         "sh",
         "-c",
         inner,
     ]
-    logger.info("docker samtools regional extract fallback: %s", region)
+    logger.info(
+        "docker samtools regional extract: %s (index %s)",
+        region,
+        local_bai.name,
+    )
     _run_checked(cmd, label="docker samtools regional extract")
 
 
