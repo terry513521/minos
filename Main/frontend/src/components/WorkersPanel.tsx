@@ -26,6 +26,7 @@ import {
   clampDeltaRounds,
   createAssignment,
   defaultTrialMemoryGbForTool,
+  inferToolFromBaseConf,
   assignmentWindowFromRegion,
   mergeAssignmentWithWorkerTunables,
   adaptiveMaxTrialsForDispatch,
@@ -743,8 +744,9 @@ export function WorkersPanel({
         return { ok: false, message: "Selected candidate not found.", applied: 0, skipped: 0 };
       }
 
-      const toolRaw = (candidateContext.tool?.toLowerCase() ?? "gatk") as ToolkitOption;
-      const tool: ToolkitOption = TOOLKIT_OPTIONS.includes(toolRaw) ? toolRaw : "gatk";
+      const contextTool = (candidateContext.tool?.toLowerCase() ?? "gatk") as ToolkitOption;
+      const contextFallback = TOOLKIT_OPTIONS.includes(contextTool) ? contextTool : "gatk";
+      const tool = inferToolFromBaseConf(candidate.base_conf, contextFallback);
       const parsed = parseAutoModeTunableImport(text, tool, candidate.base_conf);
       if (!parsed.ok) {
         return { ok: false, message: parsed.error, applied: 0, skipped: 0 };
@@ -782,12 +784,21 @@ export function WorkersPanel({
             ),
           };
         } else {
+          const mergedCandidate = mergeImportedConfIntoCandidate(
+            assignment.candidate,
+            parsed.result.baseConf,
+          );
+          const importedTool = inferToolFromBaseConf(mergedCandidate.base_conf, assignment.tool);
           assignment = {
             ...assignment,
-            candidate: mergeImportedConfIntoCandidate(
-              assignment.candidate,
-              parsed.result.baseConf,
+            candidate: mergedCandidate,
+            ...assignmentParamsForTool(
+              { ...assignment, candidate: mergedCandidate, tool: importedTool },
+              importedTool,
+              worker,
             ),
+            tool: importedTool,
+            trialMemoryGb: defaultTrialMemoryGbForTool(importedTool),
           };
         }
 
@@ -1361,15 +1372,40 @@ export function WorkersPanel({
   function updateAssignmentBaseConf(workerId: string, nextBaseConf: Record<string, unknown>) {
     const assignment = assignments[workerId];
     if (!assignment) return;
+    const worker = workers.find((w) => w.id === workerId);
+
+    const tool = inferToolFromBaseConf(nextBaseConf, assignment.tool);
+    const toolChanged = tool !== assignment.tool;
+
+    if (toolChanged && worker) {
+      updateAssignment(
+        workerId,
+        mergeAssignmentWithWorkerTunables(worker, {
+          ...assignment,
+          candidate: {
+            ...assignment.candidate,
+            base_conf: nextBaseConf,
+          },
+          ...assignmentParamsForTool(
+            { ...assignment, candidate: { ...assignment.candidate, base_conf: nextBaseConf } },
+            tool,
+            worker,
+          ),
+          tool,
+          trialMemoryGb: defaultTrialMemoryGbForTool(tool),
+        }),
+      );
+      return;
+    }
 
     const nextIntervals = { ...assignment.paramIntervals };
     for (const param of assignment.selectedParams) {
-      const options = nextBaseConf[`${assignment.tool}_options`];
+      const options = nextBaseConf[`${tool}_options`];
       const baseValue =
         options && typeof options === "object" && !Array.isArray(options)
           ? String((options as Record<string, unknown>)[param] ?? "")
           : "";
-      nextIntervals[param] = defaultParamInterval(assignment.tool, param, baseValue);
+      nextIntervals[param] = defaultParamInterval(tool, param, baseValue);
     }
 
     updateAssignment(workerId, {
@@ -1862,31 +1898,12 @@ export function WorkersPanel({
                     />
 
                     <div className="worker-assignment-options">
-                      <label className="worker-assignment-field">
+                      <div className="worker-assignment-field">
                         <span className="worker-assignment-label">Toolkit</span>
-                        <select
-                          value={assignment.tool}
-                          disabled={autoManaged}
-                          onChange={(e) => {
-                            const tool = e.target.value as ToolkitOption;
-                            updateAssignment(
-                              worker.id,
-                              mergeAssignmentWithWorkerTunables(worker, {
-                                ...assignment,
-                                ...assignmentParamsForTool(assignment, tool, worker),
-                                tool,
-                                trialMemoryGb: defaultTrialMemoryGbForTool(tool),
-                              }),
-                            );
-                          }}
-                        >
-                          {TOOLKIT_OPTIONS.map((tool) => (
-                            <option key={tool} value={tool}>
-                              {tool}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                        <span className="chip chip-accent" title="From assigned base conf">
+                          {assignment.tool}
+                        </span>
+                      </div>
 
                       <label className="worker-assignment-field">
                         <span className="worker-assignment-label">Algorithm</span>

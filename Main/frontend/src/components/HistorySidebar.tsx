@@ -163,8 +163,8 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
       const workerUrl =
         result.worker_dispatch_urls?.[seedWorkerId] ?? seedWorker.dispatch_base_url ?? "?";
       const summary = dryRun
-        ? `Dry run: ${result.items.length} benchmark(s) on ${workerName} (${result.skipped_existing} already seeded)`
-        : `Seeded ${result.scored} chr22 rows on ${workerName} (${result.skipped_existing} skipped, ${result.failed} failed)`;
+        ? `Dry run: ${result.items.filter((i) => i.status === "dry_run").length} new benchmark(s) on ${workerName} (${result.skipped_existing} already seeded)`
+        : `Seeded ${result.scored} chr22 rows on ${workerName} (${result.skipped_existing} already seeded, ${result.failed} failed)`;
       setError(null);
       window.alert(`${summary}\n\n${workerName} → ${workerUrl}`);
     } catch (e) {

@@ -1,5 +1,5 @@
 import { AutoModeStatus, CandidatePreview, FindCandidatesResponse, WorkerRecord } from "../api/client";
-import { defaultSelectedParams, listToolOptionKeys } from "../utils/candidateAssign";
+import { defaultSelectedParams, listToolOptionKeys, toolOptionsKey } from "../utils/candidateAssign";
 import {
   applyWorkerTunableDefaults,
   paramIntervalsForWorker,
@@ -63,6 +63,20 @@ export const TRIAL_MEMORY_GB_BY_TOOL: Record<ToolkitOption, number> = {
 
 export function defaultTrialMemoryGbForTool(tool: ToolkitOption): number {
   return TRIAL_MEMORY_GB_BY_TOOL[tool] ?? DEFAULT_TRIAL_MEMORY_GB;
+}
+
+/** Tool is fixed by base conf (`gatk_options`, `bcftools_options`, etc.). */
+export function inferToolFromBaseConf(
+  baseConf: Record<string, unknown>,
+  fallback: ToolkitOption = DEFAULT_TOOLKIT,
+): ToolkitOption {
+  for (const tool of TOOLKIT_OPTIONS) {
+    const options = baseConf[toolOptionsKey(tool)];
+    if (options && typeof options === "object" && !Array.isArray(options)) {
+      return tool;
+    }
+  }
+  return TOOLKIT_OPTIONS.includes(fallback) ? fallback : DEFAULT_TOOLKIT;
 }
 export const DEFAULT_INCLUDE_BASE_BENCHMARK = true;
 export const DEFAULT_DELTA_ROUNDS = 5;
@@ -258,8 +272,9 @@ export function createAssignment(
   regionInput?: string,
 ): WorkerAssignment {
   ensureManualDefaultsHydrated();
-  const tool = (context.tool?.toLowerCase() as ToolkitOption) || DEFAULT_TOOLKIT;
-  const resolvedTool = TOOLKIT_OPTIONS.includes(tool) ? tool : DEFAULT_TOOLKIT;
+  const contextTool = (context.tool?.toLowerCase() as ToolkitOption) || DEFAULT_TOOLKIT;
+  const contextFallback = TOOLKIT_OPTIONS.includes(contextTool) ? contextTool : DEFAULT_TOOLKIT;
+  const resolvedTool = inferToolFromBaseConf(candidate.base_conf, contextFallback);
   const keys = listToolOptionKeys(candidate.base_conf, resolvedTool);
   const workerRef = worker ? { id: worker.id, name: worker.name } : undefined;
   const fromWorker = workerRef

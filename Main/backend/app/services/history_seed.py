@@ -13,7 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.history_origin import (
     HISTORY_ORIGIN_SEED,
     SEED_SOURCE_CHROMS,
+    ExistingSeedState,
+    parse_seed_source_history_id,
     remap_window_to_chr22,
+    seed_result_fingerprint,
     seed_source_key,
 )
 from app.models import RoundHistory
@@ -26,6 +29,35 @@ from app.services.worker_proxy import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+async def _load_existing_seed_state(db: AsyncSession) -> ExistingSeedState:
+    """Portfolio rows / chr22 windows already seeded (by source_key or fingerprint)."""
+    state = ExistingSeedState()
+
+    key_rows = (
+        await db.scalars(
+            select(RoundHistory.source_key).where(RoundHistory.source_key.is_not(None))
+        )
+    ).all()
+    for key in key_rows:
+        if not key:
+            continue
+        state.source_keys.add(key)
+        portfolio_id = parse_seed_source_history_id(key)
+        if portfolio_id:
+            state.portfolio_ids.add(portfolio_id)
+
+    seed_rows = await db.execute(
+        select(RoundHistory.window, RoundHistory.tool, RoundHistory.conf).where(
+            RoundHistory.chromosome == "chr22",
+            RoundHistory.history_origin == HISTORY_ORIGIN_SEED,
+        )
+    )
+    for window, tool, conf in seed_rows.all():
+        state.fingerprints.add(seed_result_fingerprint(window, tool, conf))
+
+    return state
 
 
 @dataclass(frozen=True)
@@ -63,7 +95,7 @@ async def _persist_seed_result(
     *,
     item: _SeedWorkItem,
     bench: Any,
-    existing_keys: set[str],
+    seed_state: ExistingSeedState,
 ) -> tuple[HistorySeedChr22Item, bool]:
     """Save one benchmark result. Returns (item, scored_ok)."""
     if not bench.ok or bench.score is None:
@@ -90,7 +122,13 @@ async def _persist_seed_result(
         source_key=item.source_key,
         history_origin=HISTORY_ORIGIN_SEED,
     )
-    existing_keys.add(item.source_key)
+    seed_state.register_seed(
+        source_key=item.source_key,
+        portfolio_id=item.source_id,
+        target_window=item.target_window,
+        tool=item.tool,
+        conf=item.conf,
+    )
     return (
         HistorySeedChr22Item(
             source_id=item.source_id,
@@ -162,15 +200,7 @@ async def seed_chr22_history(
     )
     sources = list(result.scalars().all())
 
-    existing_keys = {
-        k
-        for k in (
-            await db.scalars(
-                select(RoundHistory.source_key).where(RoundHistory.source_key.is_not(None))
-            )
-        ).all()
-        if k
-    }
+    seed_state = await _load_existing_seed_state(db)
 
     response = HistorySeedChr22Response(
         total_sources=len(sources),
@@ -218,7 +248,12 @@ async def seed_chr22_history(
             continue
 
         key = seed_source_key(source.id)
-        if key in existing_keys:
+        if seed_state.is_already_seeded(
+            portfolio_id=source.id,
+            target_window=target_window,
+            tool=source.tool,
+            conf=source.conf,
+        ):
             response.skipped_existing += 1
             entries.append(
                 (
@@ -290,7 +325,7 @@ async def seed_chr22_history(
                 db,
                 item=item,
                 bench=bench,
-                existing_keys=existing_keys,
+                seed_state=seed_state,
             )
             if scored_ok:
                 response.scored += 1
