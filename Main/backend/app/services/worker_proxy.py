@@ -300,14 +300,34 @@ async def benchmark_on_worker(
     if worker is None:
         return WorkerBenchmarkResponse(worker_id=worker_id, ok=False, error="Worker not found")
     base = _resolve_base(worker) if worker else None
-    if not base:
+    return await post_worker_benchmark(
+        base_url=base,
+        worker_id=worker_id,
+        window=window,
+        tool=tool,
+        conf=conf,
+        timeout=timeout,
+    )
+
+
+async def post_worker_benchmark(
+    *,
+    base_url: str | None,
+    worker_id: str,
+    window: str,
+    tool: str,
+    conf: dict[str, Any],
+    timeout: float = 3600.0,
+) -> WorkerBenchmarkResponse:
+    """POST /benchmark when the worker base URL is already resolved."""
+    if not base_url:
         return WorkerBenchmarkResponse(
             worker_id=worker_id,
             ok=False,
             error="Worker has no valid base_url configured",
         )
 
-    url = f"{base.rstrip('/')}/benchmark"
+    url = f"{base_url.rstrip('/')}/benchmark"
     payload = {"window": window, "tool": tool.lower().strip(), "conf": conf}
     try:
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
@@ -353,6 +373,18 @@ async def benchmark_on_worker(
             ok=False,
             error=str(exc),
         )
+
+
+async def resolve_worker_base_urls(
+    db: AsyncSession,
+    worker_ids: list[str],
+) -> dict[str, str | None]:
+    """Map worker id → base URL (or None when missing / invalid)."""
+    out: dict[str, str | None] = {}
+    for worker_id in worker_ids:
+        worker = await get_worker(db, worker_id)
+        out[worker_id] = _resolve_base(worker) if worker else None
+    return out
 
 
 async def stop_all_workers_optimization(db: AsyncSession) -> list[dict[str, Any]]:

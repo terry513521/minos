@@ -23,7 +23,7 @@ import { ConfDetails } from "./ConfDetails";
 
 const DEFAULT_VISIBLE = 5;
 const DEFAULT_CHROMOSOMES = 5;
-const SEED_BATCH_LIMIT = 10;
+const SEED_BATCH_LIMIT = 50;
 
 interface HistorySidebarProps {
   chromosomeFilter?: string | null;
@@ -141,8 +141,8 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
       refresh();
       const workerNames = seedWorkers.map((w) => w.name || w.id).join(", ");
       const summary = dryRun
-        ? `Dry run across ${seedWorkers.length} worker(s) (${workerNames}): ${result.items.length} would process (${result.skipped_existing} already seeded)`
-        : `Seeded ${result.scored} chr22 rows across ${seedWorkers.length} worker(s) (${result.skipped_existing} skipped, ${result.failed} failed)`;
+        ? `Dry run (parallel plan): ${seedWorkers.length} worker(s) (${workerNames}), ${result.items.length} would process (${result.skipped_existing} already seeded)`
+        : `Seeded ${result.scored} chr22 rows in parallel across ${seedWorkers.length} worker(s) (${result.skipped_existing} skipped, ${result.failed} failed)`;
       setError(null);
       window.alert(summary);
     } catch (e) {
@@ -279,7 +279,7 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
         </button>
         {workers.filter((w) => w.base_url).length > 1 && (
           <span className="chip chip-muted history-seed-hint">
-            Round-robin across {workers.filter((w) => w.base_url).length} workers
+            Parallel round-robin across {workers.filter((w) => w.base_url).length} workers
           </span>
         )}
       </div>

@@ -344,7 +344,7 @@ class HistorySeedChr22Request(BaseModel):
         default_factory=list,
         description="Round-robin across these workers (one benchmark per worker slot).",
     )
-    limit: int = Field(10, ge=1, le=100)
+    limit: int = Field(50, ge=1, le=100)
     dry_run: bool = False
     source_chromosomes: list[str] = Field(
         default_factory=lambda: ["chr20", "chr21"],
