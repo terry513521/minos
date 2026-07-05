@@ -1,49 +1,11 @@
-"""hap.py scoring and metrics cache for GIAB benchmarks."""
+"""hap.py scoring — delegates to minos/tuning/giab/calibrate."""
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Dict, Optional
 
-from app.benchmark.giab.data import ensure_sdf
-from app.core.repo import ensure_repo_imports
-
-
-def _hap_metrics_cache_path(query_vcf: Path, region: str) -> Path:
-    slug = region.replace(":", "_").replace("-", "_")
-    return query_vcf.with_name(f"{query_vcf.name}.{slug}.hap_metrics.json")
-
-
-def _load_hap_metrics_cache(query_vcf: Path, region: str) -> Optional[Dict[str, float]]:
-    path = _hap_metrics_cache_path(query_vcf, region)
-    if not path.exists() or not query_vcf.exists():
-        return None
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return None
-    if payload.get("region") != region:
-        return None
-    if payload.get("query_vcf_mtime") != query_vcf.stat().st_mtime:
-        return None
-    metrics = payload.get("metrics")
-    return metrics if isinstance(metrics, dict) else None
-
-
-def _save_hap_metrics_cache(query_vcf: Path, region: str, metrics: Dict[str, float]) -> None:
-    path = _hap_metrics_cache_path(query_vcf, region)
-    path.write_text(
-        json.dumps(
-            {
-                "region": region,
-                "query_vcf_mtime": query_vcf.stat().st_mtime,
-                "metrics": metrics,
-            },
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
+from app.benchmark.giab.tuning_bridge import ensure_tuning_giab
 
 
 def score_giab(
@@ -56,30 +18,23 @@ def score_giab(
     *,
     use_metrics_cache: bool = True,
 ) -> Optional[Dict[str, float]]:
-    ensure_repo_imports()
-    from base.genomics_config import GENOMICS_CONFIG
-    from utils.scoring import AdvancedScorer, HappyScorer
+    ensure_tuning_giab()
+    from tuning.giab.calibrate import _score_giab
 
-    if use_metrics_cache:
-        cached = _load_hap_metrics_cache(query_vcf, region)
-        if cached:
-            return dict(cached)
-
-    sdf = ensure_sdf(chrom)
-    metrics = HappyScorer(
-        docker_image=GENOMICS_CONFIG.get("happy_docker_image"),
-    ).score_vcf(
-        truth_vcf=str(truth_vcf),
-        query_vcf=str(query_vcf),
-        reference_fasta=str(ref),
-        confident_bed=str(truth_bed),
-        region=region,
-        reference_sdf=str(sdf),
+    metrics = _score_giab(
+        truth_vcf,
+        truth_bed,
+        query_vcf,
+        ref,
+        region,
+        chrom,
+        use_metrics_cache=use_metrics_cache,
     )
     if not metrics:
         return None
-    score = AdvancedScorer.compute_advanced_score(metrics)
-    metrics["advanced_score"] = score
-    if use_metrics_cache:
-        _save_hap_metrics_cache(query_vcf, region, metrics)
+    advanced = float(metrics.get("advanced_score") or 0.0)
+    f1_snp = float(metrics.get("f1_snp") or 0.0)
+    f1_indel = float(metrics.get("f1_indel") or 0.0)
+    if advanced <= 0.0 and f1_snp == 0.0 and f1_indel == 0.0:
+        return None
     return metrics

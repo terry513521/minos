@@ -24,12 +24,7 @@ def giab_paths(tmp_path: Path):
 
 def test_score_giab_returns_none_when_hap_fails(giab_paths):
     truth_vcf, truth_bed, query_vcf, ref = giab_paths
-    with (
-        patch("app.benchmark.giab.scoring.ensure_sdf", return_value=Path("/tmp/sdf")),
-        patch("app.benchmark.giab.scoring.ensure_repo_imports"),
-        patch("utils.scoring.HappyScorer") as happy_cls,
-    ):
-        happy_cls.return_value.score_vcf.return_value = None
+    with patch("tuning.giab.calibrate._score_giab", return_value={"advanced_score": 0.0, "f1_snp": 0.0, "f1_indel": 0.0}):
         result = score_giab(
             truth_vcf,
             truth_bed,
@@ -49,9 +44,8 @@ def test_score_tool_on_region_surfaces_hap_failure(giab_paths, tmp_path: Path):
         patch("app.benchmark.giab.runner.reference_for_chrom", return_value=ref),
         patch("app.benchmark.giab.runner.ensure_bam_for_region", return_value=tmp_path / "bam.bam"),
         patch("app.benchmark.giab.runner.chrom_from_region", return_value="chr20"),
-        patch("templates._common.count_variants", return_value=42),
         patch(
-            "app.benchmark.giab.runner._run_gatk",
+            "app.benchmark.giab.runner._run_gatk_tuning",
             return_value={"success": True, "variant_count": 42},
         ),
         patch("app.benchmark.giab.runner.score_giab", return_value=None),

@@ -9,7 +9,7 @@ from typing import Any
 
 from app.benchmark.conf import conf_equals, tool_params_from_conf
 from app.benchmark.giab.data import (
-    _bam_cache_ready,
+    bam_cache_ready,
     chrom_from_region,
     reference_for_chrom,
     regional_bam_cache_path,
@@ -153,7 +153,7 @@ def run_benchmark(
     params = tool_params_from_conf(conf, tool_key)
     vcf_tag = conf_fingerprint(window=window, tool=tool_key, conf=conf)
     bam_cache = regional_bam_cache_path(window)
-    skip_bam = _bam_cache_ready(bam_cache)
+    skip_bam = bam_cache_ready(bam_cache)
 
     try:
         raw = score_tool_on_region(

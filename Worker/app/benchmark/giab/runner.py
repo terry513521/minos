@@ -1,14 +1,15 @@
-"""GIAB variant calling + scoring for a single region."""
+"""GIAB variant calling + scoring — tuning giab backend, Worker API surface."""
 
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 from pathlib import Path
 from typing import Any, Dict
 
 from app.benchmark.giab.data import (
-    _bam_cache_ready,
+    bam_cache_ready,
     chrom_from_region,
     ensure_bam_for_region,
     ensure_truth_assets,
@@ -17,12 +18,14 @@ from app.benchmark.giab.data import (
 )
 from app.benchmark.giab.paths import giab_vcf_dir
 from app.benchmark.giab.scoring import score_giab
+from app.benchmark.giab.tuning_bridge import ensure_tuning_giab
 from app.config import Settings, get_settings
 from app.core.repo import ensure_repo_imports
 from app.optimization.param_specs import coerce_param_value
 
-_SUPPORTED_TOOLS = frozenset({"gatk", "bcftools", "deepvariant"})
+logger = logging.getLogger(__name__)
 
+_SUPPORTED_TOOLS = frozenset({"gatk", "bcftools", "deepvariant"})
 _DEEPVARIANT_MIN_MEMORY_GB = 16
 
 
@@ -56,65 +59,49 @@ def _runtime_cfg(
     return {"threads": threads, "memory_gb": memory_gb, "timeout": timeout}
 
 
-def _run_gatk(
+def _try_reuse_cached_vcf(out_vcf: Path) -> Dict[str, Any] | None:
+    if not out_vcf.exists():
+        return None
+    ensure_repo_imports()
+    from templates._common import count_variants, is_valid_vcf_gz
+
+    if not is_valid_vcf_gz(out_vcf):
+        logger.warning("Cached VCF is corrupt or incomplete, regenerating: %s", out_vcf)
+        out_vcf.unlink(missing_ok=True)
+        return None
+    return {
+        "success": True,
+        "variant_count": count_variants(out_vcf),
+        "metadata": {"reused_vcf": True},
+    }
+
+
+def _run_gatk_tuning(
     bam: Path,
     ref: Path,
     region: str,
     out_vcf: Path,
     gatk_params: Dict[str, Any],
     *,
-    settings: Settings,
-    runtime_conf: Dict[str, Any] | None = None,
+    instance_id: str,
 ) -> Dict[str, Any]:
-    ensure_repo_imports()
-    from templates.gatk import variant_call
+    ensure_tuning_giab()
+    from tuning.giab.calibrate import _run_gatk
 
-    gatk_options = {
-        key: coerce_param_value("gatk", key, value) for key, value in gatk_params.items()
-    }
-    runtime = _runtime_cfg(
-        runtime_conf,
-        settings=settings,
-        tool="gatk",
-        default_timeout=int(os.getenv("GIAB_GATK_TIMEOUT", "1800")),
-    )
-    cfg = {
-        "gatk_options": gatk_options,
-        **runtime,
-    }
-    return variant_call(bam, ref, out_vcf, region, cfg)
+    return _run_gatk(bam, ref, region, out_vcf, gatk_params, instance_id=instance_id)
 
 
-def _run_bcftools(
+def _run_bcftools_tuning(
     bam: Path,
     ref: Path,
     region: str,
     out_vcf: Path,
     params: Dict[str, Any],
-    *,
-    settings: Settings,
-    runtime_conf: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
-    ensure_repo_imports()
-    from templates.bcftools import variant_call
+    ensure_tuning_giab()
+    from tuning.giab.round_verify import _run_bcftools
 
-    bcftools_options = {
-        key: coerce_param_value("bcftools", key, value) for key, value in params.items()
-    }
-    default_threads = max(1, (os.cpu_count() or 4) - 1)
-    runtime = _runtime_cfg(
-        runtime_conf,
-        settings=settings,
-        tool="bcftools",
-        default_timeout=int(os.getenv("GIAB_BCF_TIMEOUT", "1800")),
-    )
-    if not (runtime_conf or {}).get("threads"):
-        runtime["threads"] = int(os.getenv("GIAB_BCF_THREADS", str(default_threads)))
-    cfg = {
-        "bcftools_options": bcftools_options,
-        **runtime,
-    }
-    return variant_call(bam, ref, out_vcf, region, cfg)
+    return _run_bcftools(bam, ref, region, out_vcf, params)
 
 
 def _run_deepvariant(
@@ -139,10 +126,7 @@ def _run_deepvariant(
         tool="deepvariant",
         default_timeout=int(os.getenv("GIAB_DV_TIMEOUT", "3600")),
     )
-    cfg = {
-        "deepvariant_options": deepvariant_options,
-        **runtime,
-    }
+    cfg = {"deepvariant_options": deepvariant_options, **runtime}
     return variant_call(bam, ref, out_vcf, region, cfg)
 
 
@@ -159,20 +143,20 @@ def score_tool_on_region(
     runtime_conf: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """Call + hap.py score one tool config on a GIAB regional BAM."""
+    ensure_tuning_giab()
     settings = settings or get_settings()
     tool_key = tool.lower().strip()
     if tool_key not in _SUPPORTED_TOOLS:
         return {"tool": tool_key, "error": f"unsupported tool {tool_key}"}
 
     ensure_repo_imports()
-    from templates._common import count_variants
     from utils.scoring import AdvancedScorer
 
     chrom = chrom_from_region(region)
     ref = reference_for_chrom(chrom)
     truth_vcf, truth_bed = ensure_truth_assets()
     bam_path = regional_bam_cache_path(region)
-    if skip_bam_download and _bam_cache_ready(bam_path):
+    if skip_bam_download and bam_cache_ready(bam_path):
         bam = bam_path
     else:
         bam = ensure_bam_for_region(region)
@@ -181,28 +165,22 @@ def score_tool_on_region(
     out_vcf = giab_vcf_dir() / f"benchmark_{slug}.vcf.gz"
     giab_vcf_dir().mkdir(parents=True, exist_ok=True)
 
-    if reuse_vcf and out_vcf.exists():
-        call = {
-            "success": True,
-            "variant_count": count_variants(out_vcf),
-            "metadata": {"reused_vcf": True},
-        }
-    elif tool_key == "gatk":
-        call = _run_gatk(
-            bam, ref, region, out_vcf, params, settings=settings, runtime_conf=runtime_conf
+    call = _try_reuse_cached_vcf(out_vcf) if reuse_vcf else None
+    worker_id = instance_id or settings.name
+    if call is None and tool_key == "gatk":
+        call = _run_gatk_tuning(
+            bam, ref, region, out_vcf, params, instance_id=worker_id
         )
-    elif tool_key == "deepvariant":
+    elif call is None and tool_key == "deepvariant":
         call = _run_deepvariant(
             bam, ref, region, out_vcf, params, settings=settings, runtime_conf=runtime_conf
         )
-    else:
-        call = _run_bcftools(
-            bam, ref, region, out_vcf, params, settings=settings, runtime_conf=runtime_conf
-        )
+    elif call is None:
+        call = _run_bcftools_tuning(bam, ref, region, out_vcf, params)
 
     if not call.get("success"):
         return {
-            "instance": instance_id or settings.name,
+            "instance": worker_id,
             "tool": tool_key,
             "region": region,
             "error": call.get("error"),
@@ -212,7 +190,7 @@ def score_tool_on_region(
     metrics = score_giab(truth_vcf, truth_bed, out_vcf, ref, region, chrom)
     if not metrics:
         return {
-            "instance": instance_id or settings.name,
+            "instance": worker_id,
             "tool": tool_key,
             "region": region,
             "error": "hap.py scoring failed",
@@ -222,7 +200,7 @@ def score_tool_on_region(
     breakdown_fn = getattr(AdvancedScorer, "compute_breakdown", None)
     score_breakdown = breakdown_fn(numeric) if breakdown_fn else None
     return {
-        "instance": instance_id or settings.name,
+        "instance": worker_id,
         "tool": tool_key,
         "region": region,
         "score": round(float(metrics.get("advanced_score") or 0.0), 2),

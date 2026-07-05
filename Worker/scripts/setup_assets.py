@@ -849,7 +849,6 @@ def ensure_giab_regional_bams(chromosomes: list[str], *, force: bool = False) ->
     from app.benchmark.giab.data import (
         ASSETS,
         ensure_bam_for_region,
-        ensure_remote_bam_index,
         ensure_truth_assets,
         regional_bam_cache_path,
     )
@@ -857,9 +856,8 @@ def ensure_giab_regional_bams(chromosomes: list[str], *, force: bool = False) ->
 
     print("\n== GIAB truth + regional BAM (NCBI ReferenceSamples) ==")
     print("  FTP: https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab")
-    print(f"  HG002 BAM (FTP): {ASSETS['bam_remote_ftp']}")
-    print(f"  HG002 BAI: {ASSETS['bam_remote_bai']}")
-    print("  Slices windows with samtools over NCBI FTP (htslib fetches .bai automatically).")
+    print(f"  HG002 BAM: {ASSETS['bam_remote']}")
+    print("  Slices windows with samtools (staphb/samtools docker or host samtools).")
 
     ok = True
     try:
@@ -868,13 +866,6 @@ def ensure_giab_regional_bams(chromosomes: list[str], *, force: bool = False) ->
         print(f"  OK  truth BED: {bed.relative_to(ROOT)}")
     except Exception as exc:
         print(f"  failed GIAB truth download: {exc}")
-        ok = False
-
-    try:
-        bai = ensure_remote_bam_index()
-        print(f"  OK  remote BAM index: {bai.relative_to(ROOT)} ({human_size(bai.stat().st_size)})")
-    except Exception as exc:
-        print(f"  failed HG002 BAM index download: {exc}")
         ok = False
 
     for chrom in chromosomes:
