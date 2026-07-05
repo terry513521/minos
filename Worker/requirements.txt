@@ -21,3 +21,5 @@ numpy>=1.26.0
 
 # --- Asset setup (optional: validator truth download in scripts/setup_assets.py) ---
 bittensor-wallet>=3.0.0
+# pysam: fallback BAM slicing when host/docker samtools cannot use a local .bai on remote GIAB BAM
+pysam>=0.22.0

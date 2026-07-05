@@ -25,6 +25,10 @@ const DEFAULT_VISIBLE = 5;
 const DEFAULT_CHROMOSOMES = 5;
 const SEED_BATCH_LIMIT = 50;
 
+function workerReachable(worker: WorkerRecord): boolean {
+  return Boolean((worker.base_url || worker.health_url || "").trim());
+}
+
 interface HistorySidebarProps {
   chromosomeFilter?: string | null;
   embedded?: boolean;
@@ -123,9 +127,9 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
   }
 
   async function handleSeedChr22(dryRun: boolean) {
-    const seedWorkers = workers.filter((w) => w.base_url);
+    const seedWorkers = workers.filter(workerReachable);
     if (seedWorkers.length === 0) {
-      setError("Register a worker with base_url before seeding chr22 history.");
+      setError("Register a worker with health_url or base_url before seeding chr22 history.");
       return;
     }
     setSeeding(true);
@@ -141,9 +145,10 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
       refresh();
       const waveCount = result.waves_completed ?? 0;
       const perWave = result.workers_per_wave ?? seedWorkers.length;
+      const usedCount = result.worker_ids_used?.length ?? seedWorkers.length;
       const summary = dryRun
-        ? `Dry run: ${result.items.length} task(s) in ${waveCount} wave(s) of up to ${perWave} worker(s) (${result.skipped_existing} already seeded)`
-        : `Seeded ${result.scored} chr22 rows in ${waveCount} wave(s) (${perWave} worker(s) per wave, ${result.skipped_existing} skipped, ${result.failed} failed)`;
+        ? `Dry run: ${result.items.length} task(s) in ${waveCount} wave(s) of up to ${perWave} worker(s), ${usedCount} reachable (${result.skipped_existing} already seeded)`
+        : `Seeded ${result.scored} chr22 rows in ${waveCount} wave(s) (${perWave} worker(s) per wave, ${usedCount} workers used, ${result.skipped_existing} skipped, ${result.failed} failed)`;
       setError(null);
       window.alert(summary);
     } catch (e) {
@@ -280,9 +285,9 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
               ? "Seeding…"
               : `Seed chr22 (${SEED_BATCH_LIMIT})`}
           </button>
-          {workers.filter((w) => w.base_url).length > 0 && (
+          {workers.filter(workerReachable).length > 0 && (
             <span className="chip chip-muted history-seed-hint">
-              {workers.filter((w) => w.base_url).length} workers · parallel wave → wait → next wave
+              {workers.filter(workerReachable).length} workers · parallel wave → wait → next wave
             </span>
           )}
       </div>

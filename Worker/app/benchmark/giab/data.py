@@ -73,8 +73,20 @@ def remote_hg002_bam_index_path() -> Path:
 def ensure_remote_bam_index() -> Path:
     """Download HG002 .bai once; samtools needs it for random access on the remote BAM."""
     dest = remote_hg002_bam_index_path()
-    _download(ASSETS["bam_remote_bai"], dest)
-    return dest
+    if dest.exists() and dest.stat().st_size > 0:
+        return dest
+
+    lock_path = giab_data_dir() / ".hg002_bam.bai.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock_path, "w", encoding="utf-8") as lock_f:
+        fcntl.flock(lock_f, fcntl.LOCK_EX)
+        try:
+            if dest.exists() and dest.stat().st_size > 0:
+                return dest
+            _download(ASSETS["bam_remote_bai"], dest)
+            return dest
+        finally:
+            fcntl.flock(lock_f, fcntl.LOCK_UN)
 
 
 def _samtools_remote_view_cmd(
@@ -100,25 +112,90 @@ def _samtools_remote_view_cmd(
     ]
 
 
-def _docker_samtools_remote_view_script(
+def _build_docker_samtools_cmd(
+    samtools_args: list[str],
+    *,
+    volumes: list[tuple[str, str, str]],
+    network_host: bool = False,
+) -> list[str]:
+    """Build ``docker run`` for biocontainers/samtools (ENTRYPOINT is ``samtools``)."""
+    cmd = ["docker", "run", "--rm"]
+    if network_host:
+        cmd.append("--network=host")
+        cmd.extend(["-v", "/etc/ssl/certs:/etc/ssl/certs:ro"])
+        cmd.extend(["-e", "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt"])
+    for host, container, mode in volumes:
+        cmd.extend(["-v", f"{host}:{container}:{mode}"])
+    cmd.append(_SAMTOOLS_DOCKER_IMAGE)
+    cmd.extend(samtools_args)
+    return cmd
+
+
+def _run_docker_samtools(
+    samtools_args: list[str],
+    *,
+    volumes: list[tuple[str, str, str]],
+    network_host: bool = False,
+    label: str = "docker samtools",
+) -> None:
+    cmd = _build_docker_samtools_cmd(
+        samtools_args,
+        volumes=volumes,
+        network_host=network_host,
+    )
+    _run_checked(cmd, label=label)
+
+
+def _docker_samtools_remote_view(
     *,
     remote_bam: str,
     local_bai: Path,
     region: str,
-    dest_name: str,
-) -> str:
+    dest: Path,
+) -> None:
+    """Extract a region from a remote BAM using a locally cached .bai inside Docker."""
     index_in_container = f"/idx/{local_bai.name}"
-    option_attempts = " ".join(
-        f'if samtools view -b -o "/out/{dest_name}" '
-        f'--input-fmt-option {key}={index_in_container} '
-        f'"{remote_bam}" {region} 2>/dev/null; then '
-        f'samtools index "/out/{dest_name}"; exit 0; fi;'
-        for key in _INDEX_FMT_OPTION_KEYS
-    )
-    return (
-        f"{option_attempts} "
-        f'samtools view -b -o "/out/{dest_name}" "{remote_bam}" {region} '
-        f'&& samtools index "/out/{dest_name}"'
+    out_bam = f"/out/{dest.name}"
+    volumes = [
+        (str(local_bai.parent), "/idx", "ro"),
+        (str(dest.parent), "/out", "rw"),
+    ]
+    last_error: str | None = None
+    for index_option_key in _INDEX_FMT_OPTION_KEYS:
+        try:
+            _run_docker_samtools(
+                [
+                    "view",
+                    "-b",
+                    "-o",
+                    out_bam,
+                    "--input-fmt-option",
+                    f"{index_option_key}={index_in_container}",
+                    remote_bam,
+                    region,
+                ],
+                volumes=volumes,
+                network_host=True,
+                label=f"docker samtools remote view ({index_option_key})",
+            )
+            _run_docker_samtools(
+                ["index", out_bam],
+                volumes=[(str(dest.parent), "/out", "rw")],
+                label="docker samtools index (remote slice)",
+            )
+            logger.info(
+                "docker samtools regional extract: %s → %s (index %s via %s)",
+                region,
+                dest.name,
+                local_bai.name,
+                index_option_key,
+            )
+            return
+        except RuntimeError as exc:
+            last_error = str(exc)
+
+    raise RuntimeError(
+        f"docker samtools remote view failed for {region}: {(last_error or 'unknown error')[:800]}"
     )
 
 
@@ -258,30 +335,34 @@ def _samtools_view_local_bam(src: Path, region: str, dest: Path) -> None:
     samtools = _samtools_bin()
 
     if samtools:
-        cmd = [samtools, "view", "-b", str(src), region, "-o", str(dest)]
-        logger.info("samtools local slice: %s from %s", region, src.name)
-        _run_checked(cmd, label="samtools view (local)")
-        _run_checked([samtools, "index", str(dest)], label="samtools index (local)")
-        return
+        try:
+            cmd = [samtools, "view", "-b", str(src), region, "-o", str(dest)]
+            logger.info("samtools local slice: %s from %s", region, src.name)
+            _run_checked(cmd, label="samtools view (local)")
+            _run_checked([samtools, "index", str(dest)], label="samtools index (local)")
+            return
+        except RuntimeError as exc:
+            logger.warning(
+                "Host samtools local slice failed (%s); falling back to docker",
+                exc,
+            )
 
-    inner = (
-        f"samtools view -b /data/{src.name} {region} -o /out/{dest.name} "
-        f"&& samtools index /out/{dest.name}"
-    )
-    cmd = [
-        "docker",
-        "run",
-        "--rm",
-        "-v",
-        f"{src.parent}:/data:ro",
-        f"-v{dest.parent}:/out",
-        _SAMTOOLS_DOCKER_IMAGE,
-        "sh",
-        "-c",
-        inner,
+    volumes = [
+        (str(src.parent), "/data", "ro"),
+        (str(dest.parent), "/out", "rw"),
     ]
+    out_bam = f"/out/{dest.name}"
     logger.info("docker samtools local slice: %s from %s", region, src.name)
-    _run_checked(cmd, label="docker samtools view (local)")
+    _run_docker_samtools(
+        ["view", "-b", f"/data/{src.name}", region, "-o", out_bam],
+        volumes=volumes,
+        label="docker samtools view (local)",
+    )
+    _run_docker_samtools(
+        ["index", out_bam],
+        volumes=[(str(dest.parent), "/out", "rw")],
+        label="docker samtools index (local)",
+    )
 
 
 def ensure_bam_for_region(region: str) -> Path:
@@ -289,19 +370,29 @@ def ensure_bam_for_region(region: str) -> Path:
     dest = regional_bam_cache_path(region)
     if dest.exists() and Path(f"{dest}.bai").exists():
         return dest
-    parent = containing_cached_bam(region)
-    if parent:
+
+    lock_path = giab_bam_dir() / f".{dest.name}.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock_path, "w", encoding="utf-8") as lock_f:
+        fcntl.flock(lock_f, fcntl.LOCK_EX)
         try:
-            _samtools_view_local_bam(parent, region, dest)
+            if dest.exists() and Path(f"{dest}.bai").exists():
+                return dest
+            parent = containing_cached_bam(region)
+            if parent:
+                try:
+                    _samtools_view_local_bam(parent, region, dest)
+                    return dest
+                except Exception as exc:
+                    logger.warning(
+                        "Local BAM slice from %s failed (%s); falling back to remote extract",
+                        parent.name,
+                        exc,
+                    )
+            _samtools_view_region(region, dest)
             return dest
-        except Exception as exc:
-            logger.warning(
-                "Local BAM slice from %s failed (%s); falling back to remote extract",
-                parent.name,
-                exc,
-            )
-    _samtools_view_region(region, dest)
-    return dest
+        finally:
+            fcntl.flock(lock_f, fcntl.LOCK_UN)
 
 
 def _download(url: str, dest: Path) -> None:
@@ -343,6 +434,54 @@ def _run_checked(cmd: list[str], *, label: str) -> None:
         raise RuntimeError(f"{label} failed (exit {result.returncode}): {detail[:800]}")
 
 
+def _index_bam_slice(dest: Path) -> None:
+    """Build .bai for a cached regional BAM."""
+    samtools = _samtools_bin()
+    if samtools:
+        _run_checked([samtools, "index", str(dest)], label="samtools index (slice)")
+        return
+    _run_docker_samtools(
+        ["index", f"/out/{dest.name}"],
+        volumes=[(str(dest.parent), "/out", "rw")],
+        label="docker samtools index (slice)",
+    )
+
+
+def _pysam_view_region(
+    *,
+    remote_bam: str,
+    local_bai: Path,
+    region: str,
+    dest: Path,
+) -> None:
+    """Last-resort BAM slice when samtools cannot use a local index on a remote BAM."""
+    try:
+        import pysam
+    except ImportError as exc:
+        raise RuntimeError(
+            "samtools remote slice failed and pysam is not installed "
+            "(pip install pysam or fix host/docker samtools)"
+        ) from exc
+
+    chrom, start, end = parse_region_bounds(region)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    logger.warning(
+        "samtools remote slice unavailable; using pysam for %s (index %s)",
+        region,
+        local_bai.name,
+    )
+    with pysam.AlignmentFile(
+        remote_bam,
+        "rb",
+        index_filename=str(local_bai),
+    ) as in_bam:
+        with pysam.AlignmentFile(str(dest), "wb", template=in_bam) as out_bam:
+            for read in in_bam.fetch(chrom, start - 1, end):
+                out_bam.write(read)
+    _index_bam_slice(dest)
+    logger.info("pysam regional extract: %s → %s", region, dest.name)
+
+
 def _samtools_view_region(region: str, dest: Path) -> None:
     """Extract a genomic window from remote indexed HG002 BAM via samtools."""
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -351,43 +490,39 @@ def _samtools_view_region(region: str, dest: Path) -> None:
 
     samtools = _samtools_bin()
     if samtools:
-        _run_samtools_remote_view(
+        try:
+            _run_samtools_remote_view(
+                remote_bam=remote,
+                local_bai=local_bai,
+                region=region,
+                dest=dest,
+                samtools=samtools,
+            )
+            return
+        except RuntimeError as exc:
+            logger.warning(
+                "Host samtools remote slice failed (%s); falling back to docker",
+                exc,
+            )
+
+    try:
+        _docker_samtools_remote_view(
             remote_bam=remote,
             local_bai=local_bai,
             region=region,
             dest=dest,
-            samtools=samtools,
         )
-        return
-
-    inner = _docker_samtools_remote_view_script(
-        remote_bam=remote,
-        local_bai=local_bai,
-        region=region,
-        dest_name=dest.name,
-    )
-    cmd = [
-        "docker",
-        "run",
-        "--rm",
-        "--network=host",
-        "-v",
-        "/etc/ssl/certs:/etc/ssl/certs:ro",
-        "-e",
-        "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt",
-        f"-v{local_bai.parent}:/idx:ro",
-        f"-v{dest.parent}:/out",
-        _SAMTOOLS_DOCKER_IMAGE,
-        "sh",
-        "-c",
-        inner,
-    ]
-    logger.info(
-        "docker samtools regional extract: %s (index %s)",
-        region,
-        local_bai.name,
-    )
-    _run_checked(cmd, label="docker samtools regional extract")
+    except RuntimeError as exc:
+        logger.warning(
+            "docker samtools remote slice failed (%s); falling back to pysam",
+            exc,
+        )
+        _pysam_view_region(
+            remote_bam=remote,
+            local_bai=local_bai,
+            region=region,
+            dest=dest,
+        )
 
 
 def ensure_regional_bam(chrom: str, region: str) -> Path:

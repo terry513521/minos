@@ -27,9 +27,9 @@ class HistorySeedWorkerTests(unittest.TestCase):
         body = HistorySeedChr22Request(worker_id="primary", worker_ids=["secondary", "primary"])
         self.assertEqual(body.resolved_worker_ids(), ["primary", "secondary"])
 
-    def test_resolved_worker_ids_requires_one(self) -> None:
-        with self.assertRaises(ValueError):
-            HistorySeedChr22Request().resolved_worker_ids()
+    def test_resolved_worker_ids_empty_when_unset(self) -> None:
+        body = HistorySeedChr22Request()
+        self.assertEqual(body.resolved_worker_ids(), [])
 
     def test_chunk_seed_work_items_by_worker_count(self) -> None:
         items = list(range(5))

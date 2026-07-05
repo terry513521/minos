@@ -387,6 +387,26 @@ async def resolve_worker_base_urls(
     return out
 
 
+async def resolve_dispatchable_worker_ids(
+    db: AsyncSession,
+    *,
+    preferred_ids: list[str] | None = None,
+) -> list[str]:
+    """Workers that Main can reach (base_url or health_url-derived base), in stable order."""
+    if preferred_ids:
+        bases = await resolve_worker_base_urls(db, preferred_ids)
+        reachable = [wid for wid in preferred_ids if bases.get(wid)]
+        if reachable:
+            return reachable
+
+    result = await db.execute(select(Worker).order_by(Worker.name))
+    dispatchable: list[str] = []
+    for worker in result.scalars().all():
+        if _resolve_base(worker):
+            dispatchable.append(worker.id)
+    return dispatchable
+
+
 async def stop_all_workers_optimization(db: AsyncSession) -> list[dict[str, Any]]:
     """POST /stop on every registered worker."""
     result = await db.execute(select(Worker).order_by(Worker.name))

@@ -11,7 +11,8 @@ sys.modules.setdefault("fcntl", MagicMock())
 from app.benchmark.giab.data import (  # noqa: E402
     ASSETS,
     _INDEX_FMT_OPTION_KEYS,
-    _docker_samtools_remote_view_script,
+    _SAMTOOLS_DOCKER_IMAGE,
+    _build_docker_samtools_cmd,
     _samtools_remote_view_cmd,
     remote_hg002_bam_index_path,
 )
@@ -36,14 +37,29 @@ def test_samtools_remote_view_prefers_index_option():
     assert _INDEX_FMT_OPTION_KEYS[0] == "index"
 
 
-def test_docker_remote_view_script_tries_index_options():
+def test_docker_remote_view_uses_samtools_entrypoint():
     bai_name = "HG002_Element-StdInsert_80x_GRCh38-GIABv3.bam.bai"
-    script = _docker_samtools_remote_view_script(
-        remote_bam=ASSETS["bam_remote"],
-        local_bai=Path(f"/datasets/giab/data/{bai_name}"),
-        region="chr22:22358161-27358161",
-        dest_name="HG002_chr22_22358161-27358161.bam",
+    cmd = _build_docker_samtools_cmd(
+        [
+            "view",
+            "-b",
+            "-o",
+            "/out/HG002_chr22_22358161-27358161.bam",
+            "--input-fmt-option",
+            f"index=/idx/{bai_name}",
+            ASSETS["bam_remote"],
+            "chr22:22358161-27358161",
+        ],
+        volumes=[
+            ("/datasets/giab/data", "/idx", "ro"),
+            ("/datasets/giab/bam", "/out", "rw"),
+        ],
+        network_host=True,
     )
-    assert f"index=/idx/{bai_name}" in script
-    assert f"load_index=/idx/{bai_name}" in script
-    assert "chr22:22358161-27358161" in script
+    assert cmd[0] == "docker"
+    assert _SAMTOOLS_DOCKER_IMAGE in cmd
+    assert "sh" not in cmd
+    assert f"index=/idx/{bai_name}" in cmd
+    assert f"load_index=/idx/{bai_name}" not in cmd
+    assert "chr22:22358161-27358161" in cmd
+    assert "--network=host" in cmd

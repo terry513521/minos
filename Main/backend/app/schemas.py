@@ -364,8 +364,6 @@ class HistorySeedChr22Request(BaseModel):
             if wid and wid not in seen:
                 ids.append(wid)
                 seen.add(wid)
-        if not ids:
-            raise ValueError("At least one worker_id or worker_ids entry is required")
         return ids
 
 
@@ -390,6 +388,7 @@ class HistorySeedChr22Response(BaseModel):
     dry_run: bool
     waves_completed: int = 0
     workers_per_wave: int = 0
+    worker_ids_used: list[str] = Field(default_factory=list)
     items: list[HistorySeedChr22Item] = Field(default_factory=list)
 
 

@@ -21,7 +21,11 @@ from app.history_origin import (
 from app.models import RoundHistory
 from app.schemas import HistorySeedChr22Item, HistorySeedChr22Request, HistorySeedChr22Response
 from app.services.history_store import save_history_record
-from app.services.worker_proxy import post_worker_benchmark, resolve_worker_base_urls
+from app.services.worker_proxy import (
+    post_worker_benchmark,
+    resolve_dispatchable_worker_ids,
+    resolve_worker_base_urls,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +118,14 @@ async def seed_chr22_history(
       2. await all responses
       3. save results, then start the next wave
     """
-    worker_ids = body.resolved_worker_ids()
+    worker_ids = await resolve_dispatchable_worker_ids(
+        db,
+        preferred_ids=body.resolved_worker_ids() or None,
+    )
+    if not worker_ids:
+        raise ValueError(
+            "No reachable workers. Register workers with health_url or base_url before seeding."
+        )
     source_chroms = {
         c.lower().strip() if c.lower().startswith("chr") else f"chr{c.lower().strip()}"
         for c in body.source_chromosomes
@@ -147,6 +158,7 @@ async def seed_chr22_history(
         scored=0,
         failed=0,
         dry_run=body.dry_run,
+        worker_ids_used=worker_ids,
         items=[],
     )
 
@@ -236,9 +248,12 @@ async def seed_chr22_history(
     if work_items and not body.dry_run:
         worker_bases = await resolve_worker_base_urls(db, worker_ids)
         for wave_index, wave in enumerate(waves, start=1):
-            worker_labels = ", ".join(item.worker_id for item in wave)
+            worker_labels = ", ".join(
+                f"{item.worker_id}@{worker_bases.get(item.worker_id) or 'unreachable'}"
+                for item in wave
+            )
             logger.info(
-                "chr22 seed wave %s/%s: dispatching %s task(s) to worker(s) %s",
+                "chr22 seed wave %s/%s: dispatching %s task(s) to %s",
                 wave_index,
                 len(waves),
                 len(wave),
