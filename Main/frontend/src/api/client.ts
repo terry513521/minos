@@ -50,6 +50,7 @@ export interface HistorySeedChr22Response {
   skipped_invalid: number;
   scored: number;
   failed: number;
+  queued?: number;
   dry_run: boolean;
   waves_completed?: number;
   workers_per_wave?: number;
@@ -71,6 +72,15 @@ export interface HistorySeedChr22Response {
     history_id?: string | null;
     error?: string | null;
   }>;
+}
+
+export interface HistorySeedSyncResponse {
+  workers_polled: number;
+  imported: number;
+  skipped_duplicate: number;
+  failed: number;
+  last_sync_at: string | null;
+  worker_errors: string[];
 }
 
 export interface HistoryImportResult {
@@ -463,6 +473,11 @@ export const api = {
     request<HistorySeedChr22Response>("/history/seed-chr22", {
       method: "POST",
       body: JSON.stringify(body),
+    }),
+  syncSeedResults: (body?: { worker_id?: string }) =>
+    request<HistorySeedSyncResponse>("/history/sync-seed-results", {
+      method: "POST",
+      body: JSON.stringify(body ?? {}),
     }),
   findCandidates: (body: FindCandidatesPayload) =>
     request<FindCandidatesResponse>("/candidates/find", {

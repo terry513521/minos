@@ -281,6 +281,39 @@ class WorkerBenchmarkResponse(BaseModel):
     error: str | None = None
 
 
+class WorkerSeedResultRow(BaseModel):
+    source_key: str
+    source_id: str | None = None
+    seed_id: str | None = None
+    source_window: str | None = None
+    target_window: str
+    tool: str
+    conf: dict[str, Any] = Field(default_factory=dict)
+    status: str | None = None
+    success: bool = False
+    score: float | None = None
+    error: str | None = None
+
+
+class WorkerSeedResultsFetchResponse(BaseModel):
+    worker_id: str
+    ok: bool
+    status_code: int | None = None
+    results: list[WorkerSeedResultRow] = Field(default_factory=list)
+    error: str | None = None
+
+
+class WorkerSeedBatchResponse(BaseModel):
+    worker_id: str
+    ok: bool
+    status_code: int | None = None
+    batch_id: str | None = None
+    queued: int = 0
+    skipped_duplicate: int = 0
+    status: str | None = None
+    error: str | None = None
+
+
 class WorkerStopAllResult(BaseModel):
     worker_id: str
     worker_name: str
@@ -400,6 +433,7 @@ class HistorySeedChr22Response(BaseModel):
     skipped_invalid: int
     scored: int
     failed: int
+    queued: int = 0
     dry_run: bool
     waves_completed: int = 0
     workers_per_wave: int = 0
@@ -407,6 +441,22 @@ class HistorySeedChr22Response(BaseModel):
     worker_dispatch_urls: dict[str, str] = Field(default_factory=dict)
     workers_skipped: list[HistorySeedChr22WorkerSkip] = Field(default_factory=list)
     items: list[HistorySeedChr22Item] = Field(default_factory=list)
+
+
+class HistorySeedSyncRequest(BaseModel):
+    worker_id: str | None = Field(
+        None,
+        description="Poll one worker; omit to poll all dispatchable workers.",
+    )
+
+
+class HistorySeedSyncResponse(BaseModel):
+    workers_polled: int
+    imported: int
+    skipped_duplicate: int
+    failed: int
+    last_sync_at: datetime | None = None
+    worker_errors: list[str] = Field(default_factory=list)
 
 
 class HistoryImportResponse(BaseModel):

@@ -16,10 +16,13 @@ from app.schemas import (
     HistoryRecord,
     HistorySeedChr22Request,
     HistorySeedChr22Response,
+    HistorySeedSyncRequest,
+    HistorySeedSyncResponse,
 )
 from app.serializers import history_to_response
 from app.services.history_import import import_history_api, import_history_files
 from app.services.history_seed import seed_chr22_history
+from app.services.history_seed_sync import sync_seed_results_from_workers
 from app.services.history_store import save_history_from_run, save_history_record
 
 router = APIRouter(prefix="/history", tags=["history"])
@@ -187,6 +190,20 @@ async def seed_chr22_from_portfolio(
 ) -> HistorySeedChr22Response:
     try:
         return await seed_chr22_history(db, body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/sync-seed-results", response_model=HistorySeedSyncResponse)
+async def sync_seed_results(
+    body: HistorySeedSyncRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+) -> HistorySeedSyncResponse:
+    worker_ids = None
+    if body and body.worker_id and body.worker_id.strip():
+        worker_ids = [body.worker_id.strip()]
+    try:
+        return await sync_seed_results_from_workers(db, worker_ids=worker_ids)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

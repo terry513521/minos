@@ -51,6 +51,7 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
   const [importing, setImporting] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [refetching, setRefetching] = useState(false);
+  const [refetchSummary, setRefetchSummary] = useState<string | null>(null);
   const [seeding, setSeeding] = useState(false);
   const [seedWorkerId, setSeedWorkerId] = useState("");
 
@@ -110,8 +111,36 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
   async function handleRefetch() {
     setRefetching(true);
     setError(null);
+    setRefetchSummary(null);
     try {
+      const sync = await api.syncSeedResults(
+        seedWorkerId ? { worker_id: seedWorkerId } : undefined,
+      );
       await refresh(true);
+      const parts: string[] = [];
+      if (sync.imported > 0) {
+        parts.push(`${sync.imported} seeded row${sync.imported === 1 ? "" : "s"} imported`);
+      }
+      if (sync.skipped_duplicate > 0) {
+        parts.push(`${sync.skipped_duplicate} already in history`);
+      }
+      if (sync.failed > 0) {
+        parts.push(`${sync.failed} failed to save`);
+      }
+      if (sync.worker_errors.length > 0) {
+        parts.push(sync.worker_errors.join("; "));
+      }
+      if (parts.length === 0) {
+        setRefetchSummary(
+          sync.workers_polled > 0
+            ? "No new scored seed results on worker"
+            : "No reachable worker to poll",
+        );
+      } else {
+        setRefetchSummary(parts.join(" · "));
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Refetch from worker failed");
     } finally {
       setRefetching(false);
     }
@@ -180,7 +209,9 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
         result.worker_dispatch_urls?.[seedWorkerId] ?? seedWorker.dispatch_base_url ?? "?";
       const summary = dryRun
         ? `Dry run: ${result.items.filter((i) => i.status === "dry_run").length} new benchmark(s) on ${workerName} (${result.skipped_existing} already seeded)`
-        : `Seeded ${result.scored} chr22 rows on ${workerName} (${result.skipped_existing} already seeded, ${result.failed} failed)`;
+        : (result.queued ?? 0) > 0
+          ? `Queued ${result.queued} chr22 benchmark(s) on ${workerName} (${result.skipped_existing} already seeded) — click Refetch when the worker finishes`
+          : `Seeded ${result.scored} chr22 rows on ${workerName} (${result.skipped_existing} already seeded, ${result.failed} failed)`;
       setError(null);
       window.alert(`${summary}\n\n${workerName} → ${workerUrl}`);
     } catch (e) {
@@ -281,7 +312,7 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
             className="button ghost history-refetch-btn"
             onClick={() => void handleRefetch()}
             disabled={refetching || loading || syncing || importing || seeding}
-            title="Reload portfolio history from the database, including chr22 seeded rows"
+            title="Fetch scored seed results from the selected worker and import into history"
           >
             {refetching ? "Refetching…" : "Refetch"}
           </button>
@@ -342,9 +373,13 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
           {seeding ? "Seeding…" : `Seed chr22 (${SEED_BATCH_LIMIT})`}
         </button>
         {seedWorkerId && (
-          <span className="chip chip-muted history-seed-hint">one worker · sequential</span>
+          <span className="chip chip-muted history-seed-hint">
+            one worker · background on worker · refetch for scores
+          </span>
         )}
       </div>
+
+      {refetchSummary && <div className="alert history-refetch-summary">{refetchSummary}</div>}
 
       {total != null && (
         <div className="history-meta">

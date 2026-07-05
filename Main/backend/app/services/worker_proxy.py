@@ -17,6 +17,9 @@ from app.schemas import (
     WorkerBenchmarkResponse,
     WorkerDispatchRequest,
     WorkerDispatchResponse,
+    WorkerSeedBatchResponse,
+    WorkerSeedResultRow,
+    WorkerSeedResultsFetchResponse,
     WorkerStopResponse,
     WorkerTrialScore,
 )
@@ -380,6 +383,145 @@ async def post_worker_benchmark(
             )
     except Exception as exc:
         return WorkerBenchmarkResponse(
+            worker_id=worker_id,
+            ok=False,
+            error=str(exc),
+        )
+
+
+async def post_worker_seed_batch(
+    *,
+    base_url: str | None,
+    worker_id: str,
+    items: list[dict[str, Any]],
+    batch_id: str | None = None,
+    timeout: float = 60.0,
+) -> WorkerSeedBatchResponse:
+    """POST /seed/batch on a registered worker."""
+    if not base_url:
+        return WorkerSeedBatchResponse(
+            worker_id=worker_id,
+            ok=False,
+            error="Worker has no valid base_url configured",
+        )
+    if not items:
+        return WorkerSeedBatchResponse(
+            worker_id=worker_id,
+            ok=False,
+            error="No seed items to queue",
+        )
+
+    url = f"{base_url.rstrip('/')}/seed/batch"
+    payload: dict[str, Any] = {"items": items}
+    if batch_id:
+        payload["batch_id"] = batch_id
+    logger.info("POST %s worker_id=%s items=%s", url, worker_id, len(items))
+    try:
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+            response = await client.post(url, json=payload)
+            body: dict | None = None
+            if response.headers.get("content-type", "").startswith("application/json"):
+                parsed = response.json()
+                if isinstance(parsed, dict):
+                    body = parsed
+            if response.status_code >= 400 or body is None:
+                return WorkerSeedBatchResponse(
+                    worker_id=worker_id,
+                    ok=False,
+                    status_code=response.status_code,
+                    error=(body or {}).get("detail")
+                    if body
+                    else response.text[:500] or "Seed batch request failed",
+                )
+            return WorkerSeedBatchResponse(
+                worker_id=worker_id,
+                ok=True,
+                status_code=response.status_code,
+                batch_id=str(body.get("batch_id") or "") or None,
+                queued=int(body.get("queued") or 0),
+                skipped_duplicate=int(body.get("skipped_duplicate") or 0),
+                status=str(body.get("status") or "") or None,
+            )
+    except Exception as exc:
+        return WorkerSeedBatchResponse(
+            worker_id=worker_id,
+            ok=False,
+            error=str(exc),
+        )
+
+
+async def fetch_worker_seed_results(
+    *,
+    base_url: str | None,
+    worker_id: str,
+    status: str | None = "scored",
+    timeout: float = 30.0,
+) -> WorkerSeedResultsFetchResponse:
+    """GET /seed/results from a registered worker."""
+    if not base_url:
+        return WorkerSeedResultsFetchResponse(
+            worker_id=worker_id,
+            ok=False,
+            error="Worker has no valid base_url configured",
+        )
+
+    url = f"{base_url.rstrip('/')}/seed/results"
+    params = {"status": status} if status else None
+    logger.info("GET %s worker_id=%s status=%s", url, worker_id, status)
+    try:
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+            response = await client.get(url, params=params)
+            body: dict | None = None
+            if response.headers.get("content-type", "").startswith("application/json"):
+                parsed = response.json()
+                if isinstance(parsed, dict):
+                    body = parsed
+            if response.status_code >= 400 or body is None:
+                return WorkerSeedResultsFetchResponse(
+                    worker_id=worker_id,
+                    ok=False,
+                    status_code=response.status_code,
+                    error=(body or {}).get("detail")
+                    if body
+                    else response.text[:500] or "Seed results fetch failed",
+                )
+            rows_raw = body.get("results")
+            results: list[WorkerSeedResultRow] = []
+            if isinstance(rows_raw, list):
+                for row in rows_raw:
+                    if not isinstance(row, dict):
+                        continue
+                    source_key = str(row.get("source_key") or "").strip()
+                    target_window = str(row.get("target_window") or "").strip()
+                    if not source_key or not target_window:
+                        continue
+                    tool = str(row.get("tool") or "gatk").lower().strip()
+                    conf = row.get("conf")
+                    if not isinstance(conf, dict):
+                        conf = {}
+                    results.append(
+                        WorkerSeedResultRow(
+                            source_key=source_key,
+                            source_id=str(row.get("source_id") or row.get("seed_id") or "") or None,
+                            seed_id=str(row.get("seed_id") or "") or None,
+                            source_window=str(row.get("source_window") or "") or None,
+                            target_window=target_window,
+                            tool=tool,
+                            conf=conf,
+                            status=str(row.get("status") or "") or None,
+                            success=bool(row.get("success")),
+                            score=float(row["score"]) if row.get("score") is not None else None,
+                            error=str(row.get("error") or "") or None,
+                        )
+                    )
+            return WorkerSeedResultsFetchResponse(
+                worker_id=worker_id,
+                ok=True,
+                status_code=response.status_code,
+                results=results,
+            )
+    except Exception as exc:
+        return WorkerSeedResultsFetchResponse(
             worker_id=worker_id,
             ok=False,
             error=str(exc),

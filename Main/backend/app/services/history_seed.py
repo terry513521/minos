@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from dataclasses import dataclass
 from typing import Any
@@ -21,9 +20,8 @@ from app.history_origin import (
 )
 from app.models import RoundHistory
 from app.schemas import HistorySeedChr22Item, HistorySeedChr22Request, HistorySeedChr22Response, HistorySeedChr22WorkerSkip
-from app.services.history_store import save_history_record
 from app.services.worker_proxy import (
-    post_worker_benchmark,
+    post_worker_seed_batch,
     resolve_seed_workers,
     resolve_worker_base_urls,
 )
@@ -71,86 +69,13 @@ class _SeedWorkItem:
     source_key: str
 
 
-async def _benchmark_seed_wave(
-    worker_bases: dict[str, str | None],
-    wave: list[_SeedWorkItem],
-) -> list[tuple[_SeedWorkItem, Any]]:
-    results = await asyncio.gather(
-        *[
-            post_worker_benchmark(
-                base_url=worker_bases.get(item.worker_id),
-                worker_id=item.worker_id,
-                window=item.target_window,
-                tool=item.tool,
-                conf=item.conf,
-            )
-            for item in wave
-        ]
-    )
-    return list(zip(wave, results))
-
-
-async def _persist_seed_result(
-    db: AsyncSession,
-    *,
-    item: _SeedWorkItem,
-    bench: Any,
-    seed_state: ExistingSeedState,
-) -> tuple[HistorySeedChr22Item, bool]:
-    """Save one benchmark result. Returns (item, scored_ok)."""
-    if not bench.ok or bench.score is None:
-        return (
-            HistorySeedChr22Item(
-                source_id=item.source_id,
-                source_window=item.source_window,
-                target_window=item.target_window,
-                tool=item.tool,
-                worker_id=item.worker_id,
-                status="failed",
-                error=bench.error or "Benchmark failed",
-            ),
-            False,
-        )
-
-    row = await save_history_record(
-        db,
-        window=item.target_window,
-        tool=item.tool,
-        conf=item.conf,
-        score=float(bench.score),
-        worker_id=item.worker_id,
-        source_key=item.source_key,
-        history_origin=HISTORY_ORIGIN_SEED,
-    )
-    seed_state.register_seed(
-        source_key=item.source_key,
-        portfolio_id=item.source_id,
-        target_window=item.target_window,
-        tool=item.tool,
-        conf=item.conf,
-    )
-    return (
-        HistorySeedChr22Item(
-            source_id=item.source_id,
-            source_window=item.source_window,
-            target_window=item.target_window,
-            tool=item.tool,
-            worker_id=item.worker_id,
-            status="scored",
-            score=row.score,
-            history_id=row.id,
-        ),
-        True,
-    )
-
-
 async def seed_chr22_history(
     db: AsyncSession,
     body: HistorySeedChr22Request,
 ) -> HistorySeedChr22Response:
     """
     Seed chr22 rows on one worker:
-      POST /benchmark for each portfolio row sequentially (one at a time).
+      POST /seed/batch — benchmarks run on the worker; use sync-seed-results to import scores.
     """
     preferred_id = body.resolved_seed_worker_id()
     worker_ids, skipped_workers, dispatch_urls = await resolve_seed_workers(
@@ -304,42 +229,51 @@ async def seed_chr22_history(
         )
 
     work_items = [entry[1] for entry in entries if entry[0] == "work"]
-    bench_by_source: dict[str, Any] = {}
-    waves_completed = 0
+    bench_by_source: dict[str, HistorySeedChr22Item] = {}
 
     if work_items and not body.dry_run:
         worker_bases = await resolve_worker_base_urls(db, worker_ids)
         dispatch_url = worker_bases.get(seed_worker_id) or "unreachable"
-        for item_index, item in enumerate(work_items, start=1):
-            logger.info(
-                "chr22 seed %s/%s: POST /benchmark to %s@%s window=%s",
-                item_index,
-                len(work_items),
-                seed_worker_id,
-                dispatch_url,
-                item.target_window,
+        batch_items = [
+            {
+                "source_id": item.source_id,
+                "source_key": item.source_key,
+                "source_window": item.source_window,
+                "target_window": item.target_window,
+                "tool": item.tool,
+                "conf": item.conf,
+            }
+            for item in work_items
+        ]
+        logger.info(
+            "chr22 seed: POST /seed/batch to %s@%s items=%s",
+            seed_worker_id,
+            dispatch_url,
+            len(batch_items),
+        )
+        batch = await post_worker_seed_batch(
+            base_url=worker_bases.get(seed_worker_id),
+            worker_id=seed_worker_id,
+            items=batch_items,
+        )
+        if not batch.ok:
+            raise ValueError(batch.error or "Failed to queue seed batch on worker")
+        response.queued = batch.queued
+        for item in work_items:
+            bench_by_source[item.source_id] = HistorySeedChr22Item(
+                source_id=item.source_id,
+                source_window=item.source_window,
+                target_window=item.target_window,
+                tool=item.tool,
+                worker_id=item.worker_id,
+                status="queued",
             )
-            wave_results = await _benchmark_seed_wave(worker_bases, [item])
-            item, bench = wave_results[0]
-            result_item, scored_ok = await _persist_seed_result(
-                db,
-                item=item,
-                bench=bench,
-                seed_state=seed_state,
-            )
-            if scored_ok:
-                response.scored += 1
-            else:
-                response.failed += 1
-            bench_by_source[item.source_id] = result_item
-            waves_completed += 1
-            logger.info(
-                "chr22 seed %s/%s complete (scored=%s failed=%s so far)",
-                item_index,
-                len(work_items),
-                response.scored,
-                response.failed,
-            )
+        logger.info(
+            "chr22 seed queued=%s skipped_dup=%s on %s",
+            batch.queued,
+            batch.skipped_duplicate,
+            dispatch_url,
+        )
 
     for kind, payload in entries:
         if kind in {"skip", "dry"}:
@@ -347,6 +281,6 @@ async def seed_chr22_history(
             continue
         response.items.append(bench_by_source[payload.source_id])
 
-    response.waves_completed = waves_completed if not body.dry_run else len(work_items)
-    response.workers_per_wave = 1
+    response.waves_completed = 1 if response.queued else 0
+    response.workers_per_wave = 1 if response.queued else 0
     return response

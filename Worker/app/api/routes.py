@@ -20,12 +20,18 @@ from app.domain.schemas import (
     HealthResponse,
     OptimizeRequest,
     OptimizeResponse,
+    SeedBatchRequest,
+    SeedBatchResponse,
+    SeedResultsResponse,
+    SeedStatusResponse,
     StopResponse,
     TrialScoreEntry,
 )
 from app.domain.state import best_store
 from app.optimization.jobs import request_stop_optimization, submit_optimize_job, worker_busy
 from app.optimization.optimizer import build_accept_response, validate_optimize_request
+from app.seed import jobs as seed_jobs
+from app.seed import store as seed_store
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -209,3 +215,48 @@ async def stop_optimization() -> StopResponse:
         worker=settings.name,
         message="Stop requested — finishing current trial…",
     )
+
+
+@app.post("/seed/batch", response_model=SeedBatchResponse, status_code=202)
+async def seed_batch(body: SeedBatchRequest) -> SeedBatchResponse:
+    if not body.items:
+        raise HTTPException(status_code=400, detail="At least one seed item is required")
+    entries = [
+        {
+            "source_id": item.source_id,
+            "source_key": item.source_key,
+            "source_window": item.source_window,
+            "target_window": item.target_window,
+            "tool": item.tool.lower().strip(),
+            "conf": item.conf,
+        }
+        for item in body.items
+    ]
+    try:
+        batch_id, queued, skipped = await asyncio.to_thread(
+            seed_jobs.submit_seed_batch,
+            batch_id=body.batch_id,
+            items=entries,
+            settings=settings,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    snapshot = await asyncio.to_thread(seed_store.status_snapshot)
+    return SeedBatchResponse(
+        batch_id=batch_id,
+        queued=queued,
+        skipped_duplicate=skipped,
+        status=str(snapshot.get("status") or "idle"),
+    )
+
+
+@app.get("/seed/status", response_model=SeedStatusResponse)
+async def seed_status() -> SeedStatusResponse:
+    snapshot = await asyncio.to_thread(seed_store.status_snapshot)
+    return SeedStatusResponse(**snapshot)
+
+
+@app.get("/seed/results", response_model=SeedResultsResponse)
+async def seed_results(status: str | None = None) -> SeedResultsResponse:
+    rows = await asyncio.to_thread(seed_store.list_results, status=status)
+    return SeedResultsResponse(results=rows)
