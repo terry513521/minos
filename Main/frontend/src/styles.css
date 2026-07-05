@@ -319,7 +319,8 @@ code, .input-mono {
   grid-template-columns: 1fr;
   grid-template-areas:
     "primary"
-    "workers";
+    "workers"
+    "history";
   gap: var(--pad-2);
   width: 100%;
 }
@@ -328,6 +329,7 @@ code, .input-mono {
   grid-area: primary;
 }
 #workers { grid-area: workers; }
+#history { grid-area: history; }
 
 .auto-mode-panel--embedded {
   margin: 0;

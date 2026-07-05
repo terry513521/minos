@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { FindCandidatesResponse } from "../api/client";
 import { CandidateFinderPanel } from "../components/CandidateFinderPanel";
 import { AutoModePanel } from "../components/AutoModePanel";
+import { HistorySidebar } from "../components/HistorySidebar";
 import { SectionHeader } from "../components/SectionHeader";
 import { WorkerStatusOverview } from "../components/WorkerStatusOverview";
 import { WorkersPanel } from "../components/WorkersPanel";
@@ -11,6 +12,7 @@ import { WorkerLiveStatus } from "../utils/workerLiveStatus";
 import { ApplyConfImportResult } from "../utils/workerConfImport";
 import { loadCandidateFinderState } from "../utils/candidateFinderStorage";
 import { ensureWorkerTunablesHydrated } from "../utils/workerTunableStorage";
+import { chromosomeFromWindow } from "../utils/window";
 
 const initialFinderState = loadCandidateFinderState();
 
@@ -133,6 +135,18 @@ export function ConsolePage() {
             onAssignHandlerReady={handleAssignHandlerReady}
             onApplyConfHandlerReady={handleApplyConfHandlerReady}
             sectionChild
+          />
+        </section>
+
+        <section id="history" className="panel">
+          <SectionHeader
+            step={3}
+            title="Portfolio history"
+            lead="Synced rounds from the public API, local imports, and chr22 seeds. Use Preview chr22 seed before running a batch."
+          />
+          <HistorySidebar
+            embedded
+            chromosomeFilter={chromosomeFromWindow(finderRegion) ?? undefined}
           />
         </section>
       </div>

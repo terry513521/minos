@@ -11,11 +11,13 @@ import { syncManualParamDefaultsFromAutoConfig } from "../utils/manualParamDefau
 const sectionsWhenAuto = [
   { hash: "#auto", label: "Auto mode" },
   { hash: "#workers", label: "Workers" },
+  { hash: "#history", label: "History" },
 ];
 
 const sectionsWhenManual = [
   { hash: "#candidates", label: "Candidates" },
   { hash: "#workers", label: "Workers" },
+  { hash: "#history", label: "History" },
 ];
 
 export function Layout() {
