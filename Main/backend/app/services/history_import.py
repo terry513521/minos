@@ -14,6 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.history_origin import HISTORY_ORIGIN_IMPORT, HISTORY_ORIGIN_PORTFOLIO
+from app.models import RoundHistory
 from app.selector import parse_window
 
 WINDOW_IN_REGION = re.compile(r"^(chr(?:[1-9]|1[0-9]|2[0-2]|X|Y|M)):(\d+)-(\d+)$", re.IGNORECASE)
