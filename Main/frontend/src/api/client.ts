@@ -56,6 +56,7 @@ export interface HistorySeedChr22Response {
     source_window: string;
     target_window: string;
     tool: string;
+    worker_id?: string | null;
     status: string;
     score?: number | null;
     history_id?: string | null;
@@ -442,7 +443,8 @@ export const api = {
       { method: "POST" },
     ),
   seedChr22History: (body: {
-    worker_id: string;
+    worker_id?: string;
+    worker_ids?: string[];
     limit?: number;
     dry_run?: boolean;
     source_chromosomes?: string[];

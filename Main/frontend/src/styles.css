@@ -1560,8 +1560,12 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
 .history-seed-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 0.4rem;
   margin: 0.35rem 0 0.5rem;
+}
+.history-seed-hint {
+  font-size: 0.75rem;
 }
 .history-score {
   margin-left: auto;

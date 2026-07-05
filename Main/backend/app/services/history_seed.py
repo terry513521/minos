@@ -10,6 +10,7 @@ from app.history_origin import (
     SEED_SOURCE_CHROMS,
     remap_window_to_chr22,
     seed_source_key,
+    worker_for_seed_slot,
 )
 from app.models import RoundHistory
 from app.schemas import HistorySeedChr22Item, HistorySeedChr22Request, HistorySeedChr22Response
@@ -21,6 +22,7 @@ async def seed_chr22_history(
     db: AsyncSession,
     body: HistorySeedChr22Request,
 ) -> HistorySeedChr22Response:
+    worker_ids = body.resolved_worker_ids()
     source_chroms = {
         c.lower().strip() if c.lower().startswith("chr") else f"chr{c.lower().strip()}"
         for c in body.source_chromosomes
@@ -57,6 +59,7 @@ async def seed_chr22_history(
     )
 
     batch = 0
+    assign_slot = 0
     for source in sources:
         if batch >= body.limit:
             break
@@ -90,6 +93,9 @@ async def seed_chr22_history(
             )
             continue
 
+        worker_id = worker_for_seed_slot(worker_ids, assign_slot)
+        assign_slot += 1
+
         if body.dry_run:
             batch += 1
             response.items.append(
@@ -98,6 +104,7 @@ async def seed_chr22_history(
                     source_window=source.window,
                     target_window=target_window,
                     tool=source.tool,
+                    worker_id=worker_id,
                     status="dry_run",
                 )
             )
@@ -105,7 +112,7 @@ async def seed_chr22_history(
 
         bench = await benchmark_on_worker(
             db,
-            worker_id=body.worker_id,
+            worker_id=worker_id,
             window=target_window,
             tool=source.tool,
             conf=source.conf,
@@ -118,6 +125,7 @@ async def seed_chr22_history(
                     source_window=source.window,
                     target_window=target_window,
                     tool=source.tool,
+                    worker_id=worker_id,
                     status="failed",
                     error=bench.error or "Benchmark failed",
                 )
@@ -130,7 +138,7 @@ async def seed_chr22_history(
             tool=source.tool,
             conf=source.conf,
             score=float(bench.score),
-            worker_id=body.worker_id,
+            worker_id=worker_id,
             source_key=key,
             history_origin=HISTORY_ORIGIN_SEED,
         )
@@ -143,6 +151,7 @@ async def seed_chr22_history(
                 source_window=source.window,
                 target_window=target_window,
                 tool=source.tool,
+                worker_id=worker_id,
                 status="scored",
                 score=row.score,
                 history_id=row.id,

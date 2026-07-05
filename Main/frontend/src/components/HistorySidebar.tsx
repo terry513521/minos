@@ -123,8 +123,8 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
   }
 
   async function handleSeedChr22(dryRun: boolean) {
-    const worker = workers.find((w) => w.base_url);
-    if (!worker) {
+    const seedWorkers = workers.filter((w) => w.base_url);
+    if (seedWorkers.length === 0) {
       setError("Register a worker with base_url before seeding chr22 history.");
       return;
     }
@@ -132,16 +132,17 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
     setError(null);
     try {
       const result = await api.seedChr22History({
-        worker_id: worker.id,
+        worker_ids: seedWorkers.map((w) => w.id),
         limit: SEED_BATCH_LIMIT,
         dry_run: dryRun,
         source_chromosomes: ["chr20", "chr21"],
       });
       loadMeta();
       refresh();
+      const workerNames = seedWorkers.map((w) => w.name || w.id).join(", ");
       const summary = dryRun
-        ? `Dry run: ${result.items.length} would process (${result.skipped_existing} already seeded)`
-        : `Seeded ${result.scored} chr22 rows (${result.skipped_existing} skipped, ${result.failed} failed)`;
+        ? `Dry run across ${seedWorkers.length} worker(s) (${workerNames}): ${result.items.length} would process (${result.skipped_existing} already seeded)`
+        : `Seeded ${result.scored} chr22 rows across ${seedWorkers.length} worker(s) (${result.skipped_existing} skipped, ${result.failed} failed)`;
       setError(null);
       window.alert(summary);
     } catch (e) {
@@ -276,6 +277,11 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
         >
           {seeding ? "Seeding…" : `Seed chr22 (${SEED_BATCH_LIMIT})`}
         </button>
+        {workers.filter((w) => w.base_url).length > 1 && (
+          <span className="chip chip-muted history-seed-hint">
+            Round-robin across {workers.filter((w) => w.base_url).length} workers
+          </span>
+        )}
       </div>
 
       {total != null && (

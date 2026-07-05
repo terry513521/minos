@@ -336,7 +336,14 @@ class HistoryOriginSummary(BaseModel):
 
 
 class HistorySeedChr22Request(BaseModel):
-    worker_id: str
+    worker_id: str | None = Field(
+        None,
+        description="Single worker (legacy). Use worker_ids to spread seeds across machines.",
+    )
+    worker_ids: list[str] = Field(
+        default_factory=list,
+        description="Round-robin across these workers (one benchmark per worker slot).",
+    )
     limit: int = Field(10, ge=1, le=100)
     dry_run: bool = False
     source_chromosomes: list[str] = Field(
@@ -344,12 +351,30 @@ class HistorySeedChr22Request(BaseModel):
         description="Portfolio rows on these chromosomes are remapped to chr22",
     )
 
+    def resolved_worker_ids(self) -> list[str]:
+        ids: list[str] = []
+        seen: set[str] = set()
+        if self.worker_id and self.worker_id.strip():
+            wid = self.worker_id.strip()
+            if wid not in seen:
+                ids.append(wid)
+                seen.add(wid)
+        for raw in self.worker_ids:
+            wid = (raw or "").strip()
+            if wid and wid not in seen:
+                ids.append(wid)
+                seen.add(wid)
+        if not ids:
+            raise ValueError("At least one worker_id or worker_ids entry is required")
+        return ids
+
 
 class HistorySeedChr22Item(BaseModel):
     source_id: str
     source_window: str
     target_window: str
     tool: str
+    worker_id: str | None = None
     status: str
     score: float | None = None
     history_id: str | None = None

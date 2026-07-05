@@ -29,6 +29,11 @@ CHR22_MAX_END = 51_033_777
 SEED_SOURCE_CHROMS: frozenset[str] = frozenset({"chr20", "chr21"})
 
 
+def worker_for_seed_slot(worker_ids: list[str], slot: int) -> str:
+    """Round-robin worker pick for seed slot 0, 1, 2, …"""
+    return worker_ids[slot % len(worker_ids)]
+
+
 def infer_history_origin(source_key: str | None) -> str:
     """Best-effort origin from source_key (used when backfilling legacy rows)."""
     if not source_key:
