@@ -1,6 +1,7 @@
 import { FindCandidatesResponse } from "../api/client";
+import { DEFAULT_TOOLKIT, TOOLKIT_OPTIONS, ToolkitOption } from "../types/workerAssignment";
 
-const STORAGE_KEY = "effortless:candidate-finder:v1";
+const STORAGE_KEY = "effortless:candidate-finder:v2";
 
 export const DEFAULT_K_CANDIDATES = 6;
 export const MIN_K_CANDIDATES = 1;
@@ -8,8 +9,14 @@ export const MAX_K_CANDIDATES = 16;
 
 export interface PersistedCandidateFinderState {
   region: string;
+  tool: ToolkitOption;
   kCandidates: number;
   result: FindCandidatesResponse | null;
+}
+
+export function normalizeFinderTool(raw: string | undefined): ToolkitOption {
+  const tool = (raw ?? DEFAULT_TOOLKIT).toLowerCase().trim();
+  return TOOLKIT_OPTIONS.includes(tool as ToolkitOption) ? (tool as ToolkitOption) : DEFAULT_TOOLKIT;
 }
 
 export function clampKCandidates(value: number | undefined): number {
@@ -26,6 +33,7 @@ export function loadCandidateFinderState(): PersistedCandidateFinderState | null
     if (!parsed || typeof parsed !== "object") return null;
     return {
       region: typeof parsed.region === "string" ? parsed.region : "",
+      tool: normalizeFinderTool(typeof parsed.tool === "string" ? parsed.tool : undefined),
       kCandidates: clampKCandidates(parsed.kCandidates),
       result: parsed.result ?? null,
     };

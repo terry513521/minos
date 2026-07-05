@@ -84,7 +84,8 @@ export function ConfParamPicker({
 
       {listToolOptionEntries(baseConf, tool).length === 0 ? (
         <p className="worker-conf-picker-empty">
-          No {tool}_options in this base conf.
+          No {tool}_options in this base conf. Find candidates with Tool = {tool}, or edit conf JSON
+          to include a <code>{tool}_options</code> block (defaults load on assign).
         </p>
       ) : entries.length === 0 ? (
         <p className="worker-conf-picker-empty">No parameters match your filter.</p>

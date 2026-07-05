@@ -49,7 +49,7 @@ import {
   defaultParamInterval,
   ParamInterval,
 } from "../utils/paramBounds";
-import { parseToolOptionValue, setToolOption } from "../utils/confEdit";
+import { ensureToolOptionsInBaseConf, parseToolOptionValue, setToolOption } from "../utils/confEdit";
 import { bestConfDownloadFileName } from "../utils/confDisplay";
 import { WORKERS_CHANGED_EVENT, WORKERS_CHECK_ALL_HEALTH_EVENT, WORKERS_CHECK_ALL_HEALTH_RESULT_EVENT, WORKERS_CLEAR_ALL_EVENT, WORKERS_STOP_ALL_EVENT, WORKERS_START_ALL_EVENT, WORKERS_START_ALL_RESULT_EVENT } from "./AddWorkerModal";
 import { ConfParamPicker } from "./ConfParamPicker";
@@ -789,11 +789,13 @@ export function WorkersPanel({
             parsed.result.baseConf,
           );
           const importedTool = inferToolFromBaseConf(mergedCandidate.base_conf, assignment.tool);
+          const hydratedConf = ensureToolOptionsInBaseConf(mergedCandidate.base_conf, importedTool);
+          const hydratedCandidate = { ...mergedCandidate, base_conf: hydratedConf };
           assignment = {
             ...assignment,
-            candidate: mergedCandidate,
+            candidate: hydratedCandidate,
             ...assignmentParamsForTool(
-              { ...assignment, candidate: mergedCandidate, tool: importedTool },
+              { ...assignment, candidate: hydratedCandidate, tool: importedTool },
               importedTool,
               worker,
             ),
@@ -1375,6 +1377,7 @@ export function WorkersPanel({
     const worker = workers.find((w) => w.id === workerId);
 
     const tool = inferToolFromBaseConf(nextBaseConf, assignment.tool);
+    const hydratedConf = ensureToolOptionsInBaseConf(nextBaseConf, tool);
     const toolChanged = tool !== assignment.tool;
 
     if (toolChanged && worker) {
@@ -1384,10 +1387,10 @@ export function WorkersPanel({
           ...assignment,
           candidate: {
             ...assignment.candidate,
-            base_conf: nextBaseConf,
+            base_conf: hydratedConf,
           },
           ...assignmentParamsForTool(
-            { ...assignment, candidate: { ...assignment.candidate, base_conf: nextBaseConf } },
+            { ...assignment, candidate: { ...assignment.candidate, base_conf: hydratedConf } },
             tool,
             worker,
           ),
@@ -1400,7 +1403,7 @@ export function WorkersPanel({
 
     const nextIntervals = { ...assignment.paramIntervals };
     for (const param of assignment.selectedParams) {
-      const options = nextBaseConf[`${tool}_options`];
+      const options = hydratedConf[`${tool}_options`];
       const baseValue =
         options && typeof options === "object" && !Array.isArray(options)
           ? String((options as Record<string, unknown>)[param] ?? "")
@@ -1411,7 +1414,7 @@ export function WorkersPanel({
     updateAssignment(workerId, {
       candidate: {
         ...assignment.candidate,
-        base_conf: nextBaseConf,
+        base_conf: hydratedConf,
       },
       paramIntervals: nextIntervals,
     });

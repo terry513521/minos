@@ -6,8 +6,10 @@ import {
   clampKCandidates,
   DEFAULT_K_CANDIDATES,
   loadCandidateFinderState,
+  normalizeFinderTool,
   saveCandidateFinderState,
 } from "../utils/candidateFinderStorage";
+import { TOOLKIT_OPTIONS, ToolkitOption } from "../types/workerAssignment";
 import { normalizeRegion, chromosomeFromWindow, analyzeBenchmarkWindow, formatWindowSpan } from "../utils/window";
 import { AUTO_MODE_CHANGED_EVENT } from "./AutoModePanel";
 import { loadAutoModeState } from "../utils/autoModeStorage";
@@ -49,6 +51,9 @@ export function CandidateFinderPanel({
   const [kCandidates, setKCandidates] = useState(() =>
     clampKCandidates(initialFinderState?.kCandidates ?? DEFAULT_K_CANDIDATES),
   );
+  const [tool, setTool] = useState<ToolkitOption>(() =>
+    normalizeFinderTool(initialFinderState?.tool),
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<FindCandidatesResponse | null>(
@@ -80,8 +85,8 @@ export function CandidateFinderPanel({
   }, []);
 
   useEffect(() => {
-    saveCandidateFinderState({ region, kCandidates, result });
-  }, [region, kCandidates, result]);
+    saveCandidateFinderState({ region, tool, kCandidates, result });
+  }, [region, tool, kCandidates, result]);
 
   useEffect(() => {
     onRegionChange?.(region);
@@ -110,7 +115,7 @@ export function CandidateFinderPanel({
     setSelectedCandidateIndex(null);
     setAssignMessage(null);
     onResultChange?.(null);
-  }, [region, onResultChange]);
+  }, [region, tool, onResultChange]);
 
   useEffect(() => {
     if (!result) {
@@ -141,6 +146,7 @@ export function CandidateFinderPanel({
     try {
       const data = await api.findCandidates({
         window,
+        tool,
         k_candidates: kCandidates,
       });
       setResult(data);
@@ -206,6 +212,21 @@ export function CandidateFinderPanel({
           )}
         </label>
         <label className="candidate-k-field">
+          <span className="candidate-k-label">Tool</span>
+          <select
+            className="candidate-tool-input"
+            value={tool}
+            onChange={(e) => setTool(e.target.value as ToolkitOption)}
+            aria-label="Variant caller for candidate search"
+          >
+            {TOOLKIT_OPTIONS.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="candidate-k-field">
           <span className="candidate-k-label">Candidates</span>
           <DeferredNumberInput
             className="candidate-k-input"
@@ -245,6 +266,7 @@ export function CandidateFinderPanel({
               <CandidateCard
                 key={c.index}
                 candidate={c}
+                tool={result.tool}
                 fallbackChrom={result.chromosome}
                 selected={selectedCandidateIndex === c.index}
                 onSelect={() => handleSelectCandidate(c.index)}
@@ -283,12 +305,14 @@ export function CandidateFinderPanel({
 
 function CandidateCard({
   candidate,
+  tool,
   fallbackChrom,
   selected,
   onSelect,
   draggable = false,
 }: {
   candidate: CandidatePreview;
+  tool: string;
   fallbackChrom: string;
   selected: boolean;
   onSelect: () => void;
@@ -337,6 +361,7 @@ function CandidateCard({
     >
       <div className="candidate-result-top">
         <span className="candidate-result-chrom">{chrom}</span>
+        <span className="chip chip-accent candidate-result-tool">{tool}</span>
         <span className="candidate-result-score">{(score * 100).toFixed(1)}%</span>
       </div>
       {region ? (

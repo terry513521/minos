@@ -1,5 +1,33 @@
 import { getParamBound, ParamBoundSpec } from "./paramBounds";
+import { buildToolReferenceConf } from "./paramBounds";
 import { listToolOptionEntries, toolOptionsKey } from "./candidateAssign";
+
+/** Merge reference `{tool}_options` when missing or empty (e.g. DeepVariant defaults). */
+export function ensureToolOptionsInBaseConf(
+  baseConf: Record<string, unknown>,
+  tool: string,
+): Record<string, unknown> {
+  const key = toolOptionsKey(tool);
+  const existing = baseConf[key];
+  const hasOptions =
+    existing &&
+    typeof existing === "object" &&
+    !Array.isArray(existing) &&
+    Object.keys(existing as Record<string, unknown>).length > 0;
+  if (hasOptions) {
+    return baseConf;
+  }
+  const reference = buildToolReferenceConf(tool);
+  const refOptions = reference[key];
+  const mergedOptions =
+    refOptions && typeof refOptions === "object" && !Array.isArray(refOptions)
+      ? { ...(refOptions as Record<string, unknown>) }
+      : {};
+  if (existing && typeof existing === "object" && !Array.isArray(existing)) {
+    Object.assign(mergedOptions, existing as Record<string, unknown>);
+  }
+  return { ...baseConf, [key]: mergedOptions };
+}
 
 export function getToolOptions(
   baseConf: Record<string, unknown>,

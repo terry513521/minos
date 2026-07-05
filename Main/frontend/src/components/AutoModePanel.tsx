@@ -311,6 +311,7 @@ export function AutoModePanel({ embedded = false }: AutoModePanelProps) {
                   <AutoModeFoundCandidateCard
                     key={candidate.index}
                     candidate={candidate}
+                    tool={config.tool}
                     selectionSlots={selectionByIndex.get(candidate.index) ?? []}
                   />
                 ))}
@@ -494,9 +495,11 @@ function formatRoundEndReason(reason: string): string {
 
 function AutoModeFoundCandidateCard({
   candidate,
+  tool,
   selectionSlots,
 }: {
   candidate: CandidatePreview;
+  tool: string;
   selectionSlots: AutoSelectedCandidate[];
 }) {
   const selected = selectionSlots.length > 0;
@@ -510,6 +513,7 @@ function AutoModeFoundCandidateCard({
     >
       <div className="auto-mode-found-item-head">
         <span className="candidate-rank-badge">#{candidate.index + 1}</span>
+        <span className="chip chip-accent">{tool}</span>
         {selected ? (
           <span className="chip chip-accent">Selected</span>
         ) : (

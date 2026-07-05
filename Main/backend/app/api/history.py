@@ -16,12 +16,10 @@ from app.schemas import (
     HistoryRecord,
     HistorySeedChr22Request,
     HistorySeedChr22Response,
-    HistorySeedSyncResponse,
 )
 from app.serializers import history_to_response
 from app.services.history_import import import_history_api, import_history_files
 from app.services.history_seed import seed_chr22_history
-from app.services.history_seed_sync import sync_seed_results_from_workers
 from app.services.history_store import save_history_from_run, save_history_record
 
 router = APIRouter(prefix="/history", tags=["history"])
@@ -191,14 +189,6 @@ async def seed_chr22_from_portfolio(
         return await seed_chr22_history(db, body)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@router.post("/sync-seed-results", response_model=HistorySeedSyncResponse)
-async def sync_seed_results(
-    db: AsyncSession = Depends(get_db),
-) -> HistorySeedSyncResponse:
-    """Pull completed worker seed benchmarks into round_history (deduped)."""
-    return await sync_seed_results_from_workers(db)
 
 
 @router.get("", response_model=list[HistoryRecord])

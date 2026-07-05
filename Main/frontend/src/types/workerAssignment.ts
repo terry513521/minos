@@ -1,5 +1,6 @@
 import { AutoModeStatus, CandidatePreview, FindCandidatesResponse, WorkerRecord } from "../api/client";
 import { defaultSelectedParams, listToolOptionKeys, toolOptionsKey } from "../utils/candidateAssign";
+import { ensureToolOptionsInBaseConf } from "../utils/confEdit";
 import {
   applyWorkerTunableDefaults,
   paramIntervalsForWorker,
@@ -275,7 +276,9 @@ export function createAssignment(
   const contextTool = (context.tool?.toLowerCase() as ToolkitOption) || DEFAULT_TOOLKIT;
   const contextFallback = TOOLKIT_OPTIONS.includes(contextTool) ? contextTool : DEFAULT_TOOLKIT;
   const resolvedTool = inferToolFromBaseConf(candidate.base_conf, contextFallback);
-  const keys = listToolOptionKeys(candidate.base_conf, resolvedTool);
+  const hydratedConf = ensureToolOptionsInBaseConf(candidate.base_conf, resolvedTool);
+  const hydratedCandidate = { ...candidate, base_conf: hydratedConf };
+  const keys = listToolOptionKeys(hydratedConf, resolvedTool);
   const workerRef = worker ? { id: worker.id, name: worker.name } : undefined;
   const fromWorker = workerRef
     ? selectedParamsForWorker(workerRef, resolvedTool, keys)
@@ -285,12 +288,12 @@ export function createAssignment(
   const tunableDefaults = applyWorkerTunableDefaults(
     workerRef,
     resolvedTool,
-    candidate.base_conf,
+    hydratedConf,
     selectedParams,
   );
   const workerName = worker?.name?.trim() ?? "";
   return {
-    candidate,
+    candidate: hydratedCandidate,
     window: assignmentWindowFromRegion(regionInput, context.window),
     tool: resolvedTool,
     algorithm: workerName
