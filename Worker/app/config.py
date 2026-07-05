@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     log_level: str = "info"
     name: str = "optimizer-1"
     data_dir: str = "datasets"
-    chromosomes: str = "chr20,chr21"
+    chromosomes: str = "chr20,chr21,chr22"
     platform_url: str = "https://api.theminos.ai"
     reference_url: str = "https://api.theminos.ai/reference"
     # Max trials after base benchmark for adaptive search (optuna, gp, random, sobol, lhs).

@@ -1,5 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, HistoryRecord } from "../api/client";
+import {
+  api,
+  HistoryChromosomeSummary,
+  HistoryOrigin,
+  HistoryOriginSummary,
+  HistoryRecord,
+  WorkerRecord,
+} from "../api/client";
+import {
+  HISTORY_ORIGIN_FILTER_OPTIONS,
+  historyOriginClass,
+  historyOriginLabel,
+} from "../utils/historyOrigin";
 import {
   HistorySortKey,
   smartSearchHistory,
@@ -11,6 +23,7 @@ import { ConfDetails } from "./ConfDetails";
 
 const DEFAULT_VISIBLE = 5;
 const DEFAULT_CHROMOSOMES = 5;
+const SEED_BATCH_LIMIT = 10;
 
 interface HistorySidebarProps {
   chromosomeFilter?: string | null;
@@ -20,8 +33,11 @@ interface HistorySidebarProps {
 export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySidebarProps) {
   const [rows, setRows] = useState<HistoryRecord[]>([]);
   const [total, setTotal] = useState<number | null>(null);
-  const [chromosomes, setChromosomes] = useState<Array<{ chromosome: string; count: number }>>([]);
+  const [chromosomes, setChromosomes] = useState<HistoryChromosomeSummary[]>([]);
+  const [origins, setOrigins] = useState<HistoryOriginSummary[]>([]);
+  const [workers, setWorkers] = useState<WorkerRecord[]>([]);
   const [filter, setFilter] = useState<string>("");
+  const [originFilter, setOriginFilter] = useState<"" | HistoryOrigin>("");
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<HistorySortKey>("score-desc");
   const [showAllRecords, setShowAllRecords] = useState(false);
@@ -29,6 +45,8 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [seeding, setSeeding] = useState(false);
 
   useEffect(() => {
     if (chromosomeFilter) {
@@ -36,17 +54,28 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
     }
   }, [chromosomeFilter]);
 
+  function loadMeta() {
+    Promise.all([api.historyChromosomes(), api.historyOrigins(), api.listWorkers()])
+      .then(([chroms, originRows, workerRows]) => {
+        setChromosomes(chroms);
+        setOrigins(originRows);
+        setWorkers(workerRows);
+      })
+      .catch(() => {});
+  }
+
   useEffect(() => {
-    api.historyChromosomes().then(setChromosomes).catch(() => {});
+    loadMeta();
   }, []);
 
   function refresh() {
     setLoading(true);
     setError(null);
     const activeFilter = filter || undefined;
+    const activeOrigin = originFilter || undefined;
     Promise.all([
-      api.listHistory(activeFilter),
-      api.historyCount(activeFilter),
+      api.listHistory(activeFilter, 500, activeOrigin),
+      api.historyCount(activeFilter, activeOrigin),
     ])
       .then(([list, countRes]) => {
         setRows(list);
@@ -59,7 +88,7 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
   useEffect(() => {
     refresh();
     setShowAllRecords(false);
-  }, [filter]);
+  }, [filter, originFilter]);
 
   useEffect(() => {
     setShowAllRecords(false);
@@ -70,13 +99,55 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
     setError(null);
     try {
       await api.importHistory(false);
-      const chroms = await api.historyChromosomes();
-      setChromosomes(chroms);
+      loadMeta();
       refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Import failed");
     } finally {
       setImporting(false);
+    }
+  }
+
+  async function handleSyncRounds() {
+    setSyncing(true);
+    setError(null);
+    try {
+      await api.syncHistoryRounds(false);
+      loadMeta();
+      refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Sync failed");
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  async function handleSeedChr22(dryRun: boolean) {
+    const worker = workers.find((w) => w.base_url);
+    if (!worker) {
+      setError("Register a worker with base_url before seeding chr22 history.");
+      return;
+    }
+    setSeeding(true);
+    setError(null);
+    try {
+      const result = await api.seedChr22History({
+        worker_id: worker.id,
+        limit: SEED_BATCH_LIMIT,
+        dry_run: dryRun,
+        source_chromosomes: ["chr20", "chr21"],
+      });
+      loadMeta();
+      refresh();
+      const summary = dryRun
+        ? `Dry run: ${result.items.length} would process (${result.skipped_existing} already seeded)`
+        : `Seeded ${result.scored} chr22 rows (${result.skipped_existing} skipped, ${result.failed} failed)`;
+      setError(null);
+      window.alert(summary);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Seed failed");
+    } finally {
+      setSeeding(false);
     }
   }
 
@@ -95,6 +166,10 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
     : displayedRows.slice(0, DEFAULT_VISIBLE);
   const hiddenRecordCount = Math.max(0, displayedRows.length - DEFAULT_VISIBLE);
 
+  const originSummary = origins
+    .map((row) => `${row.label} ${row.count}`)
+    .join(" · ");
+
   const body = (
     <>
       <label className="history-search">
@@ -107,6 +182,19 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
           aria-label="Smart search history"
         />
       </label>
+
+      <div className="history-toolbar-line history-origin-filters">
+        {HISTORY_ORIGIN_FILTER_OPTIONS.map((opt) => (
+          <button
+            key={opt.value || "all"}
+            type="button"
+            className={`history-origin-chip${originFilter === opt.value ? " active" : ""}`}
+            onClick={() => setOriginFilter(opt.value)}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
 
       <div className="history-toolbar-line">
         <div className="history-toolbar-filters">
@@ -123,6 +211,7 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
               type="button"
               className={`history-chrom-chip${filter === row.chromosome ? " active" : ""}`}
               onClick={() => setFilter(row.chromosome)}
+              title={`Real ${row.portfolio} · Seeded ${row.seed}`}
             >
               {row.chromosome}
               <span className="history-chrom-count">{row.count}</span>
@@ -156,10 +245,37 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
           >
             {sortLabel(sortKey)}
           </button>
+          <button
+            type="button"
+            className="button ghost"
+            onClick={handleSyncRounds}
+            disabled={syncing}
+          >
+            {syncing ? "Syncing…" : "Sync API"}
+          </button>
           <button type="button" className="button ghost" onClick={handleImport} disabled={importing}>
             {importing ? "Importing…" : "Sync JSON"}
           </button>
         </div>
+      </div>
+
+      <div className="history-seed-actions">
+        <button
+          type="button"
+          className="button ghost"
+          disabled={seeding}
+          onClick={() => handleSeedChr22(true)}
+        >
+          Preview chr22 seed
+        </button>
+        <button
+          type="button"
+          className="button"
+          disabled={seeding}
+          onClick={() => handleSeedChr22(false)}
+        >
+          {seeding ? "Seeding…" : `Seed chr22 (${SEED_BATCH_LIMIT})`}
+        </button>
       </div>
 
       {total != null && (
@@ -168,6 +284,9 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
             {displayedRows.length} match{displayedRows.length === 1 ? "" : "es"}
             {search.trim() ? ` · ${total} loaded` : ""}
           </span>
+          {originSummary && (
+            <span className="chip chip-muted history-origin-summary">{originSummary}</span>
+          )}
         </div>
       )}
 
@@ -183,6 +302,9 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
           {visibleRows.map((row) => (
             <li key={row.id} className="history-item">
               <div className="history-item-top">
+                <span className={historyOriginClass(row.history_origin)}>
+                  {historyOriginLabel(row.history_origin)}
+                </span>
                 <span className="history-chrom">{row.chromosome}</span>
                 <span className="history-score">{(row.score * 100).toFixed(1)}%</span>
                 <ConfDetails conf={row.conf} label="···" compact />

@@ -5,6 +5,11 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.history_origin import (
+    HISTORY_ORIGIN_PORTFOLIO,
+    HISTORY_ORIGIN_WORKER,
+    infer_history_origin,
+)
 from app.models import OptimizationRun, RoundHistory
 from app.selector import parse_window
 
@@ -23,6 +28,7 @@ async def save_history_record(
     run_id: str | None = None,
     worker_id: str | None = None,
     source_key: str | None = None,
+    history_origin: str | None = None,
     replace: bool = False,
 ) -> RoundHistory:
     """Insert a scored history row. Parses window into chromosome/start/end."""
@@ -32,6 +38,7 @@ async def save_history_record(
     parsed = parse_window(window)
     tool_key = tool.lower().strip()
     key = source_key or (f"run:{run_id}" if run_id else None)
+    origin = history_origin or (infer_history_origin(key) if key else HISTORY_ORIGIN_PORTFOLIO)
 
     if key:
         existing = await db.execute(
@@ -50,6 +57,7 @@ async def save_history_record(
             row.score = float(score)
             row.run_id = run_id
             row.worker_id = worker_id
+            row.history_origin = origin
             await db.commit()
             await db.refresh(row)
             return row
@@ -65,6 +73,7 @@ async def save_history_record(
         run_id=run_id,
         worker_id=worker_id,
         source_key=key,
+        history_origin=origin,
     )
     db.add(row)
     await db.commit()
@@ -90,5 +99,6 @@ async def save_history_from_run(
         score=run.winner_score,
         run_id=run.id,
         source_key=_source_key_for_run(run.id),
+        history_origin=HISTORY_ORIGIN_WORKER,
         replace=replace,
     )

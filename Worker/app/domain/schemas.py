@@ -113,3 +113,20 @@ class StopResponse(BaseModel):
     status: str
     worker: str
     message: str
+
+
+class BenchmarkRequest(BaseModel):
+    window: str
+    tool: str
+    conf: dict[str, Any] = Field(default_factory=dict)
+
+
+class BenchmarkResponse(BaseModel):
+    success: bool
+    window: str
+    tool: str
+    score: float | None = None
+    raw_score: float | None = None
+    variant_count: int = 0
+    cached: bool = False
+    error: str | None = None

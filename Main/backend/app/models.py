@@ -105,6 +105,7 @@ class RoundHistory(Base):
     score: Mapped[float] = mapped_column(Float, nullable=False)
     run_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     source_key: Mapped[str | None] = mapped_column(String(256), nullable=True, unique=True, index=True)
+    history_origin: Mapped[str] = mapped_column(String(32), default="portfolio", index=True)
     worker_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 

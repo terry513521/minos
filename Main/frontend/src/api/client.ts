@@ -12,6 +12,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+export type HistoryOrigin = "portfolio" | "seed" | "worker" | "import";
+
 export interface HistoryRecord {
   id: string;
   window: string;
@@ -22,7 +24,43 @@ export interface HistoryRecord {
   conf: Record<string, unknown>;
   score: number;
   run_id?: string | null;
+  history_origin: HistoryOrigin;
+  source_key?: string | null;
   created_at: string;
+}
+
+export interface HistoryChromosomeSummary {
+  chromosome: string;
+  count: number;
+  portfolio: number;
+  seed: number;
+  worker: number;
+  import: number;
+}
+
+export interface HistoryOriginSummary {
+  origin: HistoryOrigin;
+  label: string;
+  count: number;
+}
+
+export interface HistorySeedChr22Response {
+  total_sources: number;
+  skipped_existing: number;
+  skipped_invalid: number;
+  scored: number;
+  failed: number;
+  dry_run: boolean;
+  items: Array<{
+    source_id: string;
+    source_window: string;
+    target_window: string;
+    tool: string;
+    status: string;
+    score?: number | null;
+    history_id?: string | null;
+    error?: string | null;
+  }>;
 }
 
 export interface HistoryImportResult {
@@ -382,16 +420,37 @@ export const api = {
   getPlatformRound: () => request<PlatformRound>("/platform/round"),
   refreshPlatformRound: () =>
     request<PlatformRound>("/platform/round/refresh", { method: "POST" }),
-  listHistory: (chromosome?: string, limit = 500) =>
-    request<HistoryRecord[]>(
-      `/history?limit=${limit}${chromosome ? `&chromosome=${encodeURIComponent(chromosome)}` : ""}`,
-    ),
-  historyCount: (chromosome?: string) =>
-    request<{ count: number }>(
-      `/history/count${chromosome ? `?chromosome=${encodeURIComponent(chromosome)}` : ""}`,
-    ),
+  listHistory: (chromosome?: string, limit = 500, origin?: HistoryOrigin) => {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (chromosome) params.set("chromosome", chromosome);
+    if (origin) params.set("origin", origin);
+    return request<HistoryRecord[]>(`/history?${params.toString()}`);
+  },
+  historyCount: (chromosome?: string, origin?: HistoryOrigin) => {
+    const params = new URLSearchParams();
+    if (chromosome) params.set("chromosome", chromosome);
+    if (origin) params.set("origin", origin);
+    const qs = params.toString();
+    return request<{ count: number }>(`/history/count${qs ? `?${qs}` : ""}`);
+  },
   historyChromosomes: () =>
-    request<Array<{ chromosome: string; count: number }>>("/history/chromosomes"),
+    request<HistoryChromosomeSummary[]>("/history/chromosomes"),
+  historyOrigins: () => request<HistoryOriginSummary[]>("/history/origins"),
+  syncHistoryRounds: (replace = false) =>
+    request<HistoryImportResult>(
+      `/history/sync-rounds${replace ? "?replace=true" : ""}`,
+      { method: "POST" },
+    ),
+  seedChr22History: (body: {
+    worker_id: string;
+    limit?: number;
+    dry_run?: boolean;
+    source_chromosomes?: string[];
+  }) =>
+    request<HistorySeedChr22Response>("/history/seed-chr22", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   findCandidates: (body: FindCandidatesPayload) =>
     request<FindCandidatesResponse>("/candidates/find", {
       method: "POST",

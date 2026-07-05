@@ -11,6 +11,7 @@ from app.paths import WORKER_ROOT
 MINOS_GIAB_REGIONS = (
     ("chr20", "chr20:39669962-44669962"),
     ("chr21", "chr21:35444092-40444092"),
+    ("chr22", "chr22:35444092-40444092"),
 )
 
 

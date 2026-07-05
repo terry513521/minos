@@ -97,5 +97,7 @@ def history_to_response(row: RoundHistory) -> HistoryRecord:
         conf=row.conf,
         score=row.score,
         run_id=row.run_id,
+        history_origin=row.history_origin or "portfolio",
+        source_key=row.source_key,
         created_at=row.created_at,
     )

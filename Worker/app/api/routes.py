@@ -4,10 +4,12 @@ import os
 import psutil
 from fastapi import FastAPI, HTTPException
 
-from app.benchmark import benchmark_status
+from app.benchmark import benchmark_status, run_benchmark, validate_benchmark_assets, validate_tool_supported
 from app.config import get_settings
 from app.core.utils import format_bytes
 from app.domain.schemas import (
+    BenchmarkRequest,
+    BenchmarkResponse,
     BestScoreResponse,
     HealthResponse,
     OptimizeRequest,
@@ -108,6 +110,36 @@ async def post_data(body: OptimizeRequest) -> OptimizeResponse:
 @app.post("/optimize", response_model=OptimizeResponse, status_code=202)
 async def optimize(body: OptimizeRequest) -> OptimizeResponse:
     return await _accept_job(body)
+
+
+@app.post("/benchmark", response_model=BenchmarkResponse)
+async def benchmark_once(body: BenchmarkRequest) -> BenchmarkResponse:
+    """Score one conf on a GIAB window (used by Main chr22 history seeding)."""
+    window = body.window.strip()
+    tool = body.tool.lower().strip()
+    try:
+        await asyncio.to_thread(validate_tool_supported, tool)
+        await asyncio.to_thread(validate_benchmark_assets, window, settings)
+        result = await asyncio.to_thread(
+            run_benchmark,
+            window=window,
+            tool=tool,
+            conf=body.conf,
+            settings=settings,
+        )
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return BenchmarkResponse(
+        success=result.success,
+        window=window,
+        tool=tool,
+        score=result.score if result.success else None,
+        raw_score=result.raw_score if result.success else None,
+        variant_count=result.variant_count,
+        cached=result.cached,
+        error=result.error,
+    )
 
 
 @app.post("/stop", response_model=StopResponse)

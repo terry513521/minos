@@ -14,6 +14,7 @@ export function smartSearchHistory(rows: HistoryRecord[], query: string): Histor
       row.tool,
       row.score.toFixed(4),
       (row.score * 100).toFixed(1),
+      row.history_origin,
     ]
       .join(" ")
       .toLowerCase();

@@ -13,7 +13,7 @@ import httpx
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import RoundHistory
+from app.history_origin import HISTORY_ORIGIN_IMPORT, HISTORY_ORIGIN_PORTFOLIO
 from app.selector import parse_window
 
 WINDOW_IN_REGION = re.compile(r"^(chr(?:[1-9]|1[0-9]|2[0-2]|X|Y|M)):(\d+)-(\d+)$", re.IGNORECASE)
@@ -55,7 +55,6 @@ def _wrap_conf(tool: str, snapshot: dict) -> dict:
 
 def _source_key(source_label: str, entry: dict) -> str:
     """Canonical dedupe key — same round from JSON files and API must collide."""
-    del source_label  # legacy param kept for call sites
     round_id = entry.get("round_id") or ""
     region = entry.get("region") or ""
     tool = str(entry.get("tool") or "gatk").lower()
@@ -64,6 +63,11 @@ def _source_key(source_label: str, entry: dict) -> str:
     if instance_id:
         return f"{base}:{instance_id}"
     return base
+
+
+def _import_source_key(source_label: str, entry: dict) -> str:
+    """File imports prefix source_key so origin can be inferred."""
+    return f"import:{_source_key(source_label, entry)}"
 
 
 def _source_label(path: Path) -> str:
@@ -122,7 +126,7 @@ def _load_rounds(path: Path) -> list[dict]:
     return []
 
 
-def _entry_to_row(source_label: str, entry: dict) -> RoundHistory | None:
+def _entry_to_row(source_label: str, entry: dict, *, from_api: bool = False) -> RoundHistory | None:
     score = entry.get("combined_final")
     if score is None:
         return None
@@ -141,6 +145,9 @@ def _entry_to_row(source_label: str, entry: dict) -> RoundHistory | None:
     except ValueError:
         return None
 
+    key = _source_key(source_label, entry) if from_api else _import_source_key(source_label, entry)
+    origin = HISTORY_ORIGIN_PORTFOLIO if from_api else HISTORY_ORIGIN_IMPORT
+
     return RoundHistory(
         chromosome=parsed.chromosome,
         start=parsed.start,
@@ -150,7 +157,8 @@ def _entry_to_row(source_label: str, entry: dict) -> RoundHistory | None:
         conf=_wrap_conf(tool, snapshot),
         score=float(score),
         run_id=str(entry.get("round_id")) if entry.get("round_id") else None,
-        source_key=_source_key(source_label, entry),
+        source_key=key,
+        history_origin=origin,
         created_at=_parse_created_at(entry),
     )
 
@@ -239,7 +247,7 @@ def _import_one_entry(
         result.skipped_unscored += 1
         return
 
-    row = _entry_to_row(source_label, entry)
+    row = _entry_to_row(source_label, entry, from_api=source_label.startswith("api:"))
     if row is None:
         result.skipped_invalid += 1
         return

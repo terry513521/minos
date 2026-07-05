@@ -260,6 +260,19 @@ class WorkerStopResponse(BaseModel):
     error: str | None = None
 
 
+class WorkerBenchmarkResponse(BaseModel):
+    worker_id: str
+    ok: bool
+    status_code: int | None = None
+    window: str | None = None
+    tool: str | None = None
+    score: float | None = None
+    raw_score: float | None = None
+    variant_count: int | None = None
+    cached: bool | None = None
+    error: str | None = None
+
+
 class WorkerStopAllResult(BaseModel):
     worker_id: str
     worker_name: str
@@ -284,6 +297,8 @@ class HistoryRecord(BaseModel):
     conf: dict[str, Any]
     score: float
     run_id: str | None = None
+    history_origin: str = "portfolio"
+    source_key: str | None = None
     created_at: datetime
 
 
@@ -295,7 +310,56 @@ class CreateHistoryRequest(BaseModel):
     run_id: str | None = None
     worker_id: str | None = None
     source_key: str | None = None
+    history_origin: str | None = None
     replace: bool = False
+
+
+class HistoryChromosomeSummary(BaseModel):
+    chromosome: str
+    count: int
+    portfolio: int = 0
+    seed: int = 0
+    worker: int = 0
+    import_: int = Field(0, alias="import")
+
+    model_config = {"populate_by_name": True}
+
+
+class HistoryOriginSummary(BaseModel):
+    origin: str
+    label: str
+    count: int
+
+
+class HistorySeedChr22Request(BaseModel):
+    worker_id: str
+    limit: int = Field(10, ge=1, le=100)
+    dry_run: bool = False
+    source_chromosomes: list[str] = Field(
+        default_factory=lambda: ["chr20", "chr21"],
+        description="Portfolio rows on these chromosomes are remapped to chr22",
+    )
+
+
+class HistorySeedChr22Item(BaseModel):
+    source_id: str
+    source_window: str
+    target_window: str
+    tool: str
+    status: str
+    score: float | None = None
+    history_id: str | None = None
+    error: str | None = None
+
+
+class HistorySeedChr22Response(BaseModel):
+    total_sources: int
+    skipped_existing: int
+    skipped_invalid: int
+    scored: int
+    failed: int
+    dry_run: bool
+    items: list[HistorySeedChr22Item] = Field(default_factory=list)
 
 
 class HistoryImportResponse(BaseModel):

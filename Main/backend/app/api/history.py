@@ -1,32 +1,96 @@
+"""History API — list, import, sync, and chr22 seeding."""
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database import get_db
+from app.history_origin import HISTORY_ORIGIN_LABELS, HISTORY_ORIGINS
 from app.models import OptimizationRun, RoundHistory
-from app.schemas import CreateHistoryRequest, HistoryImportResponse, HistoryRecord
+from app.schemas import (
+    CreateHistoryRequest,
+    HistoryChromosomeSummary,
+    HistoryImportResponse,
+    HistoryOriginSummary,
+    HistoryRecord,
+    HistorySeedChr22Request,
+    HistorySeedChr22Response,
+)
 from app.serializers import history_to_response
-from app.services.history_import import import_history_api, import_history_files, maybe_sync_history_api
+from app.services.history_import import import_history_api, import_history_files
+from app.services.history_seed import seed_chr22_history
 from app.services.history_store import save_history_from_run, save_history_record
 
 router = APIRouter(prefix="/history", tags=["history"])
 
 
-@router.get("/chromosomes")
-async def list_history_chromosomes(db: AsyncSession = Depends(get_db)) -> list[dict]:
+def _origin_filter(origin: str | None):
+    if not origin:
+        return None
+    key = origin.lower().strip()
+    if key == "import":
+        key = "import"
+    if key not in HISTORY_ORIGINS:
+        return None
+    return key
+
+
+@router.get("/chromosomes", response_model=list[HistoryChromosomeSummary])
+async def list_history_chromosomes(db: AsyncSession = Depends(get_db)) -> list[HistoryChromosomeSummary]:
     result = await db.execute(
-        select(RoundHistory.chromosome, func.count())
-        .group_by(RoundHistory.chromosome)
+        select(RoundHistory.chromosome, RoundHistory.history_origin, func.count())
+        .group_by(RoundHistory.chromosome, RoundHistory.history_origin)
         .order_by(RoundHistory.chromosome)
     )
-    return [{"chromosome": chrom, "count": count} for chrom, count in result.all()]
+    buckets: dict[str, dict[str, int]] = {}
+    for chrom, origin, count in result.all():
+        row = buckets.setdefault(chrom, {"count": 0, "portfolio": 0, "seed": 0, "worker": 0, "import": 0})
+        origin_key = origin if origin in HISTORY_ORIGINS else "portfolio"
+        if origin_key == "import":
+            row["import"] += count
+        else:
+            row[origin_key] += count
+        row["count"] += count
+
+    return [
+        HistoryChromosomeSummary(
+            chromosome=chrom,
+            count=totals["count"],
+            portfolio=totals["portfolio"],
+            seed=totals["seed"],
+            worker=totals["worker"],
+            import_=totals["import"],
+        )
+        for chrom, totals in sorted(buckets.items())
+    ]
+
+
+@router.get("/origins", response_model=list[HistoryOriginSummary])
+async def list_history_origins(db: AsyncSession = Depends(get_db)) -> list[HistoryOriginSummary]:
+    result = await db.execute(
+        select(RoundHistory.history_origin, func.count())
+        .group_by(RoundHistory.history_origin)
+        .order_by(RoundHistory.history_origin)
+    )
+    out: list[HistoryOriginSummary] = []
+    for origin, count in result.all():
+        key = origin if origin in HISTORY_ORIGINS else "portfolio"
+        out.append(
+            HistoryOriginSummary(
+                origin=key,
+                label=HISTORY_ORIGIN_LABELS.get(key, key),
+                count=count,
+            )
+        )
+    return out
 
 
 @router.get("/count")
 async def history_count(
     chromosome: str | None = None,
     tool: str | None = None,
+    origin: str | None = None,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     query = select(func.count()).select_from(RoundHistory)
@@ -34,6 +98,9 @@ async def history_count(
         query = query.where(RoundHistory.chromosome == chromosome)
     if tool:
         query = query.where(RoundHistory.tool == tool.lower())
+    origin_key = _origin_filter(origin)
+    if origin_key:
+        query = query.where(RoundHistory.history_origin == origin_key)
     total = await db.scalar(query)
     return {"count": total or 0}
 
@@ -53,6 +120,7 @@ async def create_history(
             run_id=body.run_id,
             worker_id=body.worker_id,
             source_key=body.source_key,
+            history_origin=body.history_origin,
             replace=body.replace,
         )
     except ValueError as exc:
@@ -112,10 +180,22 @@ async def sync_rounds_from_api(
     return HistoryImportResponse(**result.__dict__)
 
 
+@router.post("/seed-chr22", response_model=HistorySeedChr22Response)
+async def seed_chr22_from_portfolio(
+    body: HistorySeedChr22Request,
+    db: AsyncSession = Depends(get_db),
+) -> HistorySeedChr22Response:
+    try:
+        return await seed_chr22_history(db, body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.get("", response_model=list[HistoryRecord])
 async def list_history(
     chromosome: str | None = None,
     tool: str | None = None,
+    origin: str | None = None,
     limit: int = 100,
     db: AsyncSession = Depends(get_db),
 ) -> list[HistoryRecord]:
@@ -124,5 +204,8 @@ async def list_history(
         query = query.where(RoundHistory.chromosome == chromosome)
     if tool:
         query = query.where(RoundHistory.tool == tool.lower())
+    origin_key = _origin_filter(origin)
+    if origin_key:
+        query = query.where(RoundHistory.history_origin == origin_key)
     result = await db.execute(query)
     return [history_to_response(r) for r in result.scalars().all()]

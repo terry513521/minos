@@ -58,6 +58,37 @@ async def _ensure_history_columns(conn) -> None:
                     "ON round_history (source_key)"
                 )
             )
+        if "history_origin" not in cols:
+            sync_conn.execute(
+                text(
+                    "ALTER TABLE round_history ADD COLUMN history_origin VARCHAR(32) "
+                    "NOT NULL DEFAULT 'portfolio'"
+                )
+            )
+            sync_conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_round_history_history_origin "
+                    "ON round_history (history_origin)"
+                )
+            )
+            sync_conn.execute(
+                text(
+                    "UPDATE round_history SET history_origin = 'seed' "
+                    "WHERE source_key LIKE 'seed:%'"
+                )
+            )
+            sync_conn.execute(
+                text(
+                    "UPDATE round_history SET history_origin = 'worker' "
+                    "WHERE source_key LIKE 'run:%'"
+                )
+            )
+            sync_conn.execute(
+                text(
+                    "UPDATE round_history SET history_origin = 'import' "
+                    "WHERE source_key LIKE 'import:%'"
+                )
+            )
 
     await conn.run_sync(_migrate)
 

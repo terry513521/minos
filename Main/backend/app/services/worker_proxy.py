@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import Worker
 from app.schemas import (
     WorkerBestScoreResponse,
+    WorkerBenchmarkResponse,
     WorkerDispatchRequest,
     WorkerDispatchResponse,
     WorkerStopResponse,
@@ -260,6 +261,75 @@ async def stop_worker_optimization(db: AsyncSession, worker_id: str) -> WorkerSt
             worker_id=worker_id,
             ok=False,
             status_code=None,
+            error=str(exc),
+        )
+
+
+async def benchmark_on_worker(
+    db: AsyncSession,
+    *,
+    worker_id: str,
+    window: str,
+    tool: str,
+    conf: dict[str, Any],
+    timeout: float = 3600.0,
+) -> WorkerBenchmarkResponse:
+    """POST /benchmark on a registered worker — one GIAB score, no optimization."""
+    worker = await get_worker(db, worker_id)
+    if worker is None:
+        return WorkerBenchmarkResponse(worker_id=worker_id, ok=False, error="Worker not found")
+    base = _resolve_base(worker) if worker else None
+    if not base:
+        return WorkerBenchmarkResponse(
+            worker_id=worker_id,
+            ok=False,
+            error="Worker has no valid base_url configured",
+        )
+
+    url = f"{base.rstrip('/')}/benchmark"
+    payload = {"window": window, "tool": tool.lower().strip(), "conf": conf}
+    try:
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+            response = await client.post(url, json=payload)
+            body: dict | None = None
+            if response.headers.get("content-type", "").startswith("application/json"):
+                parsed = response.json()
+                if isinstance(parsed, dict):
+                    body = parsed
+            if response.status_code >= 400 or body is None:
+                return WorkerBenchmarkResponse(
+                    worker_id=worker_id,
+                    ok=False,
+                    status_code=response.status_code,
+                    error=(body or {}).get("detail")
+                    if body
+                    else response.text[:500] or "Benchmark request failed",
+                )
+            if not body.get("success"):
+                return WorkerBenchmarkResponse(
+                    worker_id=worker_id,
+                    ok=False,
+                    status_code=response.status_code,
+                    window=window,
+                    tool=tool,
+                    error=str(body.get("error") or "Benchmark failed"),
+                )
+            score = body.get("score")
+            return WorkerBenchmarkResponse(
+                worker_id=worker_id,
+                ok=True,
+                status_code=response.status_code,
+                window=window,
+                tool=tool,
+                score=float(score) if score is not None else None,
+                raw_score=float(body["raw_score"]) if body.get("raw_score") is not None else None,
+                variant_count=int(body.get("variant_count") or 0),
+                cached=bool(body.get("cached")),
+            )
+    except Exception as exc:
+        return WorkerBenchmarkResponse(
+            worker_id=worker_id,
+            ok=False,
             error=str(exc),
         )
 
