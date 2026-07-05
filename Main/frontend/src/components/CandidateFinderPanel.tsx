@@ -9,7 +9,9 @@ import {
   normalizeFinderTool,
   saveCandidateFinderState,
 } from "../utils/candidateFinderStorage";
-import { TOOLKIT_OPTIONS, ToolkitOption } from "../types/workerAssignment";
+import { ToolkitOption } from "../types/workerAssignment";
+import { ToolBadge } from "./ToolBadge";
+import { ToolSegmentPicker } from "./ToolSegmentPicker";
 import { normalizeRegion, chromosomeFromWindow, analyzeBenchmarkWindow, formatWindowSpan } from "../utils/window";
 import { AUTO_MODE_CHANGED_EVENT } from "./AutoModePanel";
 import { loadAutoModeState } from "../utils/autoModeStorage";
@@ -190,70 +192,66 @@ export function CandidateFinderPanel({
 
   const body = (
     <>
-      <form className="candidate-finder-bar" onSubmit={handleFind}>
-        <label className="candidate-region-field">
-          <span className="candidate-region-label">Region</span>
-          <input
-            className="input-mono candidate-region-input"
-            value={region}
-            onChange={(e) => setRegion(e.target.value)}
-            placeholder={DEFAULT_REGION}
-            aria-label="Genomic region"
-            spellCheck={false}
-            disabled={autoModeEnabled}
-          />
-          {regionSpanLabel && (
-            <span
-              className={`candidate-region-size${regionAnalysis.isMinosRoundSize ? " candidate-region-size--ok" : " candidate-region-size--warn"}`}
-            >
-              {regionSpanLabel}
-              {regionAnalysis.isMinosRoundSize ? " · 5 Mb round" : " · not 5 Mb"}
-            </span>
-          )}
-        </label>
-        <label className="candidate-k-field">
-          <span className="candidate-k-label">Tool</span>
-          <select
-            className="candidate-tool-input"
-            value={tool}
-            onChange={(e) => setTool(e.target.value as ToolkitOption)}
-            aria-label="Variant caller for candidate search"
+      <div className="candidate-finder-toolbar">
+        <form className="candidate-finder-bar" onSubmit={handleFind}>
+          <label className="candidate-region-field">
+            <span className="candidate-region-label">Region</span>
+            <input
+              className="input-mono candidate-region-input"
+              value={region}
+              onChange={(e) => setRegion(e.target.value)}
+              placeholder={DEFAULT_REGION}
+              aria-label="Genomic region"
+              spellCheck={false}
+              disabled={autoModeEnabled}
+            />
+            {regionSpanLabel && (
+              <span
+                className={`candidate-region-size${regionAnalysis.isMinosRoundSize ? " candidate-region-size--ok" : " candidate-region-size--warn"}`}
+              >
+                {regionSpanLabel}
+                {regionAnalysis.isMinosRoundSize ? " · 5 Mb round" : " · not 5 Mb"}
+              </span>
+            )}
+          </label>
+          <div className="candidate-tool-field">
+            <span className="candidate-k-label">Tool</span>
+            <ToolSegmentPicker
+              value={tool}
+              onChange={setTool}
+              disabled={autoModeEnabled}
+              aria-label="Variant caller for candidate search"
+            />
+          </div>
+          <label className="candidate-k-field">
+            <span className="candidate-k-label">Candidates</span>
+            <DeferredNumberInput
+              className="candidate-k-input"
+              value={kCandidates}
+              min={1}
+              max={16}
+              step={1}
+              onCommit={(value) => setKCandidates(clampKCandidates(value))}
+              aria-label="Number of candidates"
+              disabled={autoModeEnabled}
+            />
+          </label>
+          <button
+            type="submit"
+            className="button primary candidate-find-btn"
+            disabled={loading || !region.trim() || autoModeEnabled}
           >
-            {TOOLKIT_OPTIONS.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="candidate-k-field">
-          <span className="candidate-k-label">Candidates</span>
-          <DeferredNumberInput
-            className="candidate-k-input"
-            value={kCandidates}
-            min={1}
-            max={16}
-            step={1}
-            onCommit={(value) => setKCandidates(clampKCandidates(value))}
-            aria-label="Number of candidates"
-            disabled={autoModeEnabled}
-          />
-        </label>
-        <button
-          type="submit"
-          className="button primary candidate-find-btn"
-          disabled={loading || !region.trim() || autoModeEnabled}
-        >
-          {loading ? "Finding…" : `Find ${kCandidates} candidates`}
-        </button>
-      </form>
+            {loading ? "Finding…" : `Find ${kCandidates} candidates`}
+          </button>
+        </form>
+      </div>
 
       {error && <div className="alert error">{error}</div>}
 
       {result && (
         <div className="candidate-results">
           <div className="candidate-results-summary">
-            <span className="chip chip-accent">{result.tool}</span>
+            <ToolBadge tool={result.tool} />
             <span className="chip">
               {result.coordinate_matched} similar on {result.chromosome}
             </span>
@@ -361,7 +359,7 @@ function CandidateCard({
     >
       <div className="candidate-result-top">
         <span className="candidate-result-chrom">{chrom}</span>
-        <span className="chip chip-accent candidate-result-tool">{tool}</span>
+        <ToolBadge tool={tool} className="candidate-result-tool" />
         <span className="candidate-result-score">{(score * 100).toFixed(1)}%</span>
       </div>
       {region ? (

@@ -20,6 +20,7 @@ import {
   workerTrialThreadsFromAutoConfig,
 } from "../utils/autoModeSync";
 import { ConfTooltip } from "./ConfTooltip";
+import { ToolBadge } from "./ToolBadge";
 import { LimitCountdownBadge } from "./LimitCountdownBadge";
 import { AutoModeTunableEditor } from "./AutoModeTunableEditor";
 
@@ -513,7 +514,7 @@ function AutoModeFoundCandidateCard({
     >
       <div className="auto-mode-found-item-head">
         <span className="candidate-rank-badge">#{candidate.index + 1}</span>
-        <span className="chip chip-accent">{tool}</span>
+        <ToolBadge tool={tool} />
         {selected ? (
           <span className="chip chip-accent">Selected</span>
         ) : (

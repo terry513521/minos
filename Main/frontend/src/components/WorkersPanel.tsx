@@ -55,6 +55,7 @@ import { WORKERS_CHANGED_EVENT, WORKERS_CHECK_ALL_HEALTH_EVENT, WORKERS_CHECK_AL
 import { ConfParamPicker } from "./ConfParamPicker";
 import { ConfManualEditor } from "./ConfManualEditor";
 import { ConfTooltip } from "./ConfTooltip";
+import { ToolBadge } from "./ToolBadge";
 import {
   clearWorkerPanelEntry,
   clearAllWorkerPanelData,
@@ -1903,9 +1904,7 @@ export function WorkersPanel({
                     <div className="worker-assignment-options">
                       <div className="worker-assignment-field">
                         <span className="worker-assignment-label">Toolkit</span>
-                        <span className="chip chip-accent" title="From assigned base conf">
-                          {assignment.tool}
-                        </span>
+                        <ToolBadge tool={assignment.tool} title="From assigned base conf" />
                       </div>
 
                       <label className="worker-assignment-field">
