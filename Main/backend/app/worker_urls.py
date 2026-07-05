@@ -10,9 +10,12 @@ def _strip_trailing_slash(url: str) -> str:
 def base_url_from_health_url(health_url: str) -> str | None:
     """Derive worker API root from a health URL (e.g. …:8080/health → …:8080)."""
     cleaned = _strip_trailing_slash(health_url)
-    suffix = "/health"
-    if cleaned.lower().endswith(suffix):
-        return cleaned[: -len(suffix)] or None
+    if cleaned.lower().endswith("/health"):
+        return cleaned[: -len("/health")] or None
+    parsed = urlparse(cleaned)
+    # Bare origin (http://host:port) — common when base_url was omitted at register.
+    if parsed.scheme and parsed.netloc and (not parsed.path or parsed.path == "/"):
+        return cleaned
     return None
 
 

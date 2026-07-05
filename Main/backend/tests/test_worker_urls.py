@@ -14,6 +14,12 @@ def test_derive_base_from_health_only():
     assert base == "http://192.168.1.10:8080"
 
 
+def test_derive_base_from_bare_health_origin():
+    health = "http://192.168.1.20:9000"
+    _, base = normalize_worker_urls(health, None)
+    assert base == "http://192.168.1.20:9000"
+
+
 def test_resolve_worker_base_url():
     url = resolve_worker_base_url(
         "http://194.163.164.157:8080/health",

@@ -147,6 +147,10 @@ class WorkerResponse(BaseModel):
     name: str
     health_url: str | None
     base_url: str | None
+    dispatch_base_url: str | None = Field(
+        None,
+        description="Resolved URL Main uses for /optimize and /benchmark",
+    )
     status: WorkerStatus
     capabilities: dict[str, Any]
     tags: list[str]
@@ -367,6 +371,12 @@ class HistorySeedChr22Request(BaseModel):
         return ids
 
 
+class HistorySeedChr22WorkerSkip(BaseModel):
+    worker_id: str
+    worker_name: str | None = None
+    reason: str
+
+
 class HistorySeedChr22Item(BaseModel):
     source_id: str
     source_window: str
@@ -389,6 +399,8 @@ class HistorySeedChr22Response(BaseModel):
     waves_completed: int = 0
     workers_per_wave: int = 0
     worker_ids_used: list[str] = Field(default_factory=list)
+    worker_dispatch_urls: dict[str, str] = Field(default_factory=dict)
+    workers_skipped: list[HistorySeedChr22WorkerSkip] = Field(default_factory=list)
     items: list[HistorySeedChr22Item] = Field(default_factory=list)
 
 

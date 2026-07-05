@@ -26,7 +26,7 @@ const DEFAULT_CHROMOSOMES = 5;
 const SEED_BATCH_LIMIT = 50;
 
 function workerReachable(worker: WorkerRecord): boolean {
-  return Boolean((worker.base_url || worker.health_url || "").trim());
+  return Boolean((worker.dispatch_base_url || worker.base_url || worker.health_url || "").trim());
 }
 
 interface HistorySidebarProps {
@@ -146,11 +146,25 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
       const waveCount = result.waves_completed ?? 0;
       const perWave = result.workers_per_wave ?? seedWorkers.length;
       const usedCount = result.worker_ids_used?.length ?? seedWorkers.length;
+      const skippedWorkers = result.workers_skipped ?? [];
+      const dispatchLines = (result.worker_ids_used ?? [])
+        .map((id) => {
+          const name = workers.find((w) => w.id === id)?.name ?? id.slice(0, 8);
+          const url = result.worker_dispatch_urls?.[id] ?? "?";
+          return `${name} → ${url}`;
+        })
+        .join("\n");
+      const skipLines = skippedWorkers
+        .map((s) => `${s.worker_name ?? s.worker_id}: ${s.reason}`)
+        .join("\n");
       const summary = dryRun
-        ? `Dry run: ${result.items.length} task(s) in ${waveCount} wave(s) of up to ${perWave} worker(s), ${usedCount} reachable (${result.skipped_existing} already seeded)`
+        ? `Dry run: ${result.items.length} task(s) in ${waveCount} wave(s) of up to ${perWave} worker(s), ${usedCount} will receive POST /benchmark (${result.skipped_existing} already seeded)`
         : `Seeded ${result.scored} chr22 rows in ${waveCount} wave(s) (${perWave} worker(s) per wave, ${usedCount} workers used, ${result.skipped_existing} skipped, ${result.failed} failed)`;
+      const detail = [dispatchLines, skipLines ? `Skipped:\n${skipLines}` : ""]
+        .filter(Boolean)
+        .join("\n\n");
       setError(null);
-      window.alert(summary);
+      window.alert(detail ? `${summary}\n\n${detail}` : summary);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Seed failed");
     } finally {
@@ -287,7 +301,8 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
           </button>
           {workers.filter(workerReachable).length > 0 && (
             <span className="chip chip-muted history-seed-hint">
-              {workers.filter(workerReachable).length} workers · parallel wave → wait → next wave
+              {workers.filter((w) => w.dispatch_base_url).length || workers.filter(workerReachable).length}{" "}
+              dispatchable · parallel wave → wait → next wave
             </span>
           )}
       </div>

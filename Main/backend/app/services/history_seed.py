@@ -19,11 +19,11 @@ from app.history_origin import (
     worker_for_seed_slot,
 )
 from app.models import RoundHistory
-from app.schemas import HistorySeedChr22Item, HistorySeedChr22Request, HistorySeedChr22Response
+from app.schemas import HistorySeedChr22Item, HistorySeedChr22Request, HistorySeedChr22Response, HistorySeedChr22WorkerSkip
 from app.services.history_store import save_history_record
 from app.services.worker_proxy import (
     post_worker_benchmark,
-    resolve_dispatchable_worker_ids,
+    resolve_seed_workers,
     resolve_worker_base_urls,
 )
 
@@ -118,13 +118,24 @@ async def seed_chr22_history(
       2. await all responses
       3. save results, then start the next wave
     """
-    worker_ids = await resolve_dispatchable_worker_ids(
+    worker_ids, skipped_workers, dispatch_urls = await resolve_seed_workers(
         db,
         preferred_ids=body.resolved_worker_ids() or None,
     )
     if not worker_ids:
+        detail = "; ".join(
+            f"{s.get('worker_name') or s['worker_id']}: {s['reason']}" for s in skipped_workers
+        )
         raise ValueError(
-            "No reachable workers. Register workers with health_url or base_url before seeding."
+            "No reachable workers for seeding."
+            + (f" Skipped: {detail}" if detail else " Register workers with distinct health_url/base_url.")
+        )
+    if skipped_workers:
+        logger.warning(
+            "chr22 seed: using %s worker(s), skipped %s: %s",
+            len(worker_ids),
+            len(skipped_workers),
+            skipped_workers,
         )
     source_chroms = {
         c.lower().strip() if c.lower().startswith("chr") else f"chr{c.lower().strip()}"
@@ -159,6 +170,15 @@ async def seed_chr22_history(
         failed=0,
         dry_run=body.dry_run,
         worker_ids_used=worker_ids,
+        worker_dispatch_urls=dispatch_urls,
+        workers_skipped=[
+            HistorySeedChr22WorkerSkip(
+                worker_id=row["worker_id"],
+                worker_name=row.get("worker_name"),
+                reason=row["reason"],
+            )
+            for row in skipped_workers
+        ],
         items=[],
     )
 

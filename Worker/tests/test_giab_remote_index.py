@@ -57,9 +57,11 @@ def test_docker_remote_view_uses_samtools_entrypoint():
         network_host=True,
     )
     assert cmd[0] == "docker"
+    assert "--entrypoint" in cmd
+    entry_idx = cmd.index("--entrypoint")
+    assert cmd[entry_idx + 1] == "samtools"
     assert _SAMTOOLS_DOCKER_IMAGE in cmd
     assert "sh" not in cmd
     assert f"index=/idx/{bai_name}" in cmd
-    assert f"load_index=/idx/{bai_name}" not in cmd
     assert "chr22:22358161-27358161" in cmd
     assert "--network=host" in cmd

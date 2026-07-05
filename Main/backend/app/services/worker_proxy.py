@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from typing import Any
 
@@ -20,6 +21,9 @@ from app.schemas import (
     WorkerTrialScore,
 )
 from app.worker_urls import resolve_worker_base_url
+
+
+logger = logging.getLogger(__name__)
 
 
 async def get_worker(db: AsyncSession, worker_id: str) -> Worker | None:
@@ -329,6 +333,13 @@ async def post_worker_benchmark(
 
     url = f"{base_url.rstrip('/')}/benchmark"
     payload = {"window": window, "tool": tool.lower().strip(), "conf": conf}
+    logger.info(
+        "POST %s worker_id=%s window=%s tool=%s",
+        url,
+        worker_id,
+        window,
+        tool,
+    )
     try:
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
             response = await client.post(url, json=payload)
@@ -387,23 +398,81 @@ async def resolve_worker_base_urls(
     return out
 
 
+async def resolve_seed_workers(
+    db: AsyncSession,
+    preferred_ids: list[str] | None = None,
+) -> tuple[list[str], list[dict[str, str]], dict[str, str]]:
+    """
+    Workers Main can POST /benchmark to.
+
+    Returns (unique dispatch ids, skipped entries, worker_id → dispatch URL).
+    Skips workers with no resolvable URL or duplicate dispatch URL (same host:port).
+    """
+    if preferred_ids:
+        candidate_ids = list(preferred_ids)
+    else:
+        result = await db.execute(select(Worker).order_by(Worker.name))
+        candidate_ids = [worker.id for worker in result.scalars().all()]
+
+    dispatchable: list[str] = []
+    skipped: list[dict[str, str]] = []
+    url_by_id: dict[str, str] = {}
+    seen_urls: dict[str, str] = {}
+
+    for worker_id in candidate_ids:
+        worker = await get_worker(db, worker_id)
+        if worker is None:
+            skipped.append(
+                {
+                    "worker_id": worker_id,
+                    "worker_name": None,
+                    "reason": "Worker not found in database",
+                }
+            )
+            continue
+
+        dispatch_url = _resolve_base(worker)
+        if not dispatch_url:
+            skipped.append(
+                {
+                    "worker_id": worker.id,
+                    "worker_name": worker.name,
+                    "reason": (
+                        "No dispatch URL — set health_url (…/health) or base_url "
+                        f"(health_url={worker.health_url!r}, base_url={worker.base_url!r})"
+                    ),
+                }
+            )
+            continue
+
+        if dispatch_url in seen_urls:
+            first_id = seen_urls[dispatch_url]
+            skipped.append(
+                {
+                    "worker_id": worker.id,
+                    "worker_name": worker.name,
+                    "reason": (
+                        f"Duplicate dispatch URL {dispatch_url} "
+                        f"(same endpoint as worker {first_id})"
+                    ),
+                }
+            )
+            continue
+
+        seen_urls[dispatch_url] = worker.id
+        dispatchable.append(worker.id)
+        url_by_id[worker.id] = dispatch_url
+
+    return dispatchable, skipped, url_by_id
+
+
 async def resolve_dispatchable_worker_ids(
     db: AsyncSession,
     *,
     preferred_ids: list[str] | None = None,
 ) -> list[str]:
     """Workers that Main can reach (base_url or health_url-derived base), in stable order."""
-    if preferred_ids:
-        bases = await resolve_worker_base_urls(db, preferred_ids)
-        reachable = [wid for wid in preferred_ids if bases.get(wid)]
-        if reachable:
-            return reachable
-
-    result = await db.execute(select(Worker).order_by(Worker.name))
-    dispatchable: list[str] = []
-    for worker in result.scalars().all():
-        if _resolve_base(worker):
-            dispatchable.append(worker.id)
+    dispatchable, _, _ = await resolve_seed_workers(db, preferred_ids)
     return dispatchable
 
 

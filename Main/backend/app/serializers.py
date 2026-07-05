@@ -71,12 +71,16 @@ def run_to_list_item(run: OptimizationRun) -> RunListItem:
     )
 
 
+from app.worker_urls import resolve_worker_base_url
+
+
 def worker_to_response(worker: Worker) -> WorkerResponse:
     return WorkerResponse(
         id=worker.id,
         name=worker.name,
         health_url=worker.health_url,
         base_url=worker.base_url,
+        dispatch_base_url=resolve_worker_base_url(worker.health_url, worker.base_url),
         status=WorkerStatus(worker.status.value),
         capabilities=worker.capabilities or {},
         tags=worker.tags or [],

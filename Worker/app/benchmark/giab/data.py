@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import fcntl
 import logging
+import os
 import shutil
 import subprocess
 import urllib.request
@@ -112,18 +113,34 @@ def _samtools_remote_view_cmd(
     ]
 
 
+def _ensure_ssl_cert_env() -> None:
+    """htslib/pysam need CA bundle for HTTPS GIAB URLs on the worker host."""
+    if os.environ.get("SSL_CERT_FILE") and os.environ.get("CURL_CA_BUNDLE"):
+        return
+    for path in (
+        Path("/etc/ssl/certs/ca-certificates.crt"),
+        Path("/etc/pki/tls/certs/ca-bundle.crt"),
+        Path("/etc/ssl/cert.pem"),
+    ):
+        if path.is_file():
+            os.environ.setdefault("SSL_CERT_FILE", str(path))
+            os.environ.setdefault("CURL_CA_BUNDLE", str(path))
+            return
+
+
 def _build_docker_samtools_cmd(
     samtools_args: list[str],
     *,
     volumes: list[tuple[str, str, str]],
     network_host: bool = False,
 ) -> list[str]:
-    """Build ``docker run`` for biocontainers/samtools (ENTRYPOINT is ``samtools``)."""
-    cmd = ["docker", "run", "--rm"]
+    """Build ``docker run`` for biocontainers/samtools (ENTRYPOINT is env-execute)."""
+    cmd = ["docker", "run", "--rm", "--entrypoint", "samtools"]
     if network_host:
         cmd.append("--network=host")
         cmd.extend(["-v", "/etc/ssl/certs:/etc/ssl/certs:ro"])
         cmd.extend(["-e", "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt"])
+        cmd.extend(["-e", "CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt"])
     for host, container, mode in volumes:
         cmd.extend(["-v", f"{host}:{container}:{mode}"])
     cmd.append(_SAMTOOLS_DOCKER_IMAGE)
@@ -465,6 +482,7 @@ def _pysam_view_region(
 
     chrom, start, end = parse_region_bounds(region)
     dest.parent.mkdir(parents=True, exist_ok=True)
+    _ensure_ssl_cert_env()
     logger.warning(
         "samtools remote slice unavailable; using pysam for %s (index %s)",
         region,
@@ -485,6 +503,7 @@ def _pysam_view_region(
 def _samtools_view_region(region: str, dest: Path) -> None:
     """Extract a genomic window from remote indexed HG002 BAM via samtools."""
     dest.parent.mkdir(parents=True, exist_ok=True)
+    _ensure_ssl_cert_env()
     remote = ASSETS["bam_remote"]
     local_bai = ensure_remote_bam_index()
 

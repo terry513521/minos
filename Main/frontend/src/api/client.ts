@@ -54,6 +54,12 @@ export interface HistorySeedChr22Response {
   waves_completed?: number;
   workers_per_wave?: number;
   worker_ids_used?: string[];
+  worker_dispatch_urls?: Record<string, string>;
+  workers_skipped?: Array<{
+    worker_id: string;
+    worker_name?: string | null;
+    reason: string;
+  }>;
   items: Array<{
     source_id: string;
     source_window: string;
@@ -114,6 +120,7 @@ export interface WorkerRecord {
   name: string;
   health_url: string | null;
   base_url: string | null;
+  dispatch_base_url?: string | null;
   status: WorkerStatus;
   capabilities: Record<string, unknown>;
   tags: string[];
