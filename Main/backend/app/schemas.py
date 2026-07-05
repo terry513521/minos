@@ -381,7 +381,7 @@ class HistorySeedChr22Request(BaseModel):
         default_factory=list,
         description="Ignored when seeding — only worker_id is used (first entry if worker_id omitted).",
     )
-    limit: int = Field(50, ge=1, le=100)
+    limit: int = Field(100, ge=1, le=100)
     dry_run: bool = False
     source_chromosomes: list[str] = Field(
         default_factory=lambda: ["chr20", "chr21"],
