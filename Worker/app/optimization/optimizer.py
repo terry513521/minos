@@ -303,6 +303,10 @@ def optimize_job(request: OptimizeRequest, settings: Settings | None = None) -> 
     logger.info("Benchmark: GIAB (Worker/datasets/giab)")
 
     try:
+        from app.benchmark.giab.data import ensure_bam_for_region
+
+        logger.info("Preparing GIAB BAM slice for %s", benchmark_window)
+        ensure_bam_for_region(benchmark_window)
         best_score: float | None = None
         best_conf = deepcopy(request.base_conf)
         trials_evaluated = 0

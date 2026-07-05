@@ -857,9 +857,9 @@ def ensure_giab_regional_bams(chromosomes: list[str], *, force: bool = False) ->
 
     print("\n== GIAB truth + regional BAM (NCBI ReferenceSamples) ==")
     print("  FTP: https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab")
-    print(f"  HG002 BAM: {ASSETS['bam_remote']}")
+    print(f"  HG002 BAM (FTP): {ASSETS['bam_remote_ftp']}")
     print(f"  HG002 BAI: {ASSETS['bam_remote_bai']}")
-    print("  Downloads BAM index locally; slices windows with samtools + cached .bai.")
+    print("  Slices windows with samtools over NCBI FTP (htslib fetches .bai automatically).")
 
     ok = True
     try:

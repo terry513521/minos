@@ -22,6 +22,7 @@ from app.core.repo import ensure_repo_imports
 logger = logging.getLogger(__name__)
 
 GIAB_BASE = "https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab"
+GIAB_FTP_BASE = "ftp://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab"
 
 ASSETS = {
     "truth_vcf": (
@@ -40,6 +41,10 @@ ASSETS = {
         f"{GIAB_BASE}/data/AshkenazimTrio/HG002_NA24385_son/Element_AVITI_20240920/"
         "HG002_Element-StdInsert_80x_GRCh38-GIABv3.bam"
     ),
+    "bam_remote_ftp": (
+        f"{GIAB_FTP_BASE}/data/AshkenazimTrio/HG002_NA24385_son/Element_AVITI_20240920/"
+        "HG002_Element-StdInsert_80x_GRCh38-GIABv3.bam"
+    ),
     "bam_remote_bai": (
         f"{GIAB_BASE}/data/AshkenazimTrio/HG002_NA24385_son/Element_AVITI_20240920/"
         "HG002_Element-StdInsert_80x_GRCh38-GIABv3.bam.bai"
@@ -47,7 +52,6 @@ ASSETS = {
 }
 
 _SAMTOOLS_DOCKER_IMAGE = "quay.io/biocontainers/samtools:1.20--h50ea8bc_0"
-_INDEX_FMT_OPTION_KEYS = ("index", "load_index")
 _USER_AGENT = "minos-worker-giab/1.0 (+https://github.com/minos-protocol/minos_subnet)"
 
 REF_S3_BASE = "https://api.theminos.ai/reference"
@@ -93,24 +97,17 @@ def ensure_remote_bam_index() -> Path:
 def _samtools_remote_view_cmd(
     *,
     remote_bam: str,
-    local_bai: Path,
     region: str,
     dest: Path,
     samtools: str,
-    index_option_key: str,
 ) -> list[str]:
-    """Build samtools view args with a locally cached .bai for a remote BAM."""
-    return [
-        samtools,
-        "view",
-        "-b",
-        "-o",
-        str(dest),
-        "--input-fmt-option",
-        f"{index_option_key}={local_bai}",
-        remote_bam,
-        region,
-    ]
+    """Build samtools view for a remote GIAB BAM (FTP URL; index fetched by htslib)."""
+    return [samtools, "view", "-b", "-o", str(dest), remote_bam, region]
+
+
+def remote_bam_url_for_samtools() -> str:
+    """NCBI FTP BAM URL — samtools/htslib loads the matching .bai from the FTP server."""
+    return ASSETS["bam_remote_ftp"]
 
 
 def _bam_cache_ready(path: Path) -> bool:
@@ -149,12 +146,13 @@ def _host_ssl_cert_file() -> Path | None:
 
 
 def _ensure_ssl_cert_env() -> None:
-    """htslib/pysam need CA bundle for HTTPS GIAB URLs on the worker host."""
-    cert = _host_ssl_cert_file()
-    if cert is None:
+    """HTTPS downloads (truth VCF/BED) may need a CA bundle on minimal hosts."""
+    if os.environ.get("SSL_CERT_FILE") and os.environ.get("CURL_CA_BUNDLE"):
         return
-    os.environ.setdefault("SSL_CERT_FILE", str(cert))
-    os.environ.setdefault("CURL_CA_BUNDLE", str(cert))
+    cert = _host_ssl_cert_file()
+    if cert is not None:
+        os.environ.setdefault("SSL_CERT_FILE", str(cert))
+        os.environ.setdefault("CURL_CA_BUNDLE", str(cert))
 
 
 def _docker_ssl_mounts() -> tuple[list[str], list[tuple[str, str, str]]]:
@@ -239,95 +237,6 @@ def _run_docker_samtools(
         network_host=network_host,
     )
     _run_checked(cmd, label=label)
-
-
-def _docker_samtools_remote_view(
-    *,
-    remote_bam: str,
-    local_bai: Path,
-    region: str,
-    dest: Path,
-) -> None:
-    """Extract a region from a remote BAM using a locally cached .bai inside Docker."""
-    index_in_container = f"/idx/{local_bai.name}"
-    out_bam = f"/out/{dest.name}"
-    volumes = [
-        (str(local_bai.parent), "/idx", "ro"),
-        (str(dest.parent), "/out", "rw"),
-    ]
-    last_error: str | None = None
-    for index_option_key in _INDEX_FMT_OPTION_KEYS:
-        try:
-            _run_docker_samtools(
-                [
-                    "view",
-                    "-b",
-                    "-o",
-                    out_bam,
-                    "--input-fmt-option",
-                    f"{index_option_key}={index_in_container}",
-                    remote_bam,
-                    region,
-                ],
-                volumes=volumes,
-                network_host=True,
-                label=f"docker samtools remote view ({index_option_key})",
-            )
-            _run_docker_samtools(
-                ["index", out_bam],
-                volumes=[(str(dest.parent), "/out", "rw")],
-                label="docker samtools index (remote slice)",
-            )
-            logger.info(
-                "docker samtools regional extract: %s → %s (index %s via %s)",
-                region,
-                dest.name,
-                local_bai.name,
-                index_option_key,
-            )
-            return
-        except RuntimeError as exc:
-            last_error = str(exc)
-
-    raise RuntimeError(
-        f"docker samtools remote view failed for {region}: {(last_error or 'unknown error')[:800]}"
-    )
-
-
-def _run_samtools_remote_view(
-    *,
-    remote_bam: str,
-    local_bai: Path,
-    region: str,
-    dest: Path,
-    samtools: str,
-) -> None:
-    last_error: str | None = None
-    for index_option_key in _INDEX_FMT_OPTION_KEYS:
-        cmd = _samtools_remote_view_cmd(
-            remote_bam=remote_bam,
-            local_bai=local_bai,
-            region=region,
-            dest=dest,
-            samtools=samtools,
-            index_option_key=index_option_key,
-        )
-        result = subprocess.run(cmd, capture_output=True, text=True, env=_subprocess_env())
-        if result.returncode == 0:
-            _run_checked([samtools, "index", str(dest)], label="samtools index")
-            logger.info(
-                "samtools regional extract: %s → %s (index %s via %s)",
-                region,
-                dest.name,
-                local_bai.name,
-                index_option_key,
-            )
-            return
-        last_error = (result.stderr or result.stdout or "").strip()
-
-    raise RuntimeError(
-        f"samtools remote view failed for {region}: {(last_error or 'unknown error')[:800]}"
-    )
 
 
 def _local_name(key: str) -> str:
@@ -478,6 +387,12 @@ def ensure_bam_for_region(region: str) -> Path:
             if dest.exists() or Path(f"{dest}.bai").exists():
                 _clear_incomplete_bam(dest)
             parent = containing_cached_bam(region)
+            if parent is None:
+                try:
+                    _try_ensure_chrom_anchor(chrom_from_region(region))
+                except Exception as exc:
+                    logger.warning("Chrom anchor BAM unavailable (%s)", exc)
+                parent = containing_cached_bam(region)
             if parent:
                 try:
                     _samtools_view_local_bam(parent, region, dest)
@@ -535,118 +450,131 @@ def _run_checked(cmd: list[str], *, label: str) -> None:
         raise RuntimeError(f"{label} failed (exit {result.returncode}): {detail[:800]}")
 
 
-def _index_bam_slice(dest: Path) -> None:
-    """Build .bai for a cached regional BAM."""
-    samtools = _samtools_bin()
-    if samtools:
-        _run_checked([samtools, "index", str(dest)], label="samtools index (slice)")
-        return
-    _run_docker_samtools(
-        ["index", f"/out/{dest.name}"],
-        volumes=[(str(dest.parent), "/out", "rw")],
-        label="docker samtools index (slice)",
-    )
-
-
-def _pysam_view_region(
-    *,
-    remote_bam: str,
-    local_bai: Path,
+def _docker_samtools_remote_slice(
     region: str,
     dest: Path,
+    *,
+    remote_bam: str,
+    transport: str,
 ) -> None:
-    """Last-resort BAM slice when samtools cannot use a local index on a remote BAM."""
-    try:
-        import pysam
-    except ImportError as exc:
-        raise RuntimeError(
-            "samtools remote slice failed and pysam is not installed "
-            "(pip install pysam or fix host/docker samtools)"
-        ) from exc
-
-    chrom, start, end = parse_region_bounds(region)
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    _ensure_ssl_cert_env()
-    logger.warning(
-        "samtools remote slice unavailable; using pysam for %s (index %s)",
-        region,
-        local_bai.name,
+    """Extract a region from a remote HG002 BAM (docker samtools; htslib fetches .bai)."""
+    out_bam = f"/out/{dest.name}"
+    volumes = [(str(dest.parent), "/out", "rw")]
+    logger.info("docker samtools %s slice: %s", transport, region)
+    _run_docker_samtools(
+        ["view", "-b", "-o", out_bam, remote_bam, region],
+        volumes=volumes,
+        network_host=True,
+        label=f"docker samtools remote view ({transport})",
     )
-    with pysam.AlignmentFile(
-        remote_bam,
-        "rb",
-        index_filename=str(local_bai),
-    ) as in_bam:
-        with pysam.AlignmentFile(str(dest), "wb", template=in_bam) as out_bam:
-            for read in in_bam.fetch(chrom, start - 1, end):
-                out_bam.write(read)
-    _index_bam_slice(dest)
-    logger.info("pysam regional extract: %s → %s", region, dest.name)
+    _run_docker_samtools(
+        ["index", out_bam],
+        volumes=volumes,
+        label="docker samtools index (remote slice)",
+    )
+
+
+def _host_samtools_remote_slice(
+    region: str,
+    dest: Path,
+    *,
+    remote_bam: str,
+    transport: str,
+) -> None:
+    """Extract a region from a remote HG002 BAM (host samtools)."""
+    samtools = _samtools_bin()
+    if not samtools:
+        raise RuntimeError("samtools not found on PATH")
+    cmd = _samtools_remote_view_cmd(
+        remote_bam=remote_bam,
+        region=region,
+        dest=dest,
+        samtools=samtools,
+    )
+    logger.info("samtools %s slice: %s", transport, region)
+    _run_checked(cmd, label=f"samtools remote view ({transport})")
+    _run_checked([samtools, "index", str(dest)], label="samtools index (remote slice)")
+
+
+def _remote_bam_transports() -> tuple[tuple[str, str], ...]:
+    """(remote_bam_url, transport_label) in preferred order."""
+    return (
+        (remote_bam_url_for_samtools(), "ftp"),
+        (ASSETS["bam_remote"], "https"),
+    )
+
+
+def _try_ensure_chrom_anchor(chrom: str) -> None:
+    """Cache the Minos 5 Mb window for *chrom* so later slices use local samtools."""
+    from app.benchmark.giab.paths import minos_region_for_chrom
+
+    anchor_region = minos_region_for_chrom(chrom)
+    if not anchor_region:
+        return
+    anchor_path = regional_bam_cache_path(anchor_region)
+    if _bam_cache_ready(anchor_path):
+        return
+    logger.info("Caching Minos anchor BAM for %s (%s)", chrom, anchor_region)
+    ensure_regional_bam(chrom, anchor_region)
 
 
 def _samtools_view_region(region: str, dest: Path) -> None:
-    """Extract a genomic window from remote indexed HG002 BAM via samtools."""
+    """Extract a genomic window from NCBI GIAB HG002 BAM using samtools only."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     _ensure_ssl_cert_env()
-    remote = ASSETS["bam_remote"]
-    local_bai = ensure_remote_bam_index()
     errors: list[str] = []
 
-    # Docker first: stable samtools version + mounted host CA certs for NCBI HTTPS.
-    try:
-        _docker_samtools_remote_view(
-            remote_bam=remote,
-            local_bai=local_bai,
-            region=region,
-            dest=dest,
-        )
-        _validate_bam_slice(dest, region=region)
-        return
-    except RuntimeError as exc:
-        errors.append(f"docker: {exc}")
-        _clear_incomplete_bam(dest)
-        logger.warning("Docker samtools remote slice failed for %s (%s)", region, exc)
-
-    samtools = _samtools_bin()
-    if samtools:
+    for remote_bam, transport in _remote_bam_transports():
         try:
-            _run_samtools_remote_view(
-                remote_bam=remote,
-                local_bai=local_bai,
-                region=region,
-                dest=dest,
-                samtools=samtools,
+            _docker_samtools_remote_slice(
+                region,
+                dest,
+                remote_bam=remote_bam,
+                transport=transport,
             )
             _validate_bam_slice(dest, region=region)
             return
         except RuntimeError as exc:
-            errors.append(f"host: {exc}")
+            errors.append(f"docker/{transport}: {exc}")
             _clear_incomplete_bam(dest)
-            logger.warning("Host samtools remote slice failed for %s (%s)", region, exc)
+            logger.warning(
+                "Docker samtools %s slice failed for %s (%s)",
+                transport,
+                region,
+                exc,
+            )
 
-    try:
-        _pysam_view_region(
-            remote_bam=remote,
-            local_bai=local_bai,
-            region=region,
-            dest=dest,
-        )
-        _validate_bam_slice(dest, region=region)
-        return
-    except Exception as exc:
-        errors.append(f"pysam: {exc}")
-        _clear_incomplete_bam(dest)
+        try:
+            _host_samtools_remote_slice(
+                region,
+                dest,
+                remote_bam=remote_bam,
+                transport=transport,
+            )
+            _validate_bam_slice(dest, region=region)
+            return
+        except RuntimeError as exc:
+            errors.append(f"host/{transport}: {exc}")
+            _clear_incomplete_bam(dest)
+            logger.warning(
+                "Host samtools %s slice failed for %s (%s)",
+                transport,
+                region,
+                exc,
+            )
 
     raise RuntimeError(
         "Failed to build HG002 BAM slice for "
-        f"{region}. Tried docker samtools, host samtools, and pysam. "
-        f"Details: {' | '.join(errors)[:1200]}"
+        f"{region} via samtools (FTP/HTTPS, no load_index). "
+        f"Details: {' | '.join(errors)[:1200]}. "
+        "Ensure Docker is running or install samtools; run: python scripts/setup_assets.py"
     )
 
 
 def ensure_regional_bam(chrom: str, region: str) -> Path:
     """Cache HG002 BAM slice for a Minos-like window."""
-    dest = asset_path(f"bam_region_{chrom}")
+    _ = chrom
+    dest = regional_bam_cache_path(region)
     if _bam_cache_ready(dest):
         return dest
     if dest.exists() or Path(f"{dest}.bai").exists():
