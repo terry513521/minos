@@ -45,7 +45,7 @@ ASSETS = {
     ),
 }
 
-_SAMTOOLS_DOCKER_IMAGE = "staphb/samtools:1.22"
+_SAMTOOLS_DOCKER_IMAGE = "staphb/samtools:1.20"
 _USER_AGENT = "minos-worker-giab/1.0 (+https://github.com/minos-protocol/minos_subnet)"
 
 REF_S3_BASE = "https://api.theminos.ai/reference"
@@ -76,42 +76,23 @@ def ensure_remote_bam_index() -> Path:
     return dest
 
 
-def _samtools_remote_view_cmd(
+def _pysam_extract_region(
     *,
     remote_bam: str,
     local_bai: Path,
     region: str,
     dest: Path,
-    samtools: str,
-) -> list[str]:
-    """Build samtools view args: local index + remote BAM (htslib load_index)."""
-    return [
-        samtools,
-        "view",
-        "-b",
-        "-o",
-        str(dest),
-        "--input-fmt-option",
-        f"load_index={local_bai}",
-        remote_bam,
-        region,
-    ]
+) -> None:
+    """Slice a remote BAM using a locally cached .bai (pysam index_filename)."""
+    import pysam
 
-
-def _docker_samtools_remote_view_script(
-    *,
-    remote_bam: str,
-    local_bai: Path,
-    region: str,
-    dest_name: str,
-) -> str:
-    index_in_container = f"/idx/{local_bai.name}"
-    return (
-        f"samtools view -b -o /out/{dest_name} "
-        f"--input-fmt-option load_index={index_in_container} "
-        f"'{remote_bam}' {region} "
-        f"&& samtools index /out/{dest_name}"
-    )
+    chrom, start, end = parse_region_bounds(region)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with pysam.AlignmentFile(remote_bam, "rb", index_filename=str(local_bai)) as infile:
+        with pysam.AlignmentFile(str(dest), "wb", template=infile) as outfile:
+            for read in infile.fetch(chrom, start, end):
+                outfile.write(read)
+    pysam.index(str(dest))
 
 
 def _local_name(key: str) -> str:
@@ -304,31 +285,40 @@ def _samtools_view_region(region: str, dest: Path) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     remote = ASSETS["bam_remote"]
     local_bai = ensure_remote_bam_index()
-    samtools = _samtools_bin()
 
-    if samtools:
-        cmd = _samtools_remote_view_cmd(
+    try:
+        _pysam_extract_region(
             remote_bam=remote,
             local_bai=local_bai,
             region=region,
             dest=dest,
-            samtools=samtools,
         )
         logger.info(
-            "samtools regional extract: %s → %s (index %s)",
+            "pysam regional extract: %s → %s (index %s)",
             region,
             dest.name,
             local_bai.name,
         )
+        return
+    except ImportError as exc:
+        raise RuntimeError(
+            "pysam is required for GIAB remote BAM slicing. "
+            "Install with: pip install -r requirements.txt"
+        ) from exc
+    except Exception as exc:
+        logger.warning("pysam regional extract failed (%s); trying samtools fallback", exc)
+
+    samtools = _samtools_bin()
+    if samtools:
+        cmd = [samtools, "view", "-b", remote, region, "-o", str(dest)]
+        logger.info("samtools regional extract fallback: %s → %s", region, dest.name)
         _run_checked(cmd, label="samtools view")
         _run_checked([samtools, "index", str(dest)], label="samtools index")
         return
 
-    inner = _docker_samtools_remote_view_script(
-        remote_bam=remote,
-        local_bai=local_bai,
-        region=region,
-        dest_name=dest.name,
+    inner = (
+        f"samtools view -b '{remote}' {region} -o /out/{dest.name} "
+        f"&& samtools index /out/{dest.name}"
     )
     cmd = [
         "docker",
@@ -338,18 +328,13 @@ def _samtools_view_region(region: str, dest: Path) -> None:
         "/etc/ssl/certs:/etc/ssl/certs:ro",
         "-e",
         "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt",
-        f"-v{local_bai.parent}:/idx:ro",
         f"-v{dest.parent}:/out",
         _SAMTOOLS_DOCKER_IMAGE,
         "sh",
         "-c",
         inner,
     ]
-    logger.info(
-        "docker samtools regional extract: %s (index %s)",
-        region,
-        local_bai.name,
-    )
+    logger.info("docker samtools regional extract fallback: %s", region)
     _run_checked(cmd, label="docker samtools regional extract")
 
 

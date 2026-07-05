@@ -139,10 +139,9 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
       });
       loadMeta();
       refresh();
-      const workerNames = seedWorkers.map((w) => w.name || w.id).join(", ");
       const summary = dryRun
-        ? `Dry run (parallel plan): ${seedWorkers.length} worker(s) (${workerNames}), ${result.items.length} would process (${result.skipped_existing} already seeded)`
-        : `Seeded ${result.scored} chr22 rows in parallel across ${seedWorkers.length} worker(s) (${result.skipped_existing} skipped, ${result.failed} failed)`;
+        ? `Dry run (${seedWorkers.length} workers, one task per worker per wave): ${result.items.length} would process (${result.skipped_existing} already seeded)`
+        : `Seeded ${result.scored} chr22 rows in waves of ${seedWorkers.length} worker(s) (${result.skipped_existing} skipped, ${result.failed} failed)`;
       setError(null);
       window.alert(summary);
     } catch (e) {
@@ -279,7 +278,7 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
         </button>
         {workers.filter((w) => w.base_url).length > 1 && (
           <span className="chip chip-muted history-seed-hint">
-            Parallel round-robin across {workers.filter((w) => w.base_url).length} workers
+            Parallel waves — one chr22 task per worker, wait, then next wave
           </span>
         )}
       </div>

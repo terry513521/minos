@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from typing import TypeVar
+
+T = TypeVar("T")
+
 HISTORY_ORIGIN_PORTFOLIO = "portfolio"
 HISTORY_ORIGIN_SEED = "seed"
 HISTORY_ORIGIN_WORKER = "worker"
@@ -32,6 +36,13 @@ SEED_SOURCE_CHROMS: frozenset[str] = frozenset({"chr20", "chr21"})
 def worker_for_seed_slot(worker_ids: list[str], slot: int) -> str:
     """Round-robin worker pick for seed slot 0, 1, 2, …"""
     return worker_ids[slot % len(worker_ids)]
+
+
+def chunk_seed_work_items(items: list[T], wave_size: int) -> list[list[T]]:
+    """Split seed jobs into waves of at most one task per worker."""
+    if wave_size <= 0:
+        return [items] if items else []
+    return [items[i : i + wave_size] for i in range(0, len(items), wave_size)]
 
 
 def infer_history_origin(source_key: str | None) -> str:

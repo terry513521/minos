@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.history_origin import (
     HISTORY_ORIGIN_SEED,
     SEED_SOURCE_CHROMS,
+    chunk_seed_work_items,
     remap_window_to_chr22,
     seed_source_key,
     worker_for_seed_slot,
@@ -31,6 +32,73 @@ class _SeedWorkItem:
     conf: dict[str, Any]
     worker_id: str
     source_key: str
+
+
+async def _benchmark_seed_wave(
+    worker_bases: dict[str, str | None],
+    wave: list[_SeedWorkItem],
+) -> list[tuple[_SeedWorkItem, Any]]:
+    results = await asyncio.gather(
+        *[
+            post_worker_benchmark(
+                base_url=worker_bases.get(item.worker_id),
+                worker_id=item.worker_id,
+                window=item.target_window,
+                tool=item.tool,
+                conf=item.conf,
+            )
+            for item in wave
+        ]
+    )
+    return list(zip(wave, results))
+
+
+async def _persist_seed_result(
+    db: AsyncSession,
+    *,
+    item: _SeedWorkItem,
+    bench: Any,
+    existing_keys: set[str],
+) -> tuple[HistorySeedChr22Item, bool]:
+    """Save one benchmark result. Returns (item, scored_ok)."""
+    if not bench.ok or bench.score is None:
+        return (
+            HistorySeedChr22Item(
+                source_id=item.source_id,
+                source_window=item.source_window,
+                target_window=item.target_window,
+                tool=item.tool,
+                worker_id=item.worker_id,
+                status="failed",
+                error=bench.error or "Benchmark failed",
+            ),
+            False,
+        )
+
+    row = await save_history_record(
+        db,
+        window=item.target_window,
+        tool=item.tool,
+        conf=item.conf,
+        score=float(bench.score),
+        worker_id=item.worker_id,
+        source_key=item.source_key,
+        history_origin=HISTORY_ORIGIN_SEED,
+    )
+    existing_keys.add(item.source_key)
+    return (
+        HistorySeedChr22Item(
+            source_id=item.source_id,
+            source_window=item.source_window,
+            target_window=item.target_window,
+            tool=item.tool,
+            worker_id=item.worker_id,
+            status="scored",
+            score=row.score,
+            history_id=row.id,
+        ),
+        True,
+    )
 
 
 async def seed_chr22_history(
@@ -152,70 +220,29 @@ async def seed_chr22_history(
         )
 
     work_items = [entry[1] for entry in entries if entry[0] == "work"]
-    bench_results: list[Any] = []
+    bench_by_source: dict[str, Any] = {}
+
     if work_items and not body.dry_run:
         worker_bases = await resolve_worker_base_urls(db, worker_ids)
-        bench_results = await asyncio.gather(
-            *[
-                post_worker_benchmark(
-                    base_url=worker_bases.get(item.worker_id),
-                    worker_id=item.worker_id,
-                    window=item.target_window,
-                    tool=item.tool,
-                    conf=item.conf,
+        for wave in chunk_seed_work_items(work_items, len(worker_ids)):
+            wave_results = await _benchmark_seed_wave(worker_bases, wave)
+            for item, bench in wave_results:
+                result_item, scored_ok = await _persist_seed_result(
+                    db,
+                    item=item,
+                    bench=bench,
+                    existing_keys=existing_keys,
                 )
-                for item in work_items
-            ]
-        )
+                if scored_ok:
+                    response.scored += 1
+                else:
+                    response.failed += 1
+                bench_by_source[item.source_id] = result_item
 
-    work_index = 0
     for kind, payload in entries:
         if kind in {"skip", "dry"}:
             response.items.append(payload)
             continue
-
-        item = payload
-        bench = bench_results[work_index]
-        work_index += 1
-
-        if not bench.ok or bench.score is None:
-            response.failed += 1
-            response.items.append(
-                HistorySeedChr22Item(
-                    source_id=item.source_id,
-                    source_window=item.source_window,
-                    target_window=item.target_window,
-                    tool=item.tool,
-                    worker_id=item.worker_id,
-                    status="failed",
-                    error=bench.error or "Benchmark failed",
-                )
-            )
-            continue
-
-        row = await save_history_record(
-            db,
-            window=item.target_window,
-            tool=item.tool,
-            conf=item.conf,
-            score=float(bench.score),
-            worker_id=item.worker_id,
-            source_key=item.source_key,
-            history_origin=HISTORY_ORIGIN_SEED,
-        )
-        existing_keys.add(item.source_key)
-        response.scored += 1
-        response.items.append(
-            HistorySeedChr22Item(
-                source_id=item.source_id,
-                source_window=item.source_window,
-                target_window=item.target_window,
-                tool=item.tool,
-                worker_id=item.worker_id,
-                status="scored",
-                score=row.score,
-                history_id=row.id,
-            )
-        )
+        response.items.append(bench_by_source[payload.source_id])
 
     return response

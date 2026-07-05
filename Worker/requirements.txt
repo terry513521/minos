@@ -19,5 +19,8 @@ optuna>=3.6.0
 scipy>=1.11.0
 numpy>=1.26.0
 
+# --- GIAB benchmark (remote BAM slice with local .bai index) ---
+pysam>=0.22.0
+
 # --- Asset setup (optional: validator truth download in scripts/setup_assets.py) ---
 bittensor-wallet>=3.0.0

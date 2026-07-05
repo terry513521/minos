@@ -2,7 +2,7 @@
 
 import unittest
 
-from app.history_origin import worker_for_seed_slot
+from app.history_origin import chunk_seed_work_items, worker_for_seed_slot
 from app.schemas import HistorySeedChr22Request
 
 
@@ -30,6 +30,13 @@ class HistorySeedWorkerTests(unittest.TestCase):
     def test_resolved_worker_ids_requires_one(self) -> None:
         with self.assertRaises(ValueError):
             HistorySeedChr22Request().resolved_worker_ids()
+
+    def test_chunk_seed_work_items_by_worker_count(self) -> None:
+        items = list(range(5))
+        waves = chunk_seed_work_items(items, 3)
+        self.assertEqual(len(waves), 2)
+        self.assertEqual(waves[0], [0, 1, 2])
+        self.assertEqual(waves[1], [3, 4])
 
 
 if __name__ == "__main__":
