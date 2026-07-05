@@ -139,9 +139,11 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
       });
       loadMeta();
       refresh();
+      const waveCount = result.waves_completed ?? 0;
+      const perWave = result.workers_per_wave ?? seedWorkers.length;
       const summary = dryRun
-        ? `Dry run (${seedWorkers.length} workers, one task per worker per wave): ${result.items.length} would process (${result.skipped_existing} already seeded)`
-        : `Seeded ${result.scored} chr22 rows in waves of ${seedWorkers.length} worker(s) (${result.skipped_existing} skipped, ${result.failed} failed)`;
+        ? `Dry run: ${result.items.length} task(s) in ${waveCount} wave(s) of up to ${perWave} worker(s) (${result.skipped_existing} already seeded)`
+        : `Seeded ${result.scored} chr22 rows in ${waveCount} wave(s) (${perWave} worker(s) per wave, ${result.skipped_existing} skipped, ${result.failed} failed)`;
       setError(null);
       window.alert(summary);
     } catch (e) {
@@ -274,13 +276,15 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
           disabled={seeding}
           onClick={() => handleSeedChr22(false)}
         >
-          {seeding ? "Seeding…" : `Seed chr22 (${SEED_BATCH_LIMIT})`}
-        </button>
-        {workers.filter((w) => w.base_url).length > 1 && (
-          <span className="chip chip-muted history-seed-hint">
-            Parallel waves — one chr22 task per worker, wait, then next wave
-          </span>
-        )}
+            {seeding
+              ? "Seeding…"
+              : `Seed chr22 (${SEED_BATCH_LIMIT})`}
+          </button>
+          {workers.filter((w) => w.base_url).length > 0 && (
+            <span className="chip chip-muted history-seed-hint">
+              {workers.filter((w) => w.base_url).length} workers · parallel wave → wait → next wave
+            </span>
+          )}
       </div>
 
       {total != null && (

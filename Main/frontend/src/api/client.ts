@@ -51,6 +51,8 @@ export interface HistorySeedChr22Response {
   scored: number;
   failed: number;
   dry_run: boolean;
+  waves_completed?: number;
+  workers_per_wave?: number;
   items: Array<{
     source_id: string;
     source_window: string;

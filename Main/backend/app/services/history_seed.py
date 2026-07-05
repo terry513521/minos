@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from typing import Any
 
@@ -21,6 +22,8 @@ from app.models import RoundHistory
 from app.schemas import HistorySeedChr22Item, HistorySeedChr22Request, HistorySeedChr22Response
 from app.services.history_store import save_history_record
 from app.services.worker_proxy import post_worker_benchmark, resolve_worker_base_urls
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -105,6 +108,12 @@ async def seed_chr22_history(
     db: AsyncSession,
     body: HistorySeedChr22Request,
 ) -> HistorySeedChr22Response:
+    """
+    Seed chr22 rows in waves:
+      1. POST /benchmark to each worker in the wave (parallel)
+      2. await all responses
+      3. save results, then start the next wave
+    """
     worker_ids = body.resolved_worker_ids()
     source_chroms = {
         c.lower().strip() if c.lower().startswith("chr") else f"chr{c.lower().strip()}"
@@ -221,10 +230,20 @@ async def seed_chr22_history(
 
     work_items = [entry[1] for entry in entries if entry[0] == "work"]
     bench_by_source: dict[str, Any] = {}
+    waves = chunk_seed_work_items(work_items, len(worker_ids))
+    waves_completed = 0
 
     if work_items and not body.dry_run:
         worker_bases = await resolve_worker_base_urls(db, worker_ids)
-        for wave in chunk_seed_work_items(work_items, len(worker_ids)):
+        for wave_index, wave in enumerate(waves, start=1):
+            worker_labels = ", ".join(item.worker_id for item in wave)
+            logger.info(
+                "chr22 seed wave %s/%s: dispatching %s task(s) to worker(s) %s",
+                wave_index,
+                len(waves),
+                len(wave),
+                worker_labels,
+            )
             wave_results = await _benchmark_seed_wave(worker_bases, wave)
             for item, bench in wave_results:
                 result_item, scored_ok = await _persist_seed_result(
@@ -238,6 +257,14 @@ async def seed_chr22_history(
                 else:
                     response.failed += 1
                 bench_by_source[item.source_id] = result_item
+            waves_completed += 1
+            logger.info(
+                "chr22 seed wave %s/%s complete (scored=%s failed=%s so far)",
+                wave_index,
+                len(waves),
+                response.scored,
+                response.failed,
+            )
 
     for kind, payload in entries:
         if kind in {"skip", "dry"}:
@@ -245,4 +272,6 @@ async def seed_chr22_history(
             continue
         response.items.append(bench_by_source[payload.source_id])
 
+    response.waves_completed = waves_completed if not body.dry_run else len(waves)
+    response.workers_per_wave = len(worker_ids)
     return response

@@ -388,6 +388,8 @@ class HistorySeedChr22Response(BaseModel):
     scored: int
     failed: int
     dry_run: bool
+    waves_completed: int = 0
+    workers_per_wave: int = 0
     items: list[HistorySeedChr22Item] = Field(default_factory=list)
 
 
