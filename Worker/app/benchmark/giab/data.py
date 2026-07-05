@@ -39,7 +39,14 @@ ASSETS = {
         f"{GIAB_BASE}/data/AshkenazimTrio/HG002_NA24385_son/Element_AVITI_20240920/"
         "HG002_Element-StdInsert_80x_GRCh38-GIABv3.bam"
     ),
+    "bam_remote_bai": (
+        f"{GIAB_BASE}/data/AshkenazimTrio/HG002_NA24385_son/Element_AVITI_20240920/"
+        "HG002_Element-StdInsert_80x_GRCh38-GIABv3.bam.bai"
+    ),
 }
+
+_SAMTOOLS_DOCKER_IMAGE = "staphb/samtools:1.22"
+_USER_AGENT = "minos-worker-giab/1.0 (+https://github.com/minos-protocol/minos_subnet)"
 
 REF_S3_BASE = "https://api.theminos.ai/reference"
 
@@ -55,6 +62,56 @@ _SDF_FILES = (
     "sequenceIndex0",
     "summary.txt",
 )
+
+
+def remote_hg002_bam_index_path() -> Path:
+    """Local cache for the HG002 whole-genome BAM index (required for FTP/HTTP slices)."""
+    return giab_data_dir() / f"{Path(ASSETS['bam_remote']).name}.bai"
+
+
+def ensure_remote_bam_index() -> Path:
+    """Download HG002 .bai once; samtools needs it for random access on the remote BAM."""
+    dest = remote_hg002_bam_index_path()
+    _download(ASSETS["bam_remote_bai"], dest)
+    return dest
+
+
+def _samtools_remote_view_cmd(
+    *,
+    remote_bam: str,
+    local_bai: Path,
+    region: str,
+    dest: Path,
+    samtools: str,
+) -> list[str]:
+    """Build samtools view args: local index + remote BAM (htslib load_index)."""
+    return [
+        samtools,
+        "view",
+        "-b",
+        "-o",
+        str(dest),
+        "--input-fmt-option",
+        f"load_index={local_bai}",
+        remote_bam,
+        region,
+    ]
+
+
+def _docker_samtools_remote_view_script(
+    *,
+    remote_bam: str,
+    local_bai: Path,
+    region: str,
+    dest_name: str,
+) -> str:
+    index_in_container = f"/idx/{local_bai.name}"
+    return (
+        f"samtools view -b -o /out/{dest_name} "
+        f"--input-fmt-option load_index={index_in_container} "
+        f"'{remote_bam}' {region} "
+        f"&& samtools index /out/{dest_name}"
+    )
 
 
 def _local_name(key: str) -> str:
@@ -209,7 +266,12 @@ def _download(url: str, dest: Path) -> None:
         return
     logger.info("Downloading %s → %s", url, dest)
     tmp = dest.with_suffix(dest.suffix + ".part")
-    urllib.request.urlretrieve(url, tmp)
+    if tmp.exists():
+        tmp.unlink()
+    request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
+    with urllib.request.urlopen(request, timeout=600) as response:
+        with tmp.open("wb") as handle:
+            shutil.copyfileobj(response, handle)
     tmp.rename(dest)
 
 
@@ -241,18 +303,32 @@ def _samtools_view_region(region: str, dest: Path) -> None:
     """Extract a genomic window from remote indexed HG002 BAM."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     remote = ASSETS["bam_remote"]
+    local_bai = ensure_remote_bam_index()
     samtools = _samtools_bin()
 
     if samtools:
-        cmd = [samtools, "view", "-b", remote, region, "-o", str(dest)]
-        logger.info("samtools regional extract: %s → %s", region, dest.name)
+        cmd = _samtools_remote_view_cmd(
+            remote_bam=remote,
+            local_bai=local_bai,
+            region=region,
+            dest=dest,
+            samtools=samtools,
+        )
+        logger.info(
+            "samtools regional extract: %s → %s (index %s)",
+            region,
+            dest.name,
+            local_bai.name,
+        )
         _run_checked(cmd, label="samtools view")
         _run_checked([samtools, "index", str(dest)], label="samtools index")
         return
 
-    inner = (
-        f"samtools view -b '{remote}' {region} -o /out/{dest.name} "
-        f"&& samtools index /out/{dest.name}"
+    inner = _docker_samtools_remote_view_script(
+        remote_bam=remote,
+        local_bai=local_bai,
+        region=region,
+        dest_name=dest.name,
     )
     cmd = [
         "docker",
@@ -262,13 +338,18 @@ def _samtools_view_region(region: str, dest: Path) -> None:
         "/etc/ssl/certs:/etc/ssl/certs:ro",
         "-e",
         "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt",
+        f"-v{local_bai.parent}:/idx:ro",
         f"-v{dest.parent}:/out",
-        "staphb/samtools:1.20",
+        _SAMTOOLS_DOCKER_IMAGE,
         "sh",
         "-c",
         inner,
     ]
-    logger.info("docker samtools regional extract: %s", region)
+    logger.info(
+        "docker samtools regional extract: %s (index %s)",
+        region,
+        local_bai.name,
+    )
     _run_checked(cmd, label="docker samtools regional extract")
 
 

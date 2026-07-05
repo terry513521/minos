@@ -74,15 +74,25 @@ def main() -> int:
 
         truth_vcf = giab_data_dir() / "HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz"
         truth_bed = giab_data_dir() / "HG002_GRCh38_1_22_v4.2.1_benchmark_noinconsistent.bed"
+        remote_bai = giab_data_dir() / "HG002_Element-StdInsert_80x_GRCh38-GIABv3.bam.bai"
         for path, label in (
-            (truth_vcf, "GIAB truth VCF (auto-download on first run)"),
+            (truth_vcf, "GIAB truth VCF"),
             (truth_bed, "GIAB confident BED"),
+            (remote_bai, "HG002 BAM index (NCBI FTP)"),
         ):
             if path.exists() and path.stat().st_size > 0:
                 total += path.stat().st_size
                 print(f"  OK  {path.relative_to(WORKER_ROOT)}  ({human_size(path.stat().st_size)})  [{label}]")
+            elif label.endswith("BAM index"):
+                print(
+                    f"  ..  {path.relative_to(WORKER_ROOT)}  "
+                    f"(not yet — downloaded before first regional slice) [{label}]"
+                )
             else:
-                print(f"  ..  {path.relative_to(WORKER_ROOT)}  (not yet — downloaded on first benchmark) [{label}]")
+                print(
+                    f"  ..  {path.relative_to(WORKER_ROOT)}  "
+                    f"(not yet — downloaded on first benchmark) [{label}]"
+                )
 
         bam_dir = giab_data_dir().parent / "bam"
         region = minos_region_for_chrom(chrom)
