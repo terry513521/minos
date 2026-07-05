@@ -11,7 +11,8 @@ from app.api import auto, candidates, health, history, jobs, platform_round, pol
 from app.config import get_settings
 from app.database import SessionLocal, init_db
 from app.services.auto_mode import load_auto_mode_state
-from app.services.platform_round import poller
+from app.services.platform_round import poller as platform_poller
+from app.services.seed_results_poller import poller as seed_poller
 
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
@@ -21,9 +22,11 @@ async def lifespan(_app: FastAPI):
     await init_db()
     async with SessionLocal() as db:
         await load_auto_mode_state(db)
-    await poller.start()
+    await platform_poller.start()
+    await seed_poller.start()
     yield
-    await poller.stop()
+    await seed_poller.stop()
+    await platform_poller.stop()
 
 
 def create_app() -> FastAPI:
@@ -58,13 +61,13 @@ def create_app() -> FastAPI:
     @app.websocket(f"{settings.api_prefix}/ws")
     async def websocket_events(websocket: WebSocket):
         await websocket.accept()
-        queue = poller.subscribe()
+        queue = platform_poller.subscribe()
         try:
             await websocket.send_json(
-                {"type": "connected", "service": "effortless", "data": poller.snapshot.to_dict()}
+                {"type": "connected", "service": "effortless", "data": platform_poller.snapshot.to_dict()}
             )
             await websocket.send_json(
-                {"type": "platform_round", "data": poller.snapshot.to_dict()}
+                {"type": "platform_round", "data": platform_poller.snapshot.to_dict()}
             )
 
             async def forward_poller():
@@ -86,7 +89,7 @@ def create_app() -> FastAPI:
         except WebSocketDisconnect:
             pass
         finally:
-            poller.unsubscribe(queue)
+            platform_poller.unsubscribe(queue)
 
     if settings.serve_frontend and FRONTEND_DIST.is_dir():
         app.mount(

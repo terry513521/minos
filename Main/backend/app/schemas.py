@@ -281,6 +281,47 @@ class WorkerBenchmarkResponse(BaseModel):
     error: str | None = None
 
 
+class WorkerSeedBatchAcceptResponse(BaseModel):
+    worker_id: str
+    ok: bool
+    status_code: int | None = None
+    batch_id: str | None = None
+    queued: int = 0
+    skipped_duplicate: int = 0
+    message: str | None = None
+    error: str | None = None
+
+
+class WorkerSeedResultItem(BaseModel):
+    seed_id: str | None = None
+    source_id: str | None = None
+    source_key: str
+    source_window: str | None = None
+    target_window: str
+    tool: str
+    conf: dict[str, Any] = Field(default_factory=dict)
+    status: str
+    success: bool = False
+    score: float | None = None
+    raw_score: float | None = None
+    variant_count: int = 0
+    cached: bool = False
+    error: str | None = None
+    batch_id: str | None = None
+    queued_at: str | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
+
+
+class WorkerSeedResultsResponse(BaseModel):
+    worker_id: str
+    ok: bool
+    status_code: int | None = None
+    total: int = 0
+    results: list[WorkerSeedResultItem] = Field(default_factory=list)
+    error: str | None = None
+
+
 class WorkerStopAllResult(BaseModel):
     worker_id: str
     worker_name: str
@@ -401,12 +442,25 @@ class HistorySeedChr22Response(BaseModel):
     scored: int
     failed: int
     dry_run: bool
+    accepted: bool = False
+    queued: int = 0
+    worker_batch_id: str | None = None
+    sync_message: str | None = None
     waves_completed: int = 0
     workers_per_wave: int = 0
     worker_ids_used: list[str] = Field(default_factory=list)
     worker_dispatch_urls: dict[str, str] = Field(default_factory=dict)
     workers_skipped: list[HistorySeedChr22WorkerSkip] = Field(default_factory=list)
     items: list[HistorySeedChr22Item] = Field(default_factory=list)
+
+
+class HistorySeedSyncResponse(BaseModel):
+    workers_polled: int = 0
+    imported: int = 0
+    skipped_duplicate: int = 0
+    failed: int = 0
+    last_sync_at: datetime | None = None
+    worker_errors: list[str] = Field(default_factory=list)
 
 
 class HistoryImportResponse(BaseModel):

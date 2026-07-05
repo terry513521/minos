@@ -17,6 +17,9 @@ from app.schemas import (
     WorkerBenchmarkResponse,
     WorkerDispatchRequest,
     WorkerDispatchResponse,
+    WorkerSeedBatchAcceptResponse,
+    WorkerSeedResultItem,
+    WorkerSeedResultsResponse,
     WorkerStopResponse,
     WorkerTrialScore,
 )
@@ -493,3 +496,112 @@ async def stop_all_workers_optimization(db: AsyncSession) -> list[dict[str, Any]
             }
         )
     return stop_results
+
+
+async def post_worker_seed_batch(
+    *,
+    base_url: str | None,
+    worker_id: str,
+    batch_id: str | None,
+    items: list[dict[str, Any]],
+    timeout: float = 60.0,
+) -> WorkerSeedBatchAcceptResponse:
+    """POST /seed/batch — queue all chr22 seed benchmarks on the worker."""
+    if not base_url:
+        return WorkerSeedBatchAcceptResponse(
+            worker_id=worker_id,
+            ok=False,
+            error="Worker has no valid base_url configured",
+        )
+    url = f"{base_url.rstrip('/')}/seed/batch"
+    payload = {"batch_id": batch_id, "items": items}
+    logger.info("POST %s worker_id=%s items=%s", url, worker_id, len(items))
+    try:
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+            response = await client.post(url, json=payload)
+            body: dict | None = None
+            if response.headers.get("content-type", "").startswith("application/json"):
+                parsed = response.json()
+                if isinstance(parsed, dict):
+                    body = parsed
+            if response.status_code >= 400 or body is None:
+                return WorkerSeedBatchAcceptResponse(
+                    worker_id=worker_id,
+                    ok=False,
+                    status_code=response.status_code,
+                    error=(body or {}).get("detail")
+                    if body
+                    else response.text[:500] or "Seed batch request failed",
+                )
+            return WorkerSeedBatchAcceptResponse(
+                worker_id=worker_id,
+                ok=True,
+                status_code=response.status_code,
+                batch_id=str(body.get("batch_id") or batch_id or ""),
+                queued=int(body.get("queued") or 0),
+                skipped_duplicate=int(body.get("skipped_duplicate") or 0),
+                message=str(body.get("message") or "Seed batch accepted"),
+            )
+    except Exception as exc:
+        return WorkerSeedBatchAcceptResponse(
+            worker_id=worker_id,
+            ok=False,
+            error=str(exc),
+        )
+
+
+async def fetch_worker_seed_results(
+    *,
+    base_url: str | None,
+    worker_id: str,
+    status: str | None = "scored",
+    timeout: float = 120.0,
+) -> WorkerSeedResultsResponse:
+    """GET /seed/results from a worker."""
+    if not base_url:
+        return WorkerSeedResultsResponse(
+            worker_id=worker_id,
+            ok=False,
+            error="Worker has no valid base_url configured",
+        )
+    url = f"{base_url.rstrip('/')}/seed/results"
+    params = {"status": status} if status else None
+    try:
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+            response = await client.get(url, params=params)
+            body: dict | None = None
+            if response.headers.get("content-type", "").startswith("application/json"):
+                parsed = response.json()
+                if isinstance(parsed, dict):
+                    body = parsed
+            if response.status_code >= 400 or body is None:
+                return WorkerSeedResultsResponse(
+                    worker_id=worker_id,
+                    ok=False,
+                    status_code=response.status_code,
+                    error=(body or {}).get("detail")
+                    if body
+                    else response.text[:500] or "Seed results fetch failed",
+                )
+            raw_results = body.get("results") or []
+            results: list[WorkerSeedResultItem] = []
+            if isinstance(raw_results, list):
+                for item in raw_results:
+                    if isinstance(item, dict):
+                        try:
+                            results.append(WorkerSeedResultItem.model_validate(item))
+                        except Exception:
+                            continue
+            return WorkerSeedResultsResponse(
+                worker_id=worker_id,
+                ok=True,
+                status_code=response.status_code,
+                total=int(body.get("total") or len(results)),
+                results=results,
+            )
+    except Exception as exc:
+        return WorkerSeedResultsResponse(
+            worker_id=worker_id,
+            ok=False,
+            error=str(exc),
+        )

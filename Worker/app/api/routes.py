@@ -20,12 +20,19 @@ from app.domain.schemas import (
     HealthResponse,
     OptimizeRequest,
     OptimizeResponse,
+    SeedBatchAcceptResponse,
+    SeedBatchRequest,
+    SeedResultItem,
+    SeedResultsResponse,
+    SeedStatusResponse,
     StopResponse,
     TrialScoreEntry,
 )
 from app.domain.state import best_store
 from app.optimization.jobs import request_stop_optimization, submit_optimize_job, worker_busy
 from app.optimization.optimizer import build_accept_response, validate_optimize_request
+from app.seed.jobs import seed_busy, submit_seed_batch
+from app.seed.store import list_results, status_snapshot
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -118,6 +125,8 @@ async def get_best() -> BestScoreResponse:
 async def _accept_job(body: OptimizeRequest) -> OptimizeResponse:
     if worker_busy():
         raise HTTPException(status_code=409, detail="Worker already running an optimization job")
+    if seed_busy():
+        raise HTTPException(status_code=409, detail="Worker is running a seed batch")
 
     try:
         search_space_size = await asyncio.to_thread(validate_optimize_request, body, settings)
@@ -156,6 +165,11 @@ async def benchmark_once(body: BenchmarkRequest) -> BenchmarkResponse:
         raise HTTPException(
             status_code=409,
             detail="Worker is running an optimization job; stop it before /benchmark",
+        )
+    if seed_busy():
+        raise HTTPException(
+            status_code=409,
+            detail="Worker is running a seed batch; wait for /seed/status to finish",
         )
     logger.info("POST /benchmark window=%s tool=%s", window, tool)
     try:
@@ -197,6 +211,59 @@ async def benchmark_once(body: BenchmarkRequest) -> BenchmarkResponse:
         variant_count=result.variant_count,
         cached=result.cached,
         error=result.error,
+    )
+
+
+@app.post("/seed/batch", response_model=SeedBatchAcceptResponse, status_code=202)
+async def seed_batch(body: SeedBatchRequest) -> SeedBatchAcceptResponse:
+    """Accept a chr22 seed batch; benchmarks run locally in the background."""
+    if worker_busy():
+        raise HTTPException(
+            status_code=409,
+            detail="Worker is running an optimization job; stop it before seeding",
+        )
+    if not body.items:
+        raise HTTPException(status_code=400, detail="items must not be empty")
+    for item in body.items:
+        if not _WINDOW_RE.match(item.target_window.strip()):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid target_window {item.target_window!r}; expected chrN:start-end",
+            )
+    logger.info("POST /seed/batch items=%s batch_id=%s", len(body.items), body.batch_id)
+    entries = [item.model_dump() for item in body.items]
+    batch_id, queued, skipped = await asyncio.to_thread(
+        submit_seed_batch,
+        batch_id=body.batch_id,
+        items=entries,
+        settings=settings,
+    )
+    return SeedBatchAcceptResponse(
+        status="accepted",
+        batch_id=batch_id,
+        queued=queued,
+        skipped_duplicate=skipped,
+        message=(
+            f"Queued {queued} seed benchmark(s)"
+            + (f", skipped {skipped} duplicate(s)" if skipped else "")
+            + ". Poll GET /seed/results for completed scores."
+        ),
+    )
+
+
+@app.get("/seed/status", response_model=SeedStatusResponse)
+async def seed_status() -> SeedStatusResponse:
+    snap = await asyncio.to_thread(status_snapshot)
+    return SeedStatusResponse(**snap)
+
+
+@app.get("/seed/results", response_model=SeedResultsResponse)
+async def seed_results(status: str | None = None) -> SeedResultsResponse:
+    """Return locally stored seed benchmark results (optionally filter by status)."""
+    rows = await asyncio.to_thread(list_results, status=status)
+    return SeedResultsResponse(
+        total=len(rows),
+        results=[SeedResultItem(**row) for row in rows],
     )
 
 

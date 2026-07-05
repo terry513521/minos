@@ -77,6 +77,10 @@ class Settings(BaseSettings):
     history_api_timeout: float = 60.0
     history_api_sync_on_startup: bool = True
 
+    # Worker chr22 seed result sync (GET /seed/results → round_history)
+    seed_results_poll_enabled: bool = True
+    seed_results_poll_seconds: int = 1800
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

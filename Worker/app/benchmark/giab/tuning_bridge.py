@@ -5,13 +5,19 @@ from __future__ import annotations
 import importlib
 import sys
 from pathlib import Path
-from typing import Optional
 
 from app.config import get_settings
 from app.core.repo import ensure_repo_imports
 from app.paths import get_vendor_root
 
 _CONFIGURED = False
+
+
+def _load_module(name: str):
+    existing = sys.modules.get(name)
+    if existing is not None and getattr(existing, "__spec__", None) is not None:
+        return importlib.reload(existing)
+    return importlib.import_module(name)
 
 
 def get_tuning_root() -> Path:
@@ -29,6 +35,9 @@ def ensure_tuning_giab() -> Path:
     """Import tuning.giab with Worker dataset paths and reference layout."""
     global _CONFIGURED
 
+    if _CONFIGURED:
+        return get_tuning_root()
+
     tuning_root = get_tuning_root()
     ensure_repo_imports()
 
@@ -43,13 +52,8 @@ def ensure_tuning_giab() -> Path:
     tuning_paths.GIAB_RESULTS_DIR = giab_root / "results"
     tuning_paths.MINOS_GIAB_REGIONS = worker_paths.MINOS_GIAB_REGIONS
 
-    import tuning.giab.data as tuning_data
-
-    tuning_data = importlib.reload(tuning_data)
-
-    import tuning.giab.scoring_assets as scoring_assets
-
-    scoring_assets = importlib.reload(scoring_assets)
+    tuning_data = _load_module("tuning.giab.data")
+    scoring_assets = _load_module("tuning.giab.scoring_assets")
     scoring_assets.REGION_CACHE_DIR = worker_paths.giab_data_dir() / "region_cache"
 
     def _worker_reference_for_chrom(chrom: str) -> Path:
