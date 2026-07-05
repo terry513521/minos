@@ -14,6 +14,15 @@ MINOS_GIAB_REGIONS = (
     ("chr22", "chr22:35444092-40444092"),
 )
 
+MINOS_REGION_BY_CHROM: dict[str, str] = {
+    chrom: region for chrom, region in MINOS_GIAB_REGIONS
+}
+
+
+def minos_region_for_chrom(chrom: str) -> str | None:
+    """Default Minos 5 Mb GIAB window for a chromosome, if configured."""
+    return MINOS_REGION_BY_CHROM.get(chrom)
+
 
 def _data_root() -> Path:
     return WORKER_ROOT / get_settings().data_dir

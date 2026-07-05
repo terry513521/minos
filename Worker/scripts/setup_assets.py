@@ -143,6 +143,9 @@ def write_manifest(payload: dict) -> None:
 
 
 def print_dataset_inventory(chromosomes: list[str]) -> None:
+    from app.benchmark.giab.data import regional_bam_cache_path
+    from app.benchmark.giab.paths import minos_region_for_chrom
+
     print("\n== Dataset inventory ==")
     total = 0
     truth = benchmark_truth_path()
@@ -162,6 +165,8 @@ def print_dataset_inventory(chromosomes: list[str]) -> None:
             print(f"  {human_size(size):>8}  {path.relative_to(ROOT)}")
 
         bam = find_local_benchmark_bam(chrom)
+        giab_region = minos_region_for_chrom(chrom)
+        giab_bam = regional_bam_cache_path(giab_region) if giab_region else None
         if bam is not None:
             size = bam.stat().st_size
             total += size
@@ -169,8 +174,18 @@ def print_dataset_inventory(chromosomes: list[str]) -> None:
             index = bam.parent / f"{bam.name}.bai"
             if index.exists():
                 total += index.stat().st_size
+        elif giab_bam is not None and giab_bam.exists() and giab_bam.stat().st_size > 0:
+            size = giab_bam.stat().st_size
+            total += size
+            print(f"  {human_size(size):>8}  {giab_bam.relative_to(ROOT)}  [GIAB FTP slice]")
+            index = giab_bam.parent / f"{giab_bam.name}.bai"
+            if index.exists():
+                total += index.stat().st_size
         else:
-            print(f"  missing  datasets/bams/{chrom}.bam or HG002_{chrom}_*.bam")
+            print(
+                f"  missing  datasets/bams/{chrom}.bam, "
+                f"HG002_{chrom}_*.bam, or datasets/giab/bam/HG002_{chrom}_*.bam"
+            )
 
         per_chrom_truth = DATA_DIR / "truth" / f"{chrom}.vcf.gz"
         if per_chrom_truth.exists():
@@ -181,13 +196,24 @@ def print_dataset_inventory(chromosomes: list[str]) -> None:
             print(f"  {human_size(truth.stat().st_size):>8}  {truth.relative_to(ROOT)}  [GIAB truth, shared]")
             total += truth.stat().st_size
         else:
-            print(f"  missing  datasets/data/ GIAB truth or datasets/truth/{chrom}.vcf.gz")
+            giab_truth = DATA_DIR / "giab" / "data" / "HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz"
+            if giab_truth.exists():
+                print(f"  {human_size(giab_truth.stat().st_size):>8}  {giab_truth.relative_to(ROOT)}  [GIAB truth]")
+                total += giab_truth.stat().st_size
+            else:
+                print(f"  missing  datasets/giab/data/ GIAB truth or datasets/truth/{chrom}.vcf.gz")
 
         mutations = DATA_DIR / "truth" / f"{chrom}.mutations.vcf.gz"
         if mutations.exists():
             size = mutations.stat().st_size
             total += size
             print(f"  {human_size(size):>8}  {mutations.relative_to(ROOT)}  [mutations, optional]")
+
+    giab_dir = DATA_DIR / "giab" / "bam"
+    if giab_dir.is_dir():
+        slice_count = len(list(giab_dir.glob("HG002_*.bam")))
+        if slice_count:
+            print(f"  giab/bam: {slice_count} HG002 regional slice(s) under {giab_dir.relative_to(ROOT)}/")
     print(f"  total    {human_size(total)} under {DATA_DIR.relative_to(ROOT)}/")
 
 
@@ -813,13 +839,77 @@ def _link_or_copy_bam(source: Path, dest: Path, *, force: bool) -> None:
         print(f"  copied {dest.relative_to(ROOT)}")
 
 
+def ensure_giab_regional_bams(chromosomes: list[str], *, force: bool = False) -> bool:
+    """
+    Download GIAB truth and slice HG002 BAM windows from NCBI ReferenceSamples FTP.
+
+    Produces datasets/giab/bam/HG002_{chr}_{start}-{end}.bam for each configured
+    Minos window (chr20, chr21, chr22). Requires samtools or Docker.
+    """
+    from app.benchmark.giab.data import ASSETS, ensure_bam_for_region, ensure_truth_assets, regional_bam_cache_path
+    from app.benchmark.giab.paths import minos_region_for_chrom
+
+    print("\n== GIAB truth + regional BAM (NCBI ReferenceSamples) ==")
+    print("  FTP: https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab")
+    print(f"  HG002 BAM: {ASSETS['bam_remote']}")
+    print("  Slices Minos 5 Mb windows with samtools view (local binary or Docker).")
+
+    ok = True
+    try:
+        vcf, bed = ensure_truth_assets()
+        print(f"  OK  truth VCF: {vcf.relative_to(ROOT)}")
+        print(f"  OK  truth BED: {bed.relative_to(ROOT)}")
+    except Exception as exc:
+        print(f"  failed GIAB truth download: {exc}")
+        ok = False
+
+    for chrom in chromosomes:
+        region = minos_region_for_chrom(chrom)
+        if not region:
+            print(f"[{chrom}] no Minos GIAB window — skip regional BAM")
+            continue
+
+        dest = regional_bam_cache_path(region)
+        index = Path(f"{dest}.bai")
+        if dest.exists() and index.exists() and not force:
+            print(
+                f"[{chrom}] skip (exists): {dest.relative_to(ROOT)} "
+                f"({human_size(dest.stat().st_size)})"
+            )
+            continue
+
+        if force:
+            if dest.exists():
+                dest.unlink()
+            if index.exists():
+                index.unlink()
+
+        try:
+            print(f"[{chrom}] slicing {region} from NCBI FTP …")
+            path = ensure_bam_for_region(region)
+            size = path.stat().st_size if path.exists() else 0
+            print(f"  OK  {path.relative_to(ROOT)} ({human_size(size)})")
+        except Exception as exc:
+            print(
+                f"[{chrom}] GIAB BAM slice failed: {exc}\n"
+                "  Ensure Docker is running or install samtools. "
+                "Truth VCF is still usable; BAM will retry on first benchmark."
+            )
+            ok = False
+
+    return ok
+
+
 def ensure_benchmark_bams(chromosomes: list[str], *, force: bool = False) -> bool:
     """
     Populate datasets/bams/{chrom}.bam from local legacy paths, URLs, or HuggingFace.
     These are fixed HG002 benchmark BAMs — not live platform round BAMs.
     Local HG002_* region BAMs already on disk are accepted without canonical names.
     """
-    print("\n== Benchmark BAMs (HG002/minos — both chr20 & chr21) ==")
+    from app.benchmark.giab.data import regional_bam_cache_path
+    from app.benchmark.giab.paths import minos_region_for_chrom
+
+    print("\n== Benchmark BAMs (HG002/minos — legacy datasets/bams/) ==")
     manual = parse_manual_bam_urls(os.getenv("WORKER_BENCHMARK_BAM_URLS"))
     hf_repo = os.getenv("WORKER_BENCHMARK_HF_REPO", "").strip()
     ok = True
@@ -840,6 +930,17 @@ def ensure_benchmark_bams(chromosomes: list[str], *, force: bool = False) -> boo
             if local_bam.resolve() != dest.resolve() and not dest.exists():
                 print(f"  note: canonical {dest.relative_to(ROOT)} not required — worker resolves HG002_* BAMs")
             continue
+
+        giab_region = minos_region_for_chrom(chrom)
+        if giab_region:
+            giab_bam = regional_bam_cache_path(giab_region)
+            giab_index = Path(f"{giab_bam}.bai")
+            if giab_bam.exists() and giab_index.exists() and not force:
+                print(
+                    f"[{chrom}] GIAB regional slice: {giab_bam.relative_to(ROOT)} "
+                    f"({human_size(giab_bam.stat().st_size)})"
+                )
+                continue
 
         legacy = DATA_DIR / "bam" / f"HG002_{chrom}_minos_window.bam"
         legacy_index = DATA_DIR / "bam" / f"HG002_{chrom}_minos_window.bam.bai"
@@ -884,7 +985,8 @@ def ensure_benchmark_bams(chromosomes: list[str], *, force: bool = False) -> boo
 
             print(
                 f"[{chrom}] benchmark BAM missing.\n"
-                f"  Place datasets/bams/HG002_{chrom}_*.bam (+ .bai), "
+                f"  GIAB setup slices from NCBI FTP into datasets/giab/bam/.\n"
+                f"  Or place datasets/bams/HG002_{chrom}_*.bam (+ .bai), "
                 f"{legacy.relative_to(ROOT)}, or set one of:\n"
                 f"    WORKER_BENCHMARK_BAM_URLS={chrom}:https://...\n"
                 f"    WORKER_BENCHMARK_HF_REPO=your-org/minos  (public or HF_TOKEN)"
@@ -960,6 +1062,12 @@ def main() -> int:
         "on",
     }
     download_sdf_flag = os.getenv("WORKER_DOWNLOAD_SDF", "true").lower() in {"1", "true", "yes", "on"}
+    download_giab_slices = os.getenv("WORKER_DOWNLOAD_GIAB_SLICES", "true").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
     print("Effortless worker asset setup")
     print(f"  data dir: {DATA_DIR.relative_to(ROOT)}")
@@ -980,6 +1088,10 @@ def main() -> int:
     success = True
     if not args.skip_reference:
         success = download_reference(chromosomes, force=args.force) and success
+    if benchmark_mode and download_giab_slices and not args.skip_bam:
+        success = ensure_giab_regional_bams(chromosomes, force=args.force) and success
+    elif benchmark_mode and not download_giab_slices:
+        print("\n== GIAB regional BAM ==\n  skipped (WORKER_DOWNLOAD_GIAB_SLICES=false)")
     if benchmark_mode and not args.skip_bam:
         success = ensure_benchmark_bams(chromosomes, force=args.force) and success
     if download_bam and not args.skip_bam:

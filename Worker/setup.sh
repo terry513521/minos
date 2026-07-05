@@ -80,7 +80,8 @@ echo "BAM lookup: datasets/bams/{chr}.bam | HG002_{chr}_{start}-{end}.bam | HG00
 echo "Truth:      datasets/data/HG002_GRCh38_1_22_v4.2.1_benchmark.vcf.gz"
 echo
 echo "Tune Worker/.env before the asset step if needed:"
-echo "  WORKER_CHROMOSOMES=chr20,chr21"
+echo "  WORKER_CHROMOSOMES=chr20,chr21,chr22"
+echo "  WORKER_DOWNLOAD_GIAB_SLICES=true   # slice HG002 BAM from NCBI FTP (chr22 too)"
 echo "  WORKER_ADAPTIVE_MAX_TRIALS=44      # 1 base + N search trials"
 echo "  WORKER_BENCHMARK_SUBWINDOW_MB=5    # full 5M round (0 = entire dispatch)"
 echo "  WORKER_TRIAL_THREADS=4             # CPUs per concurrent slot"
@@ -107,7 +108,8 @@ fi
 echo
 echo "Worker environment ready."
 echo "  datasets/reference/{chr}/     GRCh38 FASTA + SDF"
-echo "  datasets/bams/              benchmark BAM(s) for chr20/chr21"
+echo "  datasets/giab/bam/          HG002 regional slices (NCBI FTP; includes chr22)"
+echo "  datasets/bams/              optional legacy benchmark BAM(s)"
 echo "  datasets/data/              GIAB truth VCF"
 echo "  datasets/vcf_cache/         scored VCF cache (per config)"
 echo "  runs/                       ephemeral job artifacts"

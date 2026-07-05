@@ -18,8 +18,8 @@ try:
 except ImportError:
     pass
 
-from app.benchmark.giab.paths import reference_dir
-from app.benchmark.giab.paths import giab_bam_dir, giab_data_dir, giab_vcf_dir
+from app.benchmark.giab.paths import reference_dir, giab_data_dir, giab_vcf_dir, minos_region_for_chrom
+from app.benchmark.giab.data import regional_bam_cache_path
 from app.config import Settings
 from app.paths import WORKER_ROOT, data_root
 
@@ -84,17 +84,48 @@ def main() -> int:
             else:
                 print(f"  ..  {path.relative_to(WORKER_ROOT)}  (not yet — downloaded on first benchmark) [{label}]")
 
-        bam_dir = giab_bam_dir()
-        bam_count = len(list(bam_dir.glob("HG002_*.bam"))) if bam_dir.is_dir() else 0
-        print(f"  ..  {bam_dir.relative_to(WORKER_ROOT)}/  ({bam_count} cached BAM slice(s))")
+        bam_dir = giab_data_dir().parent / "bam"
+        region = minos_region_for_chrom(chrom)
+        expected_bam = regional_bam_cache_path(region) if region else None
+        if expected_bam and expected_bam.exists() and expected_bam.stat().st_size > 0:
+            bai = Path(f"{expected_bam}.bai")
+            total += expected_bam.stat().st_size
+            label = f"GIAB HG002 slice ({region})"
+            if bai.exists():
+                total += bai.stat().st_size
+                print(
+                    f"  OK  {expected_bam.relative_to(WORKER_ROOT)}  "
+                    f"({human_size(expected_bam.stat().st_size)})  [{label}]"
+                )
+            else:
+                print(
+                    f"  --  {expected_bam.relative_to(WORKER_ROOT)}  "
+                    f"(missing .bai) [{label}]"
+                )
+                exit_code = 1
+        else:
+            bam_count = len(list(bam_dir.glob("HG002_*.bam"))) if bam_dir.is_dir() else 0
+            if region:
+                print(
+                    f"  --  datasets/giab/bam/HG002_{chrom}_*.bam  "
+                    f"(missing — run setup_assets.py to slice from NCBI FTP) "
+                    f"[expected {region}]"
+                )
+                exit_code = 1
+            else:
+                print(f"  ..  {bam_dir.relative_to(WORKER_ROOT)}/  ({bam_count} cached BAM slice(s))")
         print(f"  ..  {giab_vcf_dir().relative_to(WORKER_ROOT)}/  (scored VCF reuse cache)")
         print()
 
     print(f"Reference total (listed): {human_size(total)}")
     if exit_code == 0:
-        print("\nGIAB benchmark ready. First trial may download truth/BAM slices.")
+        print("\nGIAB benchmark ready under datasets/giab/.")
     else:
-        print("\nFix missing reference under datasets/reference/{chr}/ — run Worker setup.sh")
+        print(
+            "\nFix missing files — from Worker/ run:\n"
+            "  python scripts/setup_assets.py\n"
+            "GIAB BAMs are sliced from https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab"
+        )
     return exit_code
 
 
