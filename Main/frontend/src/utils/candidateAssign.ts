@@ -36,10 +36,18 @@ export const DEFAULT_DEEPVARIANT_PARAMS = [
   "min_base_quality",
 ] as const;
 
+export const DEFAULT_BCFTOOLS_PARAMS = ["min_MQ", "min_BQ"] as const;
+
 const DEFAULT_PARAMS_BY_TOOL: Record<string, readonly string[]> = {
   gatk: DEFAULT_FINE_TUNE_PARAMS,
+  bcftools: DEFAULT_BCFTOOLS_PARAMS,
   deepvariant: DEFAULT_DEEPVARIANT_PARAMS,
 };
+
+export function defaultTuneParamsForTool(tool: string): string[] {
+  const preferred = DEFAULT_PARAMS_BY_TOOL[tool.toLowerCase()] ?? DEFAULT_FINE_TUNE_PARAMS;
+  return [...preferred];
+}
 
 export function defaultSelectedParams(tool: string, available: string[]): string[] {
   const fromSaved = savedDefaultSelectedParams(tool, available);

@@ -2561,6 +2561,19 @@ a.button.disabled-link { opacity: 0.4; pointer-events: none; }
   margin-bottom: 1rem;
   max-width: 100%;
 }
+.modal-panel.modal-panel-auto-tunable .auto-mode-tool-picker {
+  margin-bottom: 1rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: linear-gradient(155deg, rgba(167, 139, 250, 0.06), rgba(0, 0, 0, 0.18));
+}
+.modal-panel.modal-panel-auto-tunable .auto-mode-tool-picker-lead {
+  margin: 0 0 0.65rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
 .modal-panel.modal-panel-auto-tunable .auto-mode-worker-settings-table-wrap {
   overflow-x: auto;
   max-width: 100%;

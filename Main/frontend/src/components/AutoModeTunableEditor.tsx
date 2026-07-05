@@ -1,6 +1,6 @@
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { api, AutoModeConfig, WorkerRecord } from "../api/client";
-import { DEFAULT_DEEPVARIANT_PARAMS, DEFAULT_FINE_TUNE_PARAMS } from "../utils/candidateAssign";
+import { defaultTuneParamsForTool } from "../utils/candidateAssign";
 import {
   buildAutoModeTunableFile,
   downloadAutoModeTunableFile,
@@ -28,12 +28,16 @@ import {
   DEFAULT_ALGORITHM,
   DEFAULT_AUTO_TOTAL_TRIALS,
   DEFAULT_LIMIT_MINUTES,
+  defaultTrialMemoryGbForTool,
   limitMinutesToSeconds,
   MAX_TRIAL_THREADS,
   secondsToLimitMinutes,
+  ToolkitOption,
 } from "../types/workerAssignment";
+import { normalizeFinderTool } from "../utils/candidateFinderStorage";
 import { ConfParamPicker } from "./ConfParamPicker";
 import { DeferredNumberInput } from "./DeferredNumberInput";
+import { ToolSegmentPicker } from "./ToolSegmentPicker";
 import { AUTO_MODE_CHANGED_EVENT } from "./AutoModePanel";
 
 interface AutoModeTunableEditorProps {
@@ -62,6 +66,7 @@ export function AutoModeTunableEditor({
   const dialogRef = useRef<HTMLDivElement>(null);
   const importFileRef = useRef<HTMLInputElement>(null);
   const [baseConf, setBaseConf] = useState(() => buildToolReferenceConf(tool));
+  const [selectedTool, setSelectedTool] = useState<ToolkitOption>(() => normalizeFinderTool(tool));
   const [selectedParams, setSelectedParams] = useState<string[]>([...config.params]);
   const [paramIntervals, setParamIntervals] = useState<Record<string, ParamInterval>>(() =>
     paramIntervalsFromAutoConfig(config),
@@ -99,6 +104,74 @@ export function AutoModeTunableEditor({
     }
     return [...config.worker_names];
   }, [registeredWorkers, config.worker_names]);
+
+  function buildParamDefaultsForTool(nextTool: ToolkitOption) {
+    const nextBaseConf = buildToolReferenceConf(nextTool);
+    const params = defaultTuneParamsForTool(nextTool);
+    const intervals: Record<string, ParamInterval> = {};
+    for (const param of params) {
+      const options = nextBaseConf[`${nextTool}_options`];
+      const baseValue =
+        options && typeof options === "object" && !Array.isArray(options)
+          ? String((options as Record<string, unknown>)[param] ?? "")
+          : "";
+      intervals[param] = defaultParamInterval(nextTool, param, baseValue);
+    }
+    return { nextBaseConf, params, intervals };
+  }
+
+  function applyToolDefaults(
+    nextTool: ToolkitOption,
+    options: { resetWorkers?: boolean } = {},
+  ) {
+    const { nextBaseConf, params, intervals } = buildParamDefaultsForTool(nextTool);
+    setBaseConf(nextBaseConf);
+    setSelectedParams(params);
+    setParamIntervals(intervals);
+    setWorkerTrialMemoryGb(
+      Object.fromEntries(
+        workerNames.map((name) => [name, defaultTrialMemoryGbForTool(nextTool)]),
+      ),
+    );
+    if (!options.resetWorkers) return;
+
+    const defaults: AutoModeConfig = {
+      ...config,
+      tool: nextTool,
+      worker_names: workerNames,
+      params,
+      param_intervals: Object.fromEntries(
+        Object.entries(intervals).map(([name, interval]) => [
+          name,
+          {
+            min: interval.min,
+            max: interval.max,
+            step: interval.step,
+            values: interval.values,
+          },
+        ]),
+      ),
+      worker_algorithms: Object.fromEntries(workerNames.map((name) => [name, DEFAULT_ALGORITHM])),
+      worker_trial_threads: Object.fromEntries(workerNames.map((name) => [name, 4])),
+      worker_trial_memory_gb: Object.fromEntries(
+        workerNames.map((name) => [name, defaultTrialMemoryGbForTool(nextTool)]),
+      ),
+      worker_concurrency: Object.fromEntries(workerNames.map((name) => [name, 1])),
+      worker_limit_seconds: Object.fromEntries(
+        workerNames.map((name) => [name, limitMinutesToSeconds(DEFAULT_LIMIT_MINUTES)]),
+      ),
+      worker_adaptive_max_trials: Object.fromEntries(
+        workerNames.map((name) => [name, adaptiveMaxTrialsFromTotal(DEFAULT_AUTO_TOTAL_TRIALS)]),
+      ),
+    };
+    applyConfigToState(defaults, workerNames);
+  }
+
+  function handleToolChange(nextTool: ToolkitOption) {
+    if (nextTool === selectedTool) return;
+    setSelectedTool(nextTool);
+    applyToolDefaults(nextTool);
+  }
 
   function applyConfigToState(nextConfig: AutoModeConfig, names: string[]) {
     setSelectedParams([...nextConfig.params]);
@@ -183,14 +256,18 @@ export function AutoModeTunableEditor({
             ? [...workers].sort((a, b) => a.name.localeCompare(b.name)).map((worker) => worker.name)
             : [...status.config.worker_names];
         applyConfigToState(status.config, names);
-        setBaseConf(buildToolReferenceConf(tool));
+        const resolvedTool = normalizeFinderTool(status.config.tool);
+        setSelectedTool(resolvedTool);
+        setBaseConf(buildToolReferenceConf(resolvedTool));
       } catch {
         if (!active) return;
         const fallbackConfig = configRef.current;
         const names = [...fallbackConfig.worker_names];
         setRegisteredWorkers([]);
         applyConfigToState(fallbackConfig, names);
-        setBaseConf(buildToolReferenceConf(tool));
+        const resolvedTool = normalizeFinderTool(fallbackConfig.tool);
+        setSelectedTool(resolvedTool);
+        setBaseConf(buildToolReferenceConf(resolvedTool));
       } finally {
         if (active) setHydrating(false);
       }
@@ -220,7 +297,7 @@ export function AutoModeTunableEditor({
       setParamIntervals(rest);
       return;
     }
-    const options = baseConf[`${tool}_options`];
+    const options = baseConf[`${selectedTool}_options`];
     const baseValue =
       options && typeof options === "object" && !Array.isArray(options)
         ? String((options as Record<string, unknown>)[param] ?? "")
@@ -228,7 +305,7 @@ export function AutoModeTunableEditor({
     setSelectedParams([...selectedParams, param]);
     setParamIntervals({
       ...paramIntervals,
-      [param]: paramIntervals[param] ?? defaultParamInterval(tool, param, baseValue),
+      [param]: paramIntervals[param] ?? defaultParamInterval(selectedTool, param, baseValue),
     });
   }
 
@@ -240,7 +317,9 @@ export function AutoModeTunableEditor({
   }
 
   function updateBaseParamValue(param: string, raw: string) {
-    setBaseConf((prev) => setToolOption(prev, tool, param, parseToolOptionValue(tool, param, raw)));
+    setBaseConf((prev) =>
+      setToolOption(prev, selectedTool, param, parseToolOptionValue(selectedTool, param, raw)),
+    );
   }
 
   function applyImportedTunable(data: AutoModeTunableImportData) {
@@ -323,7 +402,7 @@ export function AutoModeTunableEditor({
     setError(null);
     downloadAutoModeTunableFile(
       buildAutoModeTunableFile({
-        tool,
+        tool: selectedTool,
         params: selectedParams,
         paramIntervals,
         baseConf,
@@ -346,7 +425,7 @@ export function AutoModeTunableEditor({
     setError(null);
     try {
       const text = await file.text();
-      const parsed = parseAutoModeTunableImport(text, tool, baseConf);
+      const parsed = parseAutoModeTunableImport(text, selectedTool, baseConf);
       if (!parsed.ok) {
         setError(parsed.error);
         return;
@@ -366,50 +445,7 @@ export function AutoModeTunableEditor({
   }
 
   function resetDefaults() {
-    const nextBaseConf = buildToolReferenceConf(tool);
-    setBaseConf(nextBaseConf);
-    const params =
-      tool.toLowerCase() === "deepvariant"
-        ? [...DEFAULT_DEEPVARIANT_PARAMS]
-        : [...DEFAULT_FINE_TUNE_PARAMS];
-    const intervals: Record<string, ParamInterval> = {};
-    for (const param of params) {
-      const options = nextBaseConf[`${tool}_options`];
-      const baseValue =
-        options && typeof options === "object" && !Array.isArray(options)
-          ? String((options as Record<string, unknown>)[param] ?? "")
-          : "";
-      intervals[param] = defaultParamInterval(tool, param, baseValue);
-    }
-    setSelectedParams(params);
-    setParamIntervals(intervals);
-    const defaults: AutoModeConfig = {
-      ...config,
-      worker_names: workerNames,
-      params,
-      param_intervals: Object.fromEntries(
-        Object.entries(intervals).map(([name, interval]) => [
-          name,
-          {
-            min: interval.min,
-            max: interval.max,
-            step: interval.step,
-            values: interval.values,
-          },
-        ]),
-      ),
-      worker_algorithms: Object.fromEntries(workerNames.map((name) => [name, DEFAULT_ALGORITHM])),
-      worker_trial_threads: Object.fromEntries(workerNames.map((name) => [name, 4])),
-      worker_trial_memory_gb: Object.fromEntries(workerNames.map((name) => [name, 6])),
-      worker_concurrency: Object.fromEntries(workerNames.map((name) => [name, 1])),
-      worker_limit_seconds: Object.fromEntries(
-        workerNames.map((name) => [name, limitMinutesToSeconds(DEFAULT_LIMIT_MINUTES)]),
-      ),
-      worker_adaptive_max_trials: Object.fromEntries(
-        workerNames.map((name) => [name, adaptiveMaxTrialsFromTotal(DEFAULT_AUTO_TOTAL_TRIALS)]),
-      ),
-    };
-    applyConfigToState(defaults, workerNames);
+    applyToolDefaults(selectedTool, { resetWorkers: true });
   }
 
   async function saveTunableConfig(enableAfterSave = false) {
@@ -421,7 +457,7 @@ export function AutoModeTunableEditor({
       setError("Add at least one worker before saving auto mode settings.");
       return;
     }
-    const dispatchIntervals = buildDispatchParamIntervals(tool, selectedParams, paramIntervals);
+    const dispatchIntervals = buildDispatchParamIntervals(selectedTool, selectedParams, paramIntervals);
     if (!dispatchIntervals) {
       setError("Each selected parameter needs a valid search interval.");
       return;
@@ -430,6 +466,7 @@ export function AutoModeTunableEditor({
     setError(null);
     try {
       const status = await api.updateAutoModeConfig({
+        tool: selectedTool,
         params: selectedParams,
         param_intervals: dispatchIntervals,
         worker_algorithms: workerAlgorithms,
@@ -521,8 +558,8 @@ export function AutoModeTunableEditor({
 
         <div className="auto-mode-tunable-io">
           <p className="auto-mode-tunable-io-lead">
-            Import or export a full auto-mode settings file: default <code>{tool}</code> conf, tune
-            intervals (min, max, step), and per-worker algorithm, concurrency, CPUs, and RAM.
+            Import or export a full auto-mode settings file: default <code>{selectedTool}</code> conf,
+            tune intervals (min, max, step), and per-worker algorithm, concurrency, CPUs, and RAM.
           </p>
           <div className="auto-mode-tunable-io-actions">
             <button
@@ -697,9 +734,23 @@ export function AutoModeTunableEditor({
             </div>
           </div>
 
+          <div className="auto-mode-tool-picker">
+            <span className="auto-mode-section-title">Variant caller</span>
+            <p className="auto-mode-tool-picker-lead">
+              Choose which tool&apos;s parameters to tune. Switching tools loads that caller&apos;s
+              default reference conf and tune set.
+            </p>
+            <ToolSegmentPicker
+              value={selectedTool}
+              onChange={handleToolChange}
+              disabled={hydrating || loading}
+              aria-label="Variant caller for auto mode tuning"
+            />
+          </div>
+
           <ConfParamPicker
             baseConf={baseConf}
-            tool={tool}
+            tool={selectedTool}
             selectedParams={selectedParams}
             paramIntervals={paramIntervals}
             readOnly={hydrating || loading}

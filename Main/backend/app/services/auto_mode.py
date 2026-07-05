@@ -59,6 +59,7 @@ AUTO_CONCURRENCY = 1
 AUTO_TRIAL_THREADS = 4
 AUTO_TRIAL_MEMORY_GB = 16
 AUTO_TOOL = "deepvariant"
+AUTO_TOOLS: frozenset[str] = frozenset({"gatk", "bcftools", "deepvariant"})
 AUTO_PARAMS = [
     "min_mapping_quality",
     "qual_filter",
@@ -71,10 +72,19 @@ AUTO_PARAM_INTERVALS: dict[str, ParamIntervalSpec] = {
 }
 
 
+def normalize_auto_tool(tool: str, *, fallback: str = AUTO_TOOL) -> str:
+    key = str(tool or "").strip().lower()
+    if key in AUTO_TOOLS:
+        return key
+    fb = str(fallback or AUTO_TOOL).strip().lower()
+    return fb if fb in AUTO_TOOLS else AUTO_TOOL
+
+
 @dataclass
 class AutoModeTunableConfig:
     params: list[str]
     param_intervals: dict[str, ParamIntervalSpec]
+    tool: str = AUTO_TOOL
     worker_algorithms: dict[str, str] = field(default_factory=dict)
     worker_trial_threads: dict[str, int] = field(default_factory=dict)
     worker_trial_memory_gb: dict[str, int] = field(default_factory=dict)
@@ -115,6 +125,7 @@ def default_worker_adaptive_max_trials(worker_names: list[str] | None = None) ->
 
 def default_auto_tunable_config(worker_names: list[str] | None = None) -> AutoModeTunableConfig:
     return AutoModeTunableConfig(
+        tool=AUTO_TOOL,
         params=list(AUTO_PARAMS),
         param_intervals=dict(AUTO_PARAM_INTERVALS),
         worker_algorithms=default_worker_algorithms(worker_names),
@@ -176,6 +187,7 @@ def merge_worker_int_settings(
 def _tunable_config_to_json(config: AutoModeTunableConfig) -> str:
     return json.dumps(
         {
+            "tool": normalize_auto_tool(config.tool),
             "params": config.params,
             "param_intervals": {
                 name: spec.model_dump(exclude_none=True)
@@ -260,6 +272,7 @@ def _tunable_config_from_json(raw: str) -> AutoModeTunableConfig:
                 except (TypeError, ValueError):
                     pass
     return AutoModeTunableConfig(
+        tool=normalize_auto_tool(str(payload.get("tool") or AUTO_TOOL)),
         params=[str(p) for p in params],
         param_intervals=intervals,
         worker_algorithms=worker_algorithms,
@@ -435,7 +448,7 @@ def auto_mode_config(worker_names: list[str]) -> AutoModeConfig:
     tunable = auto_mode_store.tunable
     select_k = len(worker_names) if worker_names else AUTO_SELECT_K
     return AutoModeConfig(
-        tool=AUTO_TOOL,
+        tool=normalize_auto_tool(tunable.tool),
         params=list(tunable.params),
         param_intervals=dict(tunable.param_intervals),
         worker_names=list(worker_names),
@@ -516,6 +529,7 @@ class AutoModeStore:
     def set_tunable(self, config: AutoModeTunableConfig, worker_names: list[str]) -> AutoModeStatus:
         validate_auto_tunable_config(config, worker_names)
         self.tunable = AutoModeTunableConfig(
+            tool=normalize_auto_tool(config.tool, fallback=self.tunable.tool),
             params=list(config.params),
             param_intervals=dict(config.param_intervals),
             worker_algorithms=merge_worker_string_settings(
@@ -699,6 +713,7 @@ async def load_auto_mode_state(db: AsyncSession) -> None:
 async def update_auto_mode_tunable_config(
     db: AsyncSession,
     *,
+    tool: str | None = None,
     params: list[str],
     param_intervals: dict[str, ParamIntervalSpec],
     worker_algorithms: dict[str, str] | None = None,
@@ -758,7 +773,12 @@ async def update_auto_mode_tunable_config(
         AUTO_ADAPTIVE_MAX_TRIALS,
         clamp_adaptive_max_trials,
     )
+    resolved_tool = normalize_auto_tool(
+        tool if tool is not None else auto_mode_store.tunable.tool,
+        fallback=auto_mode_store.tunable.tool,
+    )
     config = AutoModeTunableConfig(
+        tool=resolved_tool,
         params=list(params),
         param_intervals=dict(param_intervals),
         worker_algorithms=algorithms,

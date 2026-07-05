@@ -68,6 +68,7 @@ async def set_auto_mode_config(
     try:
         return await update_auto_mode_tunable_config(
             db,
+            tool=body.tool,
             params=body.params,
             param_intervals=body.param_intervals,
             worker_algorithms=body.worker_algorithms,

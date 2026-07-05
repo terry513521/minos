@@ -262,6 +262,7 @@ export interface PlatformRound {
 }
 
 export interface AutoModeTunableConfigUpdate {
+  tool?: string;
   params: string[];
   param_intervals: Record<string, ParamIntervalPayload>;
   worker_algorithms?: Record<string, string>;

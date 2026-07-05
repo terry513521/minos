@@ -486,6 +486,7 @@ class AutoModeUpdateRequest(BaseModel):
 class AutoModeTunableConfigUpdate(BaseModel):
     """Editable auto-mode search parameters (persisted across restarts)."""
 
+    tool: str | None = None
     params: list[str] = Field(..., min_length=1)
     param_intervals: dict[str, ParamIntervalSpec]
     worker_algorithms: dict[str, str] | None = None

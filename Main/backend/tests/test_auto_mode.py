@@ -230,6 +230,20 @@ def test_update_auto_tunable_config_persists():
                 assert status.config.worker_trial_threads["VM"] == 6
                 assert status.config.worker_trial_memory_gb["Igno"] == 12
                 assert status.config.worker_concurrency["Big"] == 4
+                assert status.config.tool == "deepvariant"
+
+                gatk_status = await update_auto_mode_tunable_config(
+                    db,
+                    tool="gatk",
+                    params=["base_quality_score_threshold"],
+                    param_intervals={
+                        "base_quality_score_threshold": ParamIntervalSpec(
+                            min=8.0, max=18.0, step=2.0
+                        ),
+                    },
+                )
+                assert gatk_status.config.tool == "gatk"
+                assert gatk_status.config.params == ["base_quality_score_threshold"]
 
     import asyncio
 
