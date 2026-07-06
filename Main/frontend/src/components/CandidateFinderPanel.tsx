@@ -1,4 +1,4 @@
-import { DragEvent, FormEvent, useEffect, useRef, useState } from "react";
+import { DragEvent, FormEvent, MouseEvent, useEffect, useRef, useState } from "react";
 import { api, CandidatePreview, FindCandidatesResponse } from "../api/client";
 import { CANDIDATE_DRAG_MIME } from "../utils/candidateAssign";
 import { compositeCandidateScore } from "../utils/candidateSelection";
@@ -20,6 +20,7 @@ import { ConfTooltip } from "./ConfTooltip";
 import { DeferredNumberInput } from "./DeferredNumberInput";
 import { WorkerAssignmentSummary } from "../types/workerAssignment";
 import { ApplyConfImportResult } from "../utils/workerConfImport";
+import { bestConfDownloadFileName, downloadConfFile } from "../utils/confDisplay";
 
 const DEFAULT_REGION = "chr20:10000000-15000000";
 
@@ -340,6 +341,15 @@ function CandidateCard({
     onSelect();
   }
 
+  function handleDownloadConf(e: MouseEvent<HTMLButtonElement>) {
+    e.stopPropagation();
+    const downloadName = bestConfDownloadFileName(
+      region || `candidate-${candidate.index + 1}`,
+      score,
+    );
+    downloadConfFile(candidate.base_conf, downloadName);
+  }
+
   return (
     <article
       className={`candidate-result-card${draggable ? " candidate-draggable" : ""}${selected ? " candidate-result-card--selected" : ""}`}
@@ -375,6 +385,15 @@ function CandidateCard({
         <span className="candidate-composite-tag">
           composite {(composite * 100).toFixed(1)}%
         </span>
+        <button
+          type="button"
+          className="button ghost conf-tooltip-btn"
+          onClick={handleDownloadConf}
+          title="Download candidate base conf"
+          aria-label={`Download candidate #${candidate.index + 1} base conf`}
+        >
+          Download
+        </button>
         <ConfTooltip conf={candidate.base_conf} label="Conf" />
       </div>
     </article>
