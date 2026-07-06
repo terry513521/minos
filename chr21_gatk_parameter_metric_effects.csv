@@ -1,0 +1,23 @@
+parameter,n,unique_values,min_value,median_value,max_value,score_direction,overall_benefit_index,avg_scorer_benefit,avg_overcall_benefit,score_100_corr,score_100_effect,core_points_corr,core_points_effect,completeness_points_corr,completeness_points_effect,fp_points_corr,fp_points_effect,quality_points_corr,quality_points_effect,overcall_penalty_corr,overcall_penalty_effect,fp_per_target_corr,fp_per_target_effect,region_fp_total_corr,region_fp_total_effect
+indel_heterozygosity,262,30,0.000125,0.00033,0.0006,higher better,0.363,0.4072,0.2525,0.4743,improves,0.4812,improves,0.4262,improves,0.3534,improves,0.3008,improves,,n/a,-0.2525,improves,-0.2524,improves
+max_reads_per_alignment_start,262,17,24.0,28.0,70.0,lower better,-0.3699,-0.4032,-0.2867,-0.4687,hurts,-0.4672,hurts,-0.3892,hurts,-0.4242,hurts,-0.2665,hurts,,n/a,0.2867,hurts,0.2867,hurts
+recover_all_dangling_branches,262,2,0.0,0.0,1.0,lower better,-0.3604,-0.3772,-0.3186,-0.4217,hurts,-0.4005,hurts,-0.342,hurts,-0.4282,hurts,-0.2935,hurts,,n/a,0.3185,hurts,0.3187,hurts
+max_alternate_alleles,262,11,6.0,8.0,17.0,higher better,0.3168,0.3526,0.2274,0.4207,improves,0.4305,improves,0.3554,improves,0.3324,improves,0.2241,improves,,n/a,-0.2273,improves,-0.2275,improves
+assembly_region_padding,262,29,40.0,80.0,200.0,lower better,-0.3799,-0.3795,-0.3808,-0.4173,hurts,-0.4125,hurts,-0.3338,hurts,-0.3973,hurts,-0.3366,hurts,,n/a,0.3807,hurts,0.3808,hurts
+min_mapping_quality_score,262,23,6.0,20.0,40.0,lower better,-0.2166,-0.2816,-0.054,-0.3325,hurts,-0.3192,hurts,-0.2974,hurts,-0.2416,hurts,-0.2173,hurts,,n/a,0.054,weak,0.054,weak
+pruning_lod_threshold,262,40,1.303,3.303,7.9,higher better,0.22,0.2602,0.1195,0.3244,improves,0.2993,improves,0.3201,improves,0.2539,improves,0.1033,improves,,n/a,-0.1192,improves,-0.1198,improves
+contamination_fraction_to_filter,262,16,0.0,0.3,0.3,lower better,-0.3905,-0.349,-0.4941,-0.3099,hurts,-0.2708,hurts,-0.2636,hurts,-0.3451,hurts,-0.5557,hurts,,n/a,0.4939,hurts,0.4944,hurts
+max_num_haplotypes_in_population,262,22,128.0,224.0,420.0,lower better,-0.3037,-0.2916,-0.334,-0.3019,hurts,-0.3111,hurts,-0.256,hurts,-0.2957,hurts,-0.2933,hurts,,n/a,0.3338,hurts,0.3343,hurts
+max_assembly_region_size,262,8,270.0,300.0,800.0,lower better,-0.2971,-0.2747,-0.353,-0.2723,hurts,-0.2981,hurts,-0.2232,hurts,-0.248,hurts,-0.3319,hurts,,n/a,0.3529,hurts,0.3532,hurts
+heterozygosity,262,23,0.001,0.005,0.008,higher better,0.1695,0.1942,0.1078,0.2684,improves,0.2692,improves,0.1926,improves,0.1475,improves,0.0933,weak,,n/a,-0.1078,improves,-0.1077,improves
+base_quality_score_threshold,262,22,11.0,18.0,34.0,lower better,-0.1385,-0.23,0.0903,-0.2668,hurts,-0.2746,hurts,-0.2187,hurts,-0.273,hurts,-0.1169,hurts,,n/a,-0.0903,weak,-0.0903,weak
+min_pruning,262,6,1.0,2.0,7.0,lower better,-0.1741,-0.1918,-0.13,-0.2307,hurts,-0.2571,hurts,-0.1932,hurts,-0.205,hurts,-0.0729,weak,,n/a,0.1299,hurts,0.1302,hurts
+standard_min_confidence_threshold_for_calling,262,45,20.0,27.55,43.0,lower better,-0.0711,-0.1268,0.0682,-0.1739,hurts,-0.1887,hurts,-0.1172,hurts,-0.1536,hurts,-0.0005,weak,,n/a,-0.068,weak,-0.0683,weak
+adaptive_pruning_initial_error_rate,262,14,0.0005,0.002,0.005,higher better,0.1261,0.1212,0.1382,0.1737,improves,0.1781,improves,0.1183,improves,0.1135,improves,0.0225,weak,,n/a,-0.1384,improves,-0.138,improves
+pair_hmm_gap_continuation_penalty,262,10,6.0,8.0,18.0,higher better,0.1369,0.147,0.1115,0.1704,improves,0.2134,improves,0.1473,improves,0.1782,improves,0.0259,weak,,n/a,-0.1117,improves,-0.1113,improves
+min_assembly_region_size,262,20,12.0,20.0,154.0,lower better,-0.1043,-0.1205,-0.0639,-0.1585,hurts,-0.1457,hurts,-0.1347,hurts,-0.1094,hurts,-0.054,weak,,n/a,0.0641,weak,0.0637,weak
+min_dangling_branch_length,262,5,1.0,2.0,6.0,higher better,0.1436,0.1571,0.1098,0.144,improves,0.1203,improves,0.1686,improves,0.1101,improves,0.2425,improves,,n/a,-0.1097,improves,-0.1099,improves
+phred_scaled_global_read_mismapping_rate,262,14,28.0,37.0,60.0,lower better,-0.0731,-0.0907,-0.0291,-0.125,hurts,-0.1273,hurts,-0.1015,hurts,-0.0779,weak,-0.0216,weak,,n/a,0.0292,weak,0.029,weak
+dont_use_soft_clipped_bases,262,2,0.0,0.0,1.0,weak,-0.0071,-0.05,0.1003,-0.0978,weak,-0.0978,weak,-0.0749,weak,-0.0626,weak,0.0831,weak,,n/a,-0.1003,improves,-0.1003,improves
+min_base_quality_score,262,13,5.0,5.0,30.0,weak,0.0694,-0.0069,0.2602,-0.0384,weak,-0.0099,weak,-0.0802,weak,-0.0088,weak,0.1029,improves,,n/a,-0.2603,improves,-0.2602,improves
+active_probability_threshold,262,19,0.0004,0.002,0.005,weak,-0.084,-0.052,-0.1638,-0.0314,weak,-0.0121,weak,0.0066,weak,-0.0376,weak,-0.1855,hurts,,n/a,0.1638,hurts,0.1639,hurts
