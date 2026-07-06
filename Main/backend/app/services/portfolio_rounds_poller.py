@@ -56,3 +56,6 @@ class PortfolioRoundsPoller:
                 )
             except Exception:
                 logger.exception("Portfolio rounds poller tick failed")
+
+
+poller = PortfolioRoundsPoller()
