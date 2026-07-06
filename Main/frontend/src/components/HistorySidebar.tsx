@@ -23,7 +23,7 @@ import { ConfDetails } from "./ConfDetails";
 
 const DEFAULT_VISIBLE = 5;
 const DEFAULT_CHROMOSOMES = 5;
-const SEED_BATCH_LIMIT = 50;
+const SEED_BATCH_LIMIT = 100;
 
 function workerReachable(worker: WorkerRecord): boolean {
   return Boolean((worker.dispatch_base_url || worker.base_url || worker.health_url || "").trim());
