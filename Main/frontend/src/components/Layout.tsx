@@ -7,6 +7,8 @@ import { AutoModeTunableEditor } from "./AutoModeTunableEditor";
 import { useAutoModeStatus } from "../hooks/useAutoModeStatus";
 import { saveAutoModeState } from "../utils/autoModeStorage";
 import { syncManualParamDefaultsFromAutoConfig } from "../utils/manualParamDefaults";
+import { clearCandidateFinderState } from "../utils/candidateFinderStorage";
+import { CANDIDATE_FINDER_CLEAR_EVENT } from "./CandidateFinderPanel";
 
 const sectionsWhenAuto = [
   { hash: "#auto", label: "Auto mode" },
@@ -129,8 +131,10 @@ export function Layout() {
       return;
     }
     setAutoMessage(null);
+    clearCandidateFinderState();
     window.dispatchEvent(new Event(WORKERS_CLEAR_ALL_EVENT));
-    setAutoMessage("Cleared all worker dashboard data.");
+    window.dispatchEvent(new Event(CANDIDATE_FINDER_CLEAR_EVENT));
+    setAutoMessage("Cleared worker dashboard data and candidate finder context.");
   }
 
   function handleStartAllWorkers() {

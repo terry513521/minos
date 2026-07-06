@@ -23,6 +23,7 @@ import { ApplyConfImportResult } from "../utils/workerConfImport";
 import { bestConfDownloadFileName, downloadConfFile } from "../utils/confDisplay";
 
 const DEFAULT_REGION = "chr20:10000000-15000000";
+export const CANDIDATE_FINDER_CLEAR_EVENT = "effortless:candidate-finder:clear";
 
 const initialFinderState = loadCandidateFinderState();
 
@@ -138,6 +139,21 @@ export function CandidateFinderPanel({
     const timerId = window.setTimeout(() => setAssignMessage(null), 2400);
     return () => window.clearTimeout(timerId);
   }, [assignMessage]);
+
+  useEffect(() => {
+    function handleClearFinder() {
+      setRegion(DEFAULT_REGION);
+      setTool(normalizeFinderTool(undefined));
+      setKCandidates(clampKCandidates(DEFAULT_K_CANDIDATES));
+      setResult(null);
+      setError(null);
+      setSelectedCandidateIndex(null);
+      setAssignMessage(null);
+      onResultChange?.(null);
+    }
+    window.addEventListener(CANDIDATE_FINDER_CLEAR_EVENT, handleClearFinder);
+    return () => window.removeEventListener(CANDIDATE_FINDER_CLEAR_EVENT, handleClearFinder);
+  }, [onResultChange]);
 
   async function handleFind(e: FormEvent) {
     e.preventDefault();

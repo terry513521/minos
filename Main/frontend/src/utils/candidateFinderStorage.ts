@@ -55,3 +55,11 @@ export function saveCandidateFinderState(state: PersistedCandidateFinderState): 
     // Ignore quota / private-mode errors.
   }
 }
+
+export function clearCandidateFinderState(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Ignore quota / private-mode errors.
+  }
+}
