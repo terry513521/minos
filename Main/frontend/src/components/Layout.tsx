@@ -8,7 +8,7 @@ import { useAutoModeStatus } from "../hooks/useAutoModeStatus";
 import { saveAutoModeState } from "../utils/autoModeStorage";
 import { syncManualParamDefaultsFromAutoConfig } from "../utils/manualParamDefaults";
 import { clearCandidateFinderState } from "../utils/candidateFinderStorage";
-import { CANDIDATE_FINDER_CLEAR_EVENT } from "./CandidateFinderPanel";
+import { CANDIDATE_FINDER_CLEAR_EVENT } from "../utils/candidateFinderEvents";
 
 const sectionsWhenAuto = [
   { hash: "#auto", label: "Auto mode" },

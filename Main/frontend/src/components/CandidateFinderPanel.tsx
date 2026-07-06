@@ -21,9 +21,9 @@ import { DeferredNumberInput } from "./DeferredNumberInput";
 import { WorkerAssignmentSummary } from "../types/workerAssignment";
 import { ApplyConfImportResult } from "../utils/workerConfImport";
 import { bestConfDownloadFileName, downloadConfFile } from "../utils/confDisplay";
+import { CANDIDATE_FINDER_CLEAR_EVENT } from "../utils/candidateFinderEvents";
 
 const DEFAULT_REGION = "chr20:10000000-15000000";
-export const CANDIDATE_FINDER_CLEAR_EVENT = "effortless:candidate-finder:clear";
 
 const initialFinderState = loadCandidateFinderState();
 
