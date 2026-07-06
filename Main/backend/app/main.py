@@ -12,6 +12,8 @@ from app.config import get_settings
 from app.database import SessionLocal, init_db
 from app.services.auto_mode import load_auto_mode_state
 from app.services.platform_round import poller
+from app.services.portfolio_rounds import store as portfolio_rounds_store
+from app.services.portfolio_rounds_poller import poller as portfolio_rounds_poller
 
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
@@ -21,8 +23,11 @@ async def lifespan(_app: FastAPI):
     await init_db()
     async with SessionLocal() as db:
         await load_auto_mode_state(db)
+    await portfolio_rounds_store.bootstrap()
     await poller.start()
+    await portfolio_rounds_poller.start()
     yield
+    await portfolio_rounds_poller.stop()
     await poller.stop()
 
 

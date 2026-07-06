@@ -468,6 +468,51 @@ class HistoryImportResponse(BaseModel):
     skipped_duplicate: int
 
 
+class PortfolioRoundRow(BaseModel):
+    round_id: str
+    region: str
+    chrom: str
+    start: int
+    end: int
+    leader_score: float | None = None
+    instance: str
+    label: str
+    score_100: float
+    rank: int | None = None
+    gap_to_leader: float | None = None
+    runtime_s: float = 0
+    f1_snp: float | None = None
+    f1_indel: float | None = None
+    variant_count: int | None = None
+    core: float | None = None
+    completeness: float | None = None
+    fp: float | None = None
+    quality: float | None = None
+
+
+class PortfolioRoundsSummary(BaseModel):
+    rounds: int
+    rows: int
+    chroms: list[str]
+    instances: list[str]
+    date_min: str | None = None
+    date_max: str | None = None
+    avg_score: float
+    best_score: float
+
+
+class PortfolioRoundsResponse(BaseModel):
+    synced_at: datetime | None = None
+    source: str
+    api_url: str | None = None
+    summary: PortfolioRoundsSummary
+    rows: list[PortfolioRoundRow]
+
+
+class PortfolioRoundsSyncResponse(PortfolioRoundsResponse):
+    import_result: HistoryImportResponse | None = None
+
+
 class OptimizerPolicy(BaseModel):
     tool: str
     important_params: list[str]

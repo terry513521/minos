@@ -92,6 +92,51 @@ export interface HistoryImportResult {
   skipped_duplicate: number;
 }
 
+export interface PortfolioRoundRow {
+  round_id: string;
+  region: string;
+  chrom: string;
+  start: number;
+  end: number;
+  leader_score: number | null;
+  instance: string;
+  label: string;
+  score_100: number;
+  rank: number | null;
+  gap_to_leader: number | null;
+  runtime_s: number;
+  f1_snp: number | null;
+  f1_indel: number | null;
+  variant_count: number | null;
+  core: number | null;
+  completeness: number | null;
+  fp: number | null;
+  quality: number | null;
+}
+
+export interface PortfolioRoundsSummary {
+  rounds: number;
+  rows: number;
+  chroms: string[];
+  instances: string[];
+  date_min: string | null;
+  date_max: string | null;
+  avg_score: number;
+  best_score: number;
+}
+
+export interface PortfolioRoundsResponse {
+  synced_at: string | null;
+  source: string;
+  api_url: string | null;
+  summary: PortfolioRoundsSummary;
+  rows: PortfolioRoundRow[];
+}
+
+export interface PortfolioRoundsSyncResponse extends PortfolioRoundsResponse {
+  import_result: HistoryImportResult | null;
+}
+
 export interface CandidatePreview {
   index: number;
   base_conf: Record<string, unknown>;
@@ -461,6 +506,12 @@ export const api = {
   syncHistoryRounds: (replace = false) =>
     request<HistoryImportResult>(
       `/history/sync-rounds${replace ? "?replace=true" : ""}`,
+      { method: "POST" },
+    ),
+  getPortfolioRounds: () => request<PortfolioRoundsResponse>("/history/rounds"),
+  syncPortfolioRounds: (importDb = false) =>
+    request<PortfolioRoundsSyncResponse>(
+      `/history/rounds/sync${importDb ? "?import_db=true" : ""}`,
       { method: "POST" },
     ),
   seedChr22History: (body: {

@@ -18,9 +18,12 @@ from app.schemas import (
     HistorySeedChr22Response,
     HistorySeedSyncRequest,
     HistorySeedSyncResponse,
+    PortfolioRoundsResponse,
+    PortfolioRoundsSyncResponse,
 )
 from app.serializers import history_to_response
 from app.services.history_import import import_history_api, import_history_files
+from app.services.portfolio_rounds import store as portfolio_rounds_store
 from app.services.history_seed import seed_chr22_history
 from app.services.history_seed_sync import sync_seed_results_from_workers
 from app.services.history_store import save_history_from_run, save_history_record
@@ -156,6 +159,57 @@ async def import_history(
     settings = get_settings()
     result = await import_history_files(db, settings.history_path_list, replace=replace)
     return HistoryImportResponse(**result.__dict__)
+
+
+@router.get("/rounds", response_model=PortfolioRoundsResponse)
+async def get_portfolio_rounds() -> PortfolioRoundsResponse:
+    data = await portfolio_rounds_store.get()
+    return PortfolioRoundsResponse(**data)
+
+
+@router.post("/rounds/sync", response_model=PortfolioRoundsSyncResponse)
+async def sync_portfolio_rounds(
+    url: str | None = Query(default=None, description="Override MAIN_HISTORY_API_URL"),
+    import_db: bool = Query(default=False, description="Also merge new rows into round_history"),
+    db: AsyncSession = Depends(get_db),
+) -> PortfolioRoundsSyncResponse:
+    settings = get_settings()
+    target = (url or settings.history_api_url or "").strip()
+    if not target:
+        try:
+            data = await portfolio_rounds_store.reload_from_file()
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return PortfolioRoundsSyncResponse(**data, import_result=None)
+
+    try:
+        data = await portfolio_rounds_store.sync_from_api(
+            target,
+            timeout=settings.history_api_timeout,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to fetch portfolio rounds API: {exc}",
+        ) from exc
+
+    import_result = None
+    if import_db:
+        try:
+            result = await import_history_api(
+                db,
+                target,
+                replace=False,
+                timeout=settings.history_api_timeout,
+            )
+            import_result = HistoryImportResponse(**result.__dict__)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Rounds cached but DB import failed: {exc}",
+            ) from exc
+
+    return PortfolioRoundsSyncResponse(**data, import_result=import_result)
 
 
 @router.post("/sync-rounds", response_model=HistoryImportResponse)

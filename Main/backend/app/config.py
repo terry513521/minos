@@ -77,6 +77,17 @@ class Settings(BaseSettings):
     history_api_timeout: float = 60.0
     history_api_sync_on_startup: bool = True
 
+    # Portfolio rounds dashboard (/history/rounds)
+    portfolio_rounds_cache_path: str = ""
+    portfolio_rounds_poll_seconds: int = 1800
+    portfolio_rounds_poll_enabled: bool = True
+    portfolio_rounds_sync_on_startup: bool = True
+
+    @property
+    def portfolio_rounds_path(self) -> Path:
+        root = _repo_root() / "rounds.json"
+        return root if root.is_file() else Path()
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

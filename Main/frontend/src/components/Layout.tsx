@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Outlet, useLocation } from "react-router-dom";
+import { Link, Outlet, useLocation } from "react-router-dom";
 import { api } from "../api/client";
 import { AddWorkerModal, WORKERS_CHANGED_EVENT, WORKERS_CHECK_ALL_HEALTH_EVENT, WORKERS_CHECK_ALL_HEALTH_RESULT_EVENT, WORKERS_CLEAR_ALL_EVENT, WORKERS_START_ALL_EVENT, WORKERS_START_ALL_RESULT_EVENT, WORKERS_STOP_ALL_EVENT, WorkersCheckAllHealthResultDetail, WorkersStartAllResultDetail } from "./AddWorkerModal";
 import { AUTO_MODE_CHANGED_EVENT } from "./AutoModePanel";
@@ -206,6 +206,7 @@ export function Layout() {
 
   const sections = autoEnabled ? sectionsWhenAuto : sectionsWhenManual;
   const activeHash = location.hash || (autoEnabled ? "#auto" : "#candidates");
+  const onConsole = location.pathname === "/";
 
   return (
     <div className="app-shell">
@@ -225,15 +226,27 @@ export function Layout() {
             </div>
           </div>
           <nav className="section-nav" aria-label="Sections">
-            {sections.map((s) => (
-              <a
-                key={s.hash}
-                href={s.hash}
-                className={`section-nav-link${activeHash === s.hash ? " active" : ""}`}
-              >
-                {s.label}
-              </a>
-            ))}
+            {onConsole &&
+              sections.map((s) => (
+                <a
+                  key={s.hash}
+                  href={s.hash}
+                  className={`section-nav-link${activeHash === s.hash ? " active" : ""}`}
+                >
+                  {s.label}
+                </a>
+              ))}
+            <Link
+              to="/history/rounds"
+              className={`section-nav-link${location.pathname === "/history/rounds" ? " active" : ""}`}
+            >
+              Rounds
+            </Link>
+            {!onConsole && (
+              <Link to="/" className="section-nav-link">
+                Console
+              </Link>
+            )}
           </nav>
         </div>
         <div className="topbar-right">

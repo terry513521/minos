@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   api,
   HistoryChromosomeSummary,
@@ -335,6 +336,9 @@ export function HistorySidebar({ chromosomeFilter, embedded = false }: HistorySi
           <button type="button" className="button ghost" onClick={handleImport} disabled={importing}>
             {importing ? "Importing…" : "Sync JSON"}
           </button>
+          <Link to="/history/rounds" className="button ghost history-rounds-link">
+            Round charts
+          </Link>
         </div>
       </div>
 
